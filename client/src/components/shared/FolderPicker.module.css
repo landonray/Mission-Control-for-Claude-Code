@@ -1,0 +1,17 @@
+.pickerRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pathDisplay {
+  flex: 1;
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placeholder {
+  opacity: 0.4;
+}

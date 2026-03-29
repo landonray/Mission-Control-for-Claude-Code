@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import { Plus, Edit2, Trash2, Globe, Clock, Plane, Server, Folder, Save, X } from 'lucide-react';
+import FolderPicker from '../shared/FolderPicker';
 import styles from './PresetsManager.module.css';
 
 const iconOptions = [
@@ -133,9 +134,11 @@ export default function PresetsManager() {
 
               <div className={styles.field}>
                 <label>Working Directory</label>
-                <input className="input" value={form.working_directory}
-                  onChange={e => setForm(f => ({ ...f, working_directory: e.target.value }))}
-                  placeholder="~/projects/my-project" />
+                <FolderPicker
+                  value={form.working_directory}
+                  onChange={v => setForm(f => ({ ...f, working_directory: v }))}
+                  placeholder="~/projects/my-project"
+                />
               </div>
 
               <div className={styles.field}>

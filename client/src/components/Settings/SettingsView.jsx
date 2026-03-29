@@ -4,10 +4,12 @@ import PresetsManager from '../Presets/PresetsManager';
 import NotificationSettings from '../Notifications/NotificationSettings';
 import McpManager from '../MCP/McpManager';
 import RulesConfig from '../Quality/RulesConfig';
-import { ArrowLeft, Sliders, Bell, Server, FolderOpen, Shield, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Sliders, Bell, Server, FolderOpen, Shield, BarChart3, Settings } from 'lucide-react';
+import GeneralSettings from './GeneralSettings';
 import styles from './SettingsView.module.css';
 
 const sections = [
+  { id: 'general', label: 'General', icon: Settings },
   { id: 'quality', label: 'Quality Rules', icon: Shield },
   { id: 'presets', label: 'Presets', icon: FolderOpen },
   { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -15,7 +17,7 @@ const sections = [
 ];
 
 export default function SettingsView() {
-  const [activeSection, setActiveSection] = useState('quality');
+  const [activeSection, setActiveSection] = useState('general');
   const navigate = useNavigate();
 
   return (
@@ -48,6 +50,7 @@ export default function SettingsView() {
         </nav>
 
         <div className={styles.content}>
+          {activeSection === 'general' && <GeneralSettings />}
           {activeSection === 'quality' && <RulesConfig />}
           {activeSection === 'presets' && <PresetsManager />}
           {activeSection === 'notifications' && <NotificationSettings />}
