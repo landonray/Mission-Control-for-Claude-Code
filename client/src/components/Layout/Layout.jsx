@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import SessionList from '../Dashboard/SessionList';
 import ChatInterface from '../Chat/ChatInterface';
@@ -14,6 +14,18 @@ const RIGHT_PANEL_TABS = [
   { value: 'preview', label: 'Preview' },
 ];
 
+const LEFT_DEFAULT = 280;
+const RIGHT_DEFAULT = 380;
+const LEFT_MIN = 200;
+const LEFT_MAX = 500;
+const RIGHT_MIN = 280;
+const RIGHT_MAX = 600;
+
+function readWidth(key, fallback) {
+  const v = localStorage.getItem(key);
+  return v ? Number(v) : fallback;
+}
+
 export default function Layout() {
   const { id } = useParams();
   const { showFileBrowser, rightPanelMode, dispatch, activeSessionId, sessions } = useApp();
@@ -21,12 +33,72 @@ export default function Layout() {
   const sessionId = id || activeSessionId;
   const activeSession = sessions.find(s => s.id === sessionId);
 
+  const [leftWidth, setLeftWidth] = useState(() => readWidth('sidebar-left-width', LEFT_DEFAULT));
+  const [rightWidth, setRightWidth] = useState(() => readWidth('sidebar-right-width', RIGHT_DEFAULT));
+  const [dragging, setDragging] = useState(null); // 'left' | 'right' | null
+
+  const dragRef = useRef({ startX: 0, startWidth: 0 });
+
+  const onMouseDown = useCallback((side, e) => {
+    e.preventDefault();
+    const currentWidth = side === 'left' ? leftWidth : rightWidth;
+    dragRef.current = { startX: e.clientX, startWidth: currentWidth };
+    setDragging(side);
+  }, [leftWidth, rightWidth]);
+
+  useEffect(() => {
+    if (!dragging) return;
+
+    const onMouseMove = (e) => {
+      const { startX, startWidth } = dragRef.current;
+      const delta = e.clientX - startX;
+
+      if (dragging === 'left') {
+        const newWidth = Math.min(LEFT_MAX, Math.max(LEFT_MIN, startWidth + delta));
+        setLeftWidth(newWidth);
+      } else {
+        // Right panel: dragging left increases width
+        const newWidth = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, startWidth - delta));
+        setRightWidth(newWidth);
+      }
+    };
+
+    const onMouseUp = () => {
+      setDragging((side) => {
+        if (side === 'left') {
+          setLeftWidth((w) => { localStorage.setItem('sidebar-left-width', w); return w; });
+        } else if (side === 'right') {
+          setRightWidth((w) => { localStorage.setItem('sidebar-right-width', w); return w; });
+        }
+        return null;
+      });
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+  }, [dragging]);
+
   return (
     <div className={styles.layout}>
       {/* Left Panel: Session List */}
-      <div className={styles.leftPanel}>
+      <div className={styles.leftPanel} style={{ width: leftWidth }}>
         <SessionList />
       </div>
+
+      {/* Left Resize Handle */}
+      <div
+        className={`${styles.resizeHandle} ${dragging === 'left' ? styles.active : ''}`}
+        onMouseDown={(e) => onMouseDown('left', e)}
+      />
 
       {/* Center Panel: Chat */}
       <div className={styles.centerPanel}>
@@ -40,8 +112,19 @@ export default function Layout() {
         )}
       </div>
 
+      {/* Right Resize Handle */}
+      {showFileBrowser && (
+        <div
+          className={`${styles.resizeHandle} ${dragging === 'right' ? styles.active : ''}`}
+          onMouseDown={(e) => onMouseDown('right', e)}
+        />
+      )}
+
       {/* Right Panel: Files / Preview */}
-      <div className={`${styles.rightPanel} ${showFileBrowser ? '' : styles.collapsed}`}>
+      <div
+        className={`${styles.rightPanel} ${showFileBrowser ? '' : styles.collapsed}`}
+        style={showFileBrowser ? { width: rightWidth } : undefined}
+      >
         <button
           className={`btn-ghost btn-icon ${styles.toggleBtn}`}
           onClick={() => dispatch({ type: 'TOGGLE_FILE_BROWSER' })}
