@@ -102,6 +102,14 @@ function initializeSchema() {
 
     INSERT OR IGNORE INTO notification_settings (id) VALUES (1);
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      projects_directory TEXT,
+      github_username TEXT
+    );
+
+    INSERT OR IGNORE INTO app_settings (id) VALUES (1);
+
     CREATE TABLE IF NOT EXISTS daily_digests (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT NOT NULL UNIQUE,
