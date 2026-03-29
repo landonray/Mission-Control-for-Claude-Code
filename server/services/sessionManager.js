@@ -37,48 +37,70 @@ class SessionProcess {
     }
   }
 
-  start() {
-    const args = ['--output-format', 'stream-json'];
+  buildMcpConfig() {
+    const db = getDb();
+    const servers = {};
 
-    if (this.autoAccept) {
-      args.push('--dangerously-skip-permissions');
-    }
-
-    if (this.planMode) {
-      args.push('--plan');
-    }
-
-    // Add MCP server connections
+    // Add explicitly requested MCP connections
     if (this.mcpConnections && this.mcpConnections.length > 0) {
-      const db = getDb();
       for (const mcpId of this.mcpConnections) {
         const mcpServer = db.prepare('SELECT * FROM mcp_servers WHERE id = ? OR name = ?').get(mcpId, mcpId);
         if (mcpServer) {
-          const mcpArgs = mcpServer.args ? JSON.parse(mcpServer.args) : [];
-          const mcpCmd = [mcpServer.command, ...mcpArgs].join(' ');
-          args.push('--mcp', mcpCmd);
+          servers[mcpServer.name] = {
+            command: mcpServer.command,
+            args: mcpServer.args ? JSON.parse(mcpServer.args) : []
+          };
+          if (mcpServer.env) {
+            servers[mcpServer.name].env = JSON.parse(mcpServer.env);
+          }
         }
       }
+    }
 
-      // Also auto-connect any servers flagged for auto-connect
-      const autoConnectServers = db.prepare('SELECT * FROM mcp_servers WHERE auto_connect = 1').all();
-      for (const server of autoConnectServers) {
-        const alreadyAdded = this.mcpConnections.includes(server.id) || this.mcpConnections.includes(server.name);
-        if (!alreadyAdded) {
-          const serverArgs = server.args ? JSON.parse(server.args) : [];
-          const serverCmd = [server.command, ...serverArgs].join(' ');
-          args.push('--mcp', serverCmd);
+    // Add auto-connect servers not already present
+    const autoConnectServers = db.prepare('SELECT * FROM mcp_servers WHERE auto_connect = 1').all();
+    for (const server of autoConnectServers) {
+      if (!servers[server.name]) {
+        servers[server.name] = {
+          command: server.command,
+          args: server.args ? JSON.parse(server.args) : []
+        };
+        if (server.env) {
+          servers[server.name].env = JSON.parse(server.env);
         }
       }
+    }
+
+    if (Object.keys(servers).length === 0) return null;
+    return { mcpServers: servers };
+  }
+
+  start() {
+    // --print enables non-interactive mode
+    // --output-format stream-json gives us real-time JSON events
+    // --input-format stream-json lets us send messages via stdin as JSON
+    const args = [
+      '--print',
+      '--output-format', 'stream-json',
+      '--input-format', 'stream-json',
+      '--verbose'
+    ];
+
+    // Permission mode: auto is the recommended safe mode for autonomous operation.
+    // bypassPermissions is the nuclear option (no permission checks at all).
+    // plan mode is read-only.
+    if (this.autoAccept) {
+      args.push('--permission-mode', 'auto');
+    } else if (this.planMode) {
+      args.push('--permission-mode', 'plan');
     } else {
-      // Even without explicit connections, add auto-connect servers
-      const db = getDb();
-      const autoConnectServers = db.prepare('SELECT * FROM mcp_servers WHERE auto_connect = 1').all();
-      for (const server of autoConnectServers) {
-        const serverArgs = server.args ? JSON.parse(server.args) : [];
-        const serverCmd = [server.command, ...serverArgs].join(' ');
-        args.push('--mcp', serverCmd);
-      }
+      args.push('--permission-mode', 'default');
+    }
+
+    // MCP server connections via --mcp-config (takes JSON file path or inline JSON)
+    const mcpConfig = this.buildMcpConfig();
+    if (mcpConfig) {
+      args.push('--mcp-config', JSON.stringify(mcpConfig));
     }
 
     this.process = spawn('claude', args, {
@@ -296,7 +318,9 @@ class SessionProcess {
     this.status = 'working';
     this.updateDbStatus('working');
 
-    this.process.stdin.write(text + '\n');
+    // With --input-format stream-json, send messages as JSON objects
+    const inputMsg = JSON.stringify({ type: 'user_message', content: text }) + '\n';
+    this.process.stdin.write(inputMsg);
 
     this.broadcast({
       type: 'user_message',
@@ -309,8 +333,13 @@ class SessionProcess {
   respondToPermission(approved) {
     if (!this.process || !this.pendingPermission) return;
 
-    const response = approved ? 'y' : 'n';
-    this.process.stdin.write(response + '\n');
+    // With --input-format stream-json, permission responses are JSON
+    const response = JSON.stringify({
+      type: 'permission_response',
+      id: this.pendingPermission.id || this.pendingPermission.tool_use_id,
+      approved
+    }) + '\n';
+    this.process.stdin.write(response);
     this.pendingPermission = null;
     this.status = 'working';
     this.updateDbStatus('working');
@@ -409,17 +438,14 @@ class SessionProcess {
 
     if (messages.length === 0) return;
 
-    const messageCount = messages.length;
     const userMsgs = messages.filter(m => m.role === 'user');
     const assistantMsgs = messages.filter(m => m.role === 'assistant');
 
-    // Extract key actions from user messages
     const keyActions = userMsgs
       .map(m => m.content.substring(0, 100))
       .slice(0, 10)
       .join('; ');
 
-    // Extract file references from assistant messages
     const filePattern = /(?:(?:created?|modified?|edited?|updated?|wrote|read)\s+)?(?:file\s+)?[`"']?([^\s`"']+\.[a-z]{1,6})[`"']?/gi;
     const filesModified = new Set();
     for (const msg of assistantMsgs) {
@@ -431,50 +457,50 @@ class SessionProcess {
       }
     }
 
-    // Build transcript for LLM summarization (truncate to fit context)
+    // Build transcript for LLM summarization (truncated)
     const transcript = messages
-      .slice(-40) // Last 40 messages to stay within limits
+      .slice(-40)
       .map(m => `${m.role}: ${m.content.substring(0, 500)}`)
       .join('\n\n');
 
     const summarizationPrompt = `Summarize this Claude Code session in 2-3 sentences. Focus on: what was accomplished, which files were changed, and what branch the work was on. Be concise and specific.\n\nTranscript:\n${transcript}`;
 
-    // Try LLM-based summary via Claude Code CLI
-    try {
-      const { execSync } = require('child_process');
-      const llmSummary = execSync(
-        `echo ${JSON.stringify(summarizationPrompt)} | claude --output-format text --no-input 2>/dev/null`,
-        {
-          encoding: 'utf-8',
-          timeout: 30000,
-          cwd: this.workingDirectory || process.cwd()
-        }
-      ).trim();
+    // Async LLM-based summary via Claude Code CLI (non-blocking)
+    const { execFile } = require('child_process');
+    const cwd = this.workingDirectory || process.cwd();
 
-      if (llmSummary && llmSummary.length > 20) {
-        // Use LLM-generated summary
-        this.saveSummary(db, llmSummary, keyActions, filesModified);
-        return;
+    execFile('claude', [
+      '--print',
+      '--output-format', 'text',
+      '--no-session-persistence',
+      summarizationPrompt
+    ], {
+      encoding: 'utf-8',
+      timeout: 60000,
+      cwd
+    }, (err, stdout) => {
+      if (!err && stdout && stdout.trim().length > 20) {
+        this.saveSummary(db, stdout.trim(), keyActions, filesModified);
+      } else {
+        // Fallback: heuristic summary
+        this.saveFallbackSummary(db, messages, keyActions, filesModified);
       }
-    } catch (e) {
-      // LLM summarization failed, fall back to heuristic
-    }
+    });
+  }
 
-    // Fallback: heuristic summary
+  saveFallbackSummary(db, messages, keyActions, filesModified) {
+    const userMsgs = messages.filter(m => m.role === 'user');
+    const assistantMsgs = messages.filter(m => m.role === 'assistant');
     const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
-    const summaryParts = [];
-    summaryParts.push(`Session with ${messageCount} messages (${userMsgs.length} user, ${assistantMsgs.length} assistant).`);
-
+    const parts = [];
+    parts.push(`Session with ${messages.length} messages (${userMsgs.length} user, ${assistantMsgs.length} assistant).`);
     if (filesModified.size > 0) {
-      summaryParts.push(`Files referenced: ${[...filesModified].slice(0, 20).join(', ')}.`);
+      parts.push(`Files referenced: ${[...filesModified].slice(0, 20).join(', ')}.`);
     }
-
     if (lastAssistant) {
-      summaryParts.push(`Last response: ${lastAssistant.content.substring(0, 300)}`);
+      parts.push(`Last response: ${lastAssistant.content.substring(0, 300)}`);
     }
-
-    const summaryText = summaryParts.join(' ');
-    this.saveSummary(db, summaryText, keyActions, filesModified);
+    this.saveSummary(db, parts.join(' '), keyActions, filesModified);
   }
 
   saveSummary(db, summaryText, keyActions, filesModified) {

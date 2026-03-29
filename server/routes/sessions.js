@@ -183,6 +183,8 @@ router.get('/:id/summary', (req, res) => {
 });
 
 // Toggle plan mode
+// Note: Permission mode is set at session creation and cannot be changed mid-session
+// in Claude Code. This updates the stored preference for the next session.
 router.post('/:id/plan-mode', (req, res) => {
   const session = getSession(req.params.id);
   if (!session) {
@@ -193,10 +195,15 @@ router.post('/:id/plan-mode', (req, res) => {
   const db = getDb();
   db.prepare('UPDATE sessions SET plan_mode = ? WHERE id = ?').run(req.body.enabled ? 1 : 0, req.params.id);
 
-  res.json({ success: true, planMode: session.planMode });
+  res.json({
+    success: true,
+    planMode: session.planMode,
+    note: 'Permission mode changes take effect on next session. The running process retains its original mode.'
+  });
 });
 
 // Toggle auto-accept
+// Note: Permission mode is set at session creation. This updates preference only.
 router.post('/:id/auto-accept', (req, res) => {
   const session = getSession(req.params.id);
   if (!session) {

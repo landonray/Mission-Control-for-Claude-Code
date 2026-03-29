@@ -46,3 +46,35 @@ setupWebSocket(server);
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Mission Control server running on http://0.0.0.0:${PORT}`);
 });
+
+// Graceful shutdown
+function shutdown(signal) {
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  // End all active sessions
+  const { activeSessions } = require('./services/sessionManager');
+  for (const [id, session] of activeSessions) {
+    console.log(`  Ending session ${id}...`);
+    session.end().catch(() => {});
+  }
+
+  // Close server
+  server.close(() => {
+    // Close database
+    try {
+      const db = getDb();
+      db.close();
+    } catch (e) {}
+    console.log('Server closed.');
+    process.exit(0);
+  });
+
+  // Force exit after 10 seconds
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout.');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -527,8 +527,12 @@ PASS: Dependency is justified.`,
 # Scan all recently modified files for incomplete markers
 ISSUES=""
 
-# Find files modified in the last 10 minutes
-FILES=$(find . -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.py' -o -name '*.go' -o -name '*.rs' | head -100)
+# Find files modified in the last 10 minutes (scoped to recent changes only for performance)
+FILES=$(find . -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/dist/*' -mmin -10 \\( -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.py' -o -name '*.go' -o -name '*.rs' \\) 2>/dev/null | head -50)
+# Fallback: if no recent files, check git diff for changed files
+if [ -z "$FILES" ]; then
+  FILES=$(git diff --name-only HEAD 2>/dev/null | grep -E '\\.(js|jsx|ts|tsx|py|go|rs)$' | head -50)
+fi
 
 for FILE in $FILES; do
   # TODOs and FIXMEs

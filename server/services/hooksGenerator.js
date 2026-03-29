@@ -158,6 +158,8 @@ function buildCommandHook(rule) {
     fs.writeFileSync(scriptPath, rule.script, { mode: 0o755 });
   }
   const wrapperPath = path.join(SCRIPTS_DIR, `${rule.id}-wrapper.sh`);
+  // SESSION_ID is set by Claude Code hooks as an environment variable.
+  // If not available, we try CLAUDE_SESSION_ID which is another common env var.
   const wrapperScript = `#!/bin/bash
 OUTPUT=$(bash "${scriptPath}" 2>&1)
 EXIT_CODE=$?
@@ -166,10 +168,11 @@ if [ $EXIT_CODE -eq 0 ]; then
 else
   RESULT="fail"
 fi
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 DETAILS=$(echo "$OUTPUT" | head -c 500 | sed 's/"/\\\\"/g' | tr '\\n' ' ')
 curl -s -X POST ${CALLBACK_URL} \\
   -H "Content-Type: application/json" \\
-  -d "{\\"rule_id\\":\\"${rule.id}\\",\\"rule_name\\":\\"${rule.name}\\",\\"result\\":\\"$RESULT\\",\\"severity\\":\\"${rule.severity}\\",\\"details\\":\\"$DETAILS\\"}" > /dev/null 2>&1
+  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"${rule.id}\\",\\"rule_name\\":\\"${rule.name}\\",\\"result\\":\\"$RESULT\\",\\"severity\\":\\"${rule.severity}\\",\\"details\\":\\"$DETAILS\\"}" > /dev/null 2>&1
 exit $EXIT_CODE
 `;
   fs.writeFileSync(wrapperPath, wrapperScript, { mode: 0o755 });
