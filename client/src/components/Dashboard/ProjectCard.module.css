@@ -1,0 +1,39 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: all 0.15s;
+  text-align: center;
+  width: 100%;
+}
+
+.card:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.name {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.path {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
