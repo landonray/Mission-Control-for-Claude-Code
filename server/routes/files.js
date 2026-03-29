@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDirectoryTree, getFileContent, getGitDiff, getGitStatus, getGitBranches, getBranchDiff } = require('../services/fileWatcher');
 const path = require('path');
+const { execSync, exec } = require('child_process');
 
 // Get directory tree
 router.get('/tree', (req, res) => {
@@ -109,6 +110,32 @@ router.get('/git/branch-diff', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Check if native folder picker (osascript) is available
+router.get('/picker-available', (req, res) => {
+  try {
+    execSync('which osascript', { stdio: 'pipe' });
+    res.json({ available: true });
+  } catch {
+    res.json({ available: false });
+  }
+});
+
+// Open native folder picker dialog (macOS only)
+router.post('/pick-directory', (req, res) => {
+  exec(
+    `osascript -e 'POSIX path of (choose folder with prompt "Select project folder:")'`,
+    { timeout: 30000 },
+    (err, stdout) => {
+      if (err) {
+        return res.status(400).json({ error: 'Picker cancelled or unavailable' });
+      }
+      // osascript returns path with trailing newline, strip it
+      const selectedPath = stdout.trim().replace(/\/$/, '');
+      res.json({ path: selectedPath });
+    }
+  );
 });
 
 module.exports = router;
