@@ -1,5 +1,5 @@
 .projectGroup {
-  /* no extra spacing needed, just a grouping container */
+  /* grouping container */
 }
 
 .projectHeader {
@@ -9,74 +9,148 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   background: var(--bg-secondary);
   z-index: 1;
+  margin-bottom: 2px;
 }
 
-.item {
-  padding: 10px 16px;
+/* Card container */
+.card {
+  margin: 6px 8px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
-  transition: background 0.1s;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.item:hover {
+.card:hover {
   background: var(--bg-tertiary);
+  border-color: var(--accent);
 }
 
-.item.active {
+.card.active {
   background: var(--bg-tertiary);
-  border-left: 2px solid var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.header {
+/* Card header: status dot + name + badge */
+.cardHeader {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 10px;
 }
 
-.name {
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.statusDot[data-status="working"] {
+  background-color: var(--accent);
+  animation: pulse 2s infinite;
+}
+.statusDot[data-status="idle"]    { background-color: var(--success); }
+.statusDot[data-status="waiting"] { background-color: var(--warning); }
+.statusDot[data-status="error"]   { background-color: var(--error); }
+.statusDot[data-status="paused"]  { background-color: var(--info, var(--text-muted)); }
+.statusDot[data-status="ended"]   { background-color: var(--text-muted); }
+
+.cardName {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
-.meta {
+/* Stats section */
+.statsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.statRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   font-size: 11px;
+  line-height: 1.4;
+}
+
+.statLabel {
   color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.contextDot {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.time {
-  font-size: 11px;
-}
-
-.summary {
-  font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 2px;
+.statValue {
+  color: var(--text-secondary);
+  text-align: right;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+/* Context bar within stat row */
+.contextStat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.contextBar {
+  width: 48px;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.contextFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.contextValue {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Tool prefix in last action */
+.toolPrefix {
+  color: var(--error);
+  font-weight: 600;
+}
+
+/* Card footer */
+.cardFooter {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.sessionId {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  letter-spacing: 0.02em;
 }

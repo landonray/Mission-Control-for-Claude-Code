@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
-import { timeAgo, getContextHealthLevel } from '../../utils/format';
+import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
 import NewSessionModal from './NewSessionModal';
-import { Plus, Activity, Circle, Clock, AlertCircle, Pause, CheckCircle } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import styles from './SessionList.module.css';
 
-const statusIcons = {
-  working: Activity,
-  idle: CheckCircle,
-  waiting: Clock,
-  error: AlertCircle,
-  paused: Pause,
-  ended: Circle,
-};
+function renderLastAction(summary) {
+  const colonIndex = summary.indexOf(':');
+  if (colonIndex > 0 && colonIndex < 20) {
+    const tool = summary.slice(0, colonIndex);
+    const rest = summary.slice(colonIndex + 1).trim();
+    return (
+      <>
+        <span className={styles.toolPrefix}>{tool}:</span> {rest}
+      </>
+    );
+  }
+  return summary;
+}
 
 export default function SessionList() {
   const { sessions, loadSessions, dispatch } = useApp();
@@ -39,7 +44,6 @@ export default function SessionList() {
       if (!groups.has(project)) groups.set(project, []);
       groups.get(project).push(session);
     }
-    // Sort alphabetically, "Ungrouped" last
     return [...groups.entries()].sort((a, b) => {
       if (a[0] === 'Ungrouped') return 1;
       if (b[0] === 'Ungrouped') return -1;
@@ -64,44 +68,76 @@ export default function SessionList() {
           <div key={projectName} className={styles.projectGroup}>
             <div className={styles.projectHeader}>{projectName}</div>
             {projectSessions.map(session => {
-              const StatusIcon = statusIcons[session.status] || Circle;
               const contextLevel = getContextHealthLevel(session.context_window_usage || 0);
+              const contextPercent = Math.round((session.context_window_usage || 0) * 100);
               const isActive = session.id === activeId;
 
               return (
                 <div
                   key={session.id}
-                  className={`${styles.item} ${isActive ? styles.active : ''}`}
+                  className={`${styles.card} ${isActive ? styles.active : ''}`}
                   onClick={() => handleSelect(session.id)}
                 >
-                  <div className={styles.header}>
-                    <StatusIcon
-                      size={12}
-                      className={`status-${session.status}`}
-                      style={session.status === 'working' ? { animation: 'pulse 2s infinite' } : {}}
-                    />
-                    <span className={styles.name}>{session.name}</span>
+                  <div className={styles.cardHeader}>
+                    <span className={styles.statusDot} data-status={session.status} />
+                    <span className={styles.cardName}>{session.name}</span>
+                    <span className={`badge badge-${session.status}`}>
+                      {session.status}
+                    </span>
                   </div>
 
-                  <div className={styles.meta}>
-                    <div className={styles.contextDot}>
-                      <span
-                        className={styles.dot}
-                        style={{
-                          backgroundColor: contextLevel === 'light' ? 'var(--success)'
-                            : contextLevel === 'moderate' ? 'var(--warning)'
-                            : contextLevel === 'heavy' ? '#f97316'
-                            : 'var(--error)'
-                        }}
-                      />
-                      <span>{Math.round((session.context_window_usage || 0) * 100)}%</span>
+                  <div className={styles.statsSection}>
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Last active</span>
+                      <span className={styles.statValue}>{timeAgo(session.last_activity_at)}</span>
                     </div>
-                    <span className={styles.time}>{timeAgo(session.last_activity_at)}</span>
+
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Messages</span>
+                      <span className={styles.statValue}>
+                        {session.user_message_count || 0} user / {session.assistant_message_count || 0} assistant
+                      </span>
+                    </div>
+
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Tool calls</span>
+                      <span className={styles.statValue}>{session.tool_call_count || 0}</span>
+                    </div>
+
+                    <div className={styles.statRow}>
+                      <span className={styles.statLabel}>Context</span>
+                      <div className={styles.contextStat}>
+                        <div className={styles.contextBar}>
+                          <div
+                            className={styles.contextFill}
+                            style={{
+                              width: `${contextPercent}%`,
+                              backgroundColor: contextLevel === 'light' ? 'var(--success)'
+                                : contextLevel === 'moderate' ? 'var(--warning)'
+                                : contextLevel === 'heavy' ? '#f97316'
+                                : 'var(--error)'
+                            }}
+                          />
+                        </div>
+                        <span className={styles.contextValue}>
+                          {contextPercent}% ({getContextHealthLabel(session.context_window_usage || 0).toLowerCase()})
+                        </span>
+                      </div>
+                    </div>
+
+                    {session.last_action_summary && (
+                      <div className={styles.statRow}>
+                        <span className={styles.statLabel}>Last action</span>
+                        <span className={styles.statValue}>
+                          {renderLastAction(session.last_action_summary)}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {session.last_action_summary && (
-                    <p className={styles.summary}>{session.last_action_summary}</p>
-                  )}
+                  <div className={styles.cardFooter}>
+                    <span className={styles.sessionId}>{session.id.slice(0, 8)}</span>
+                  </div>
                 </div>
               );
             })}
