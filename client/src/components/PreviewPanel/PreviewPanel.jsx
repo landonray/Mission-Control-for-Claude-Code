@@ -24,6 +24,14 @@ export default function PreviewPanel({ sessionId }) {
     loadPreviewUrl();
   }, [loadPreviewUrl]);
 
+  // Sync when previewUrl changes externally (e.g., auto-detected dev server)
+  useEffect(() => {
+    if (previewUrl && previewUrl !== inputUrl) {
+      setInputUrl(previewUrl);
+      setIframeKey(k => k + 1);
+    }
+  }, [previewUrl]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     let url = inputUrl.trim();

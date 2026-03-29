@@ -124,6 +124,10 @@ export function AppProvider({ children }) {
           loadFileTree(fileTreePathRef.current);
         }
         break;
+      case 'dev_server_detected':
+        dispatch({ type: 'SET_PREVIEW_URL', payload: data.url });
+        dispatch({ type: 'SET_RIGHT_PANEL_MODE', payload: 'preview' });
+        break;
     }
   }, []);
 

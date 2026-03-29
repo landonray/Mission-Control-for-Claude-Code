@@ -184,6 +184,9 @@ class SessionProcess {
     // Check for quality result markers in any output
     this.parseQualityResults(line);
 
+    // Check for dev server URLs in raw output
+    this.detectDevServerUrl(line);
+
     try {
       const event = JSON.parse(line);
       this.processStreamEvent(event);
@@ -195,6 +198,27 @@ class SessionProcess {
         timestamp: new Date().toISOString()
       });
     }
+  }
+
+  detectDevServerUrl(text) {
+    const match = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+/i);
+    if (!match) return;
+
+    const url = match[0].replace('0.0.0.0', 'localhost');
+
+    // Only fire once per unique URL
+    if (this._lastDetectedUrl === url) return;
+    this._lastDetectedUrl = url;
+
+    const db = getDb();
+    db.prepare('UPDATE sessions SET preview_url = ? WHERE id = ?').run(url, this.id);
+
+    this.broadcast({
+      type: 'dev_server_detected',
+      sessionId: this.id,
+      url,
+      timestamp: new Date().toISOString()
+    });
   }
 
   processStreamEvent(event) {
@@ -252,6 +276,13 @@ class SessionProcess {
         break;
 
       case 'tool_result':
+        // Scan tool output for dev server URLs
+        if (event.content) {
+          const text = typeof event.content === 'string'
+            ? event.content
+            : JSON.stringify(event.content);
+          this.detectDevServerUrl(text);
+        }
         break;
 
       case 'permission_request':
