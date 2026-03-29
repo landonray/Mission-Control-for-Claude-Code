@@ -1,0 +1,123 @@
+.scorecard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-secondary);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.header:hover {
+  background: var(--bg-tertiary);
+}
+
+.title {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dots {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot.pass {
+  background: var(--success);
+}
+
+.dot.fail {
+  background: var(--error);
+}
+
+.passRate {
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 36px;
+  text-align: right;
+}
+
+.failBadge {
+  font-size: 11px;
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--error);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.details {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+
+.ruleResult {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.ruleResult:hover {
+  background: var(--bg-tertiary);
+}
+
+.passIcon {
+  color: var(--success);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.failIcon {
+  color: var(--error);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.ruleInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ruleName {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ruleDetails {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.severityBadge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}

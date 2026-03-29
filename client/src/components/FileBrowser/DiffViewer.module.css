@@ -1,0 +1,120 @@
+.viewer {
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fileName {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modeToggle {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+
+.modeBtn {
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.1s;
+}
+
+.modeBtn:hover {
+  color: var(--text-primary);
+}
+
+.modeBtn.active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.fileSection {
+  margin-bottom: 1px;
+}
+
+.fileHeader {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.hunk {
+  margin-bottom: 1px;
+}
+
+.hunkHeader {
+  padding: 4px 12px;
+  background: rgba(56, 189, 248, 0.08);
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.diffLines {
+  line-height: 1.6;
+}
+
+.diffLine {
+  display: flex;
+  white-space: pre;
+  padding: 0 12px;
+  min-height: 1.6em;
+}
+
+.linePrefix {
+  width: 20px;
+  flex-shrink: 0;
+  text-align: center;
+  user-select: none;
+  color: var(--text-muted);
+}
+
+.lineText {
+  flex: 1;
+  overflow-x: auto;
+}
+
+.addLine {
+  background: rgba(74, 222, 128, 0.08);
+  color: var(--success);
+}
+
+.removeLine {
+  background: rgba(248, 113, 113, 0.08);
+  color: var(--error);
+}
+
+.emptyLine {
+  background: var(--bg-tertiary);
+  opacity: 0.3;
+}
+
+.sideBySide {
+  display: flex;
+}
+
+.sidePanel {
+  flex: 1;
+  overflow-x: auto;
+  border-right: 1px solid var(--border);
+}
+
+.sidePanel:last-child {
+  border-right: none;
+}

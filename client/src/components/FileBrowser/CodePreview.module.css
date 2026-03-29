@@ -1,0 +1,48 @@
+.container {
+  position: relative;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.languageBadge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.code {
+  margin: 0;
+  padding: 8px 0;
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.line:hover {
+  background: var(--bg-tertiary);
+}
+
+.lineNumber {
+  padding: 0 12px 0 12px;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+  white-space: nowrap;
+  width: 1px;
+  vertical-align: top;
+}
+
+.lineContent {
+  padding: 0 12px;
+  white-space: pre;
+}

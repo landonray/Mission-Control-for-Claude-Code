@@ -1,0 +1,262 @@
+.container {
+  padding: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hooksBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.installed {
+  background: rgba(74, 222, 128, 0.12);
+  color: var(--success);
+}
+
+.notInstalled {
+  background: rgba(248, 113, 113, 0.12);
+  color: var(--error);
+}
+
+.bulkActions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.category {
+  margin-bottom: 24px;
+}
+
+.categoryTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.ruleCard {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.ruleCard:hover {
+  border-color: var(--accent);
+}
+
+.ruleCard.disabled {
+  opacity: 0.55;
+}
+
+.ruleHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.expandBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.ruleInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.ruleName {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ruleMeta {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.hookBadge, .timingBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.severitySelect {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 3px 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.toggleBtn {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.toggleBtn.on {
+  background: var(--accent);
+}
+
+.toggleBtn.off {
+  background: var(--bg-tertiary);
+}
+
+.toggleTrack {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.toggleThumb {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  top: 3px;
+  transition: left 0.2s;
+  background: white;
+}
+
+.toggleBtn.on .toggleThumb {
+  left: 21px;
+}
+
+.toggleBtn.off .toggleThumb {
+  left: 3px;
+  background: var(--text-muted);
+}
+
+.ruleBody {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.ruleDescription {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+
+.ruleContent {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promptSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.promptText {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.editSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.editField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editField label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+}

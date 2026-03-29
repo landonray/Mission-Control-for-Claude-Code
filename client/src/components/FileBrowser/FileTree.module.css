@@ -1,0 +1,73 @@
+.tree {
+  font-size: 13px;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+  user-select: none;
+}
+
+.node:hover {
+  background: var(--bg-tertiary);
+}
+
+.folderIcon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.fileIcon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.modified .name {
+  color: var(--warning);
+}
+
+.modifiedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+.size {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.diffBtn {
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0;
+  transition: all 0.1s;
+}
+
+.node:hover .diffBtn {
+  opacity: 1;
+}
+
+.diffBtn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
