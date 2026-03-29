@@ -1,23 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
-import { X, Globe, Clock, Plane, Server, Folder } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 import PillSelector from '../common/PillSelector';
+import ProjectCard from './ProjectCard';
+import CreateProjectPanel from './CreateProjectPanel';
+import FolderPicker from '../shared/FolderPicker';
 import styles from './NewSessionModal.module.css';
 
-const presetIcons = {
-  globe: Globe,
-  clock: Clock,
-  plane: Plane,
-  server: Server,
-  folder: Folder,
-};
-
 export default function NewSessionModal({ onClose }) {
-  const { presets, loadSessions } = useApp();
+  const { loadSessions, generalSettings } = useApp();
   const navigate = useNavigate();
-  const [mode, setMode] = useState('preset'); // 'preset' or 'custom'
+  const [mode, setMode] = useState('preset');
+  const [view, setView] = useState('tabs'); // 'tabs' | 'create'
+  const [projects, setProjects] = useState([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
   const [form, setForm] = useState({
     name: '',
     workingDirectory: '',
@@ -26,10 +24,29 @@ export default function NewSessionModal({ onClose }) {
   });
   const [loading, setLoading] = useState(false);
 
-  const handlePresetStart = async (presetId) => {
+  useEffect(() => {
+    if (mode === 'preset') {
+      setProjectsLoading(true);
+      api.get('/api/projects')
+        .then(setProjects)
+        .catch(() => setProjects([]))
+        .finally(() => setProjectsLoading(false));
+    }
+  }, [mode]);
+
+  const handleProjectStart = async (project) => {
     setLoading(true);
     try {
-      const session = await api.post('/api/sessions', { presetId });
+      let session;
+      if (project.preset) {
+        session = await api.post('/api/sessions', { presetId: project.preset.id });
+      } else {
+        session = await api.post('/api/sessions', {
+          name: project.name,
+          workingDirectory: project.path,
+          permissionMode: 'acceptEdits',
+        });
+      }
       await loadSessions();
       navigate(`/session/${session.id}`);
       onClose();
@@ -38,6 +55,12 @@ export default function NewSessionModal({ onClose }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreated = async (sessionId) => {
+    await loadSessions();
+    navigate(`/session/${sessionId}`);
+    onClose();
   };
 
   const handleCustomStart = async (e) => {
@@ -70,92 +93,113 @@ export default function NewSessionModal({ onClose }) {
           </button>
         </div>
 
-        <div className={styles.tabs}>
-          <button
-            className={`${styles.tab} ${mode === 'preset' ? styles.activeTab : ''}`}
-            onClick={() => setMode('preset')}
-          >
-            Presets
-          </button>
-          <button
-            className={`${styles.tab} ${mode === 'custom' ? styles.activeTab : ''}`}
-            onClick={() => setMode('custom')}
-          >
-            Custom
-          </button>
-        </div>
+        {view === 'create' ? (
+          <CreateProjectPanel
+            onBack={() => setView('tabs')}
+            onCreated={handleCreated}
+          />
+        ) : (
+          <>
+            <div className={styles.tabs}>
+              <button
+                className={`${styles.tab} ${mode === 'preset' ? styles.activeTab : ''}`}
+                onClick={() => setMode('preset')}
+              >
+                Projects
+              </button>
+              <button
+                className={`${styles.tab} ${mode === 'custom' ? styles.activeTab : ''}`}
+                onClick={() => setMode('custom')}
+              >
+                Custom
+              </button>
+            </div>
 
-        {mode === 'preset' && (
-          <div className={styles.presetGrid}>
-            {presets.map(preset => {
-              const Icon = presetIcons[preset.icon] || Folder;
-              return (
+            {mode === 'preset' && (
+              <div className={styles.presetGrid}>
                 <button
-                  key={preset.id}
-                  className={styles.presetCard}
-                  onClick={() => handlePresetStart(preset.id)}
+                  className={`${styles.presetCard} ${styles.createCard}`}
+                  onClick={() => setView('create')}
                   disabled={loading}
                 >
-                  <Icon size={24} />
-                  <span className={styles.presetName}>{preset.name}</span>
-                  <span className={styles.presetDesc}>{preset.description}</span>
+                  <Plus size={24} />
+                  <span className={styles.presetName}>Create New</span>
+                  <span className={styles.presetDesc}>New folder + GitHub repo</span>
                 </button>
-              );
-            })}
-          </div>
-        )}
 
-        {mode === 'custom' && (
-          <form className={styles.form} onSubmit={handleCustomStart}>
-            <div className={styles.field}>
-              <label>Session Name</label>
-              <input
-                className="input"
-                placeholder="My Session"
-                value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              />
-            </div>
+                {projectsLoading && (
+                  <div className={styles.emptyState}>Loading projects…</div>
+                )}
 
-            <div className={styles.field}>
-              <label>Working Directory</label>
-              <input
-                className="input"
-                placeholder="~/projects/my-project"
-                value={form.workingDirectory}
-                onChange={e => setForm(f => ({ ...f, workingDirectory: e.target.value }))}
-              />
-            </div>
+                {!projectsLoading && projects.length === 0 && !generalSettings?.projects_directory && (
+                  <div className={styles.emptyState}>
+                    No projects directory configured.{' '}
+                    <a href="/settings" onClick={onClose}>Go to Settings → General</a>
+                  </div>
+                )}
 
-            <div className={styles.field}>
-              <label>Initial Prompt (optional)</label>
-              <textarea
-                className="input"
-                placeholder="What should Claude work on?"
-                value={form.initialPrompt}
-                onChange={e => setForm(f => ({ ...f, initialPrompt: e.target.value }))}
-                rows={3}
-              />
-            </div>
+                {projects.map(project => (
+                  <ProjectCard
+                    key={project.path}
+                    project={project}
+                    onClick={() => handleProjectStart(project)}
+                    disabled={loading}
+                  />
+                ))}
+              </div>
+            )}
 
-            <div className={styles.field}>
-              <label>Permission Mode</label>
-              <PillSelector
-                options={[
-                  { value: 'acceptEdits', label: 'Accept Edits' },
-                  { value: 'auto', label: 'Auto' },
-                  { value: 'plan', label: 'Plan' },
-                  { value: 'default', label: 'Ask' },
-                ]}
-                value={form.permissionMode}
-                onChange={v => setForm(f => ({ ...f, permissionMode: v }))}
-              />
-            </div>
+            {mode === 'custom' && (
+              <form className={styles.form} onSubmit={handleCustomStart}>
+                <div className={styles.field}>
+                  <label>Session Name</label>
+                  <input
+                    className="input"
+                    placeholder="My Session"
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  />
+                </div>
 
-            <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
-              {loading ? 'Starting...' : 'Start Session'}
-            </button>
-          </form>
+                <div className={styles.field}>
+                  <label>Working Directory</label>
+                  <FolderPicker
+                    value={form.workingDirectory}
+                    onChange={v => setForm(f => ({ ...f, workingDirectory: v }))}
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <label>Initial Prompt (optional)</label>
+                  <textarea
+                    className="input"
+                    placeholder="What should Claude work on?"
+                    value={form.initialPrompt}
+                    onChange={e => setForm(f => ({ ...f, initialPrompt: e.target.value }))}
+                    rows={3}
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <label>Permission Mode</label>
+                  <PillSelector
+                    options={[
+                      { value: 'acceptEdits', label: 'Accept Edits' },
+                      { value: 'auto', label: 'Auto' },
+                      { value: 'plan', label: 'Plan' },
+                      { value: 'default', label: 'Ask' },
+                    ]}
+                    value={form.permissionMode}
+                    onChange={v => setForm(f => ({ ...f, permissionMode: v }))}
+                  />
+                </div>
+
+                <button className="btn btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
+                  {loading ? 'Starting...' : 'Start Session'}
+                </button>
+              </form>
+            )}
+          </>
         )}
       </div>
     </div>

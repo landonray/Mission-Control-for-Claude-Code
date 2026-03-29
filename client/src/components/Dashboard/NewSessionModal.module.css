@@ -123,3 +123,25 @@
   color: var(--text-secondary);
 }
 
+.createCard {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.createCard:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.emptyState {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 24px;
+  opacity: 0.6;
+  font-size: 13px;
+}
+
+.emptyState a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
