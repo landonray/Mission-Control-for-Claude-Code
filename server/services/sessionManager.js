@@ -16,6 +16,7 @@ class SessionProcess {
     this.permissionMode = options.permissionMode || 'acceptEdits';
     this.mcpConnections = options.mcpConnections || [];
     this.initialPrompt = options.initialPrompt || null;
+    this.useWorktree = options.useWorktree || false;
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
@@ -94,6 +95,10 @@ class SessionProcess {
     // Resume existing CLI session or start a new one
     if (this.cliSessionId) {
       args.push('--resume', this.cliSessionId);
+    }
+
+    if (this.useWorktree && !this.cliSessionId) {
+      args.push('--worktree');
     }
 
     args.push('--permission-mode', this.permissionMode || 'acceptEdits');

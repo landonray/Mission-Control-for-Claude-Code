@@ -76,7 +76,7 @@ router.get('/:id', (req, res) => {
 // Create new session
 router.post('/', (req, res) => {
   try {
-    const { name, workingDirectory, presetId, permissionMode, initialPrompt, branch, mcpConnections } = req.body;
+    const { name, workingDirectory, presetId, permissionMode, initialPrompt, branch, mcpConnections, useWorktree } = req.body;
 
     let options = {
       name,
@@ -84,7 +84,8 @@ router.post('/', (req, res) => {
       permissionMode,
       initialPrompt,
       branch,
-      mcpConnections
+      mcpConnections,
+      useWorktree
     };
 
     // If preset is specified, load preset settings
