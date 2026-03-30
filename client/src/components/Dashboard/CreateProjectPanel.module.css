@@ -63,6 +63,21 @@
   color: white;
 }
 
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.toggleLabel input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
 .error {
   color: var(--error, #e05555);
   font-size: 13px;

@@ -6,7 +6,7 @@ import styles from './GeneralSettings.module.css';
 
 export default function GeneralSettings() {
   const { generalSettings, loadGeneralSettings } = useApp();
-  const [form, setForm] = useState({ projects_directory: '', github_username: '' });
+  const [form, setForm] = useState({ projects_directory: '', github_username: '', setup_repo: '' });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -15,6 +15,7 @@ export default function GeneralSettings() {
       setForm({
         projects_directory: generalSettings.projects_directory || '',
         github_username: generalSettings.github_username || '',
+        setup_repo: generalSettings.setup_repo || '',
       });
     }
   }, [generalSettings]);
@@ -57,6 +58,20 @@ export default function GeneralSettings() {
           placeholder="your-github-username"
           value={form.github_username}
           onChange={e => setForm(f => ({ ...f, github_username: e.target.value }))}
+        />
+      </div>
+
+      <div className={styles.field}>
+        <label>Project Setup Repo</label>
+        <p className={styles.hint}>
+          A GitHub repo whose README contains setup instructions for new projects (e.g. copy CLAUDE.md, create database, set env vars).
+          When creating a new project, Claude will automatically follow these instructions.
+        </p>
+        <input
+          className="input"
+          placeholder="owner/repo or https://github.com/owner/repo"
+          value={form.setup_repo}
+          onChange={e => setForm(f => ({ ...f, setup_repo: e.target.value }))}
         />
       </div>
 

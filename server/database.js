@@ -105,7 +105,8 @@ function initializeSchema() {
     CREATE TABLE IF NOT EXISTS app_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       projects_directory TEXT,
-      github_username TEXT
+      github_username TEXT,
+      setup_repo TEXT
     );
 
     INSERT OR IGNORE INTO app_settings (id) VALUES (1);
@@ -159,6 +160,7 @@ function initializeSchema() {
   try { db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER DEFAULT 0'); } catch (e) { /* column already exists */ }
   try { db.exec('ALTER TABLE sessions ADD COLUMN tmux_session_name TEXT'); } catch (e) { /* column already exists */ }
   try { db.exec("ALTER TABLE sessions ADD COLUMN model TEXT DEFAULT 'claude-opus-4-6'"); } catch (e) { /* column already exists */ }
+  try { db.exec('ALTER TABLE app_settings ADD COLUMN setup_repo TEXT'); } catch (e) { /* column already exists */ }
 
   seedDefaultPresets();
   seedQualityRules();

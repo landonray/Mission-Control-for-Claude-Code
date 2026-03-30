@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import styles from './CreateProjectPanel.module.css';
 
@@ -7,15 +8,20 @@ const STATUS_MESSAGES = [
   'Creating folder…',
   'Initializing git…',
   'Creating GitHub repo…',
+  'Fetching setup instructions…',
   'Starting session…',
 ];
 
 export default function CreateProjectPanel({ onBack, onCreated, model }) {
+  const { generalSettings } = useApp();
   const [name, setName] = useState('');
   const [visibility, setVisibility] = useState('private');
+  const [autoSetup, setAutoSetup] = useState(true);
   const [loading, setLoading] = useState(false);
   const [statusIdx, setStatusIdx] = useState(0);
   const [error, setError] = useState('');
+
+  const hasSetupRepo = !!generalSettings?.setup_repo;
 
   const normalizeName = (raw) => raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '');
 
@@ -45,6 +51,7 @@ export default function CreateProjectPanel({ onBack, onCreated, model }) {
         name: normalized,
         visibility,
         model,
+        autoSetup: hasSetupRepo && autoSetup,
       });
       clearTimeout(timeout);
       clearInterval(interval);
@@ -105,6 +112,23 @@ export default function CreateProjectPanel({ onBack, onCreated, model }) {
             </button>
           </div>
         </div>
+
+        {hasSetupRepo && (
+          <div className={styles.field}>
+            <label className={styles.toggleLabel}>
+              <input
+                type="checkbox"
+                checked={autoSetup}
+                onChange={e => setAutoSetup(e.target.checked)}
+                disabled={loading}
+              />
+              <span>Auto-setup from repo</span>
+            </label>
+            <p className={styles.hint}>
+              Follow instructions from your setup repo ({generalSettings.setup_repo}) to configure the project automatically.
+            </p>
+          </div>
+        )}
 
         {error && <p className={styles.error}>{error}</p>}
 

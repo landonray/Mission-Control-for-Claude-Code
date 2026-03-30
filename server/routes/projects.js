@@ -7,7 +7,7 @@ const { getDb } = require('../database');
 
 function getSettings() {
   const db = getDb();
-  return db.prepare('SELECT projects_directory, github_username FROM app_settings WHERE id = 1').get();
+  return db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
 }
 
 function resolveHome(p) {
@@ -48,9 +48,41 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/projects/setup-readme — fetch README content from the configured setup repo
+router.get('/setup-readme', async (req, res) => {
+  try {
+    const settings = getSettings();
+    if (!settings?.setup_repo) {
+      return res.status(400).json({ error: 'No setup repo configured.' });
+    }
+
+    // Parse owner/repo from URL or "owner/repo" format
+    let owner, repo;
+    const match = settings.setup_repo.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+    if (match) {
+      owner = match[1];
+      repo = match[2];
+    } else if (/^[^/]+\/[^/]+$/.test(settings.setup_repo)) {
+      [owner, repo] = settings.setup_repo.split('/');
+    } else {
+      return res.status(400).json({ error: 'Invalid setup repo format. Use "owner/repo" or a GitHub URL.' });
+    }
+
+    // Use gh CLI to fetch README content
+    const readmeContent = execSync(
+      `gh api repos/${owner}/${repo}/readme --jq '.content' | base64 -d`,
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    ).trim();
+
+    res.json({ content: readmeContent, owner, repo });
+  } catch (err) {
+    res.status(500).json({ error: `Failed to fetch README: ${err.stderr?.toString() || err.message}` });
+  }
+});
+
 // POST /api/projects/create — create folder + git init + gh repo + session
 router.post('/create', (req, res) => {
-  const { name, visibility = 'private', model } = req.body;
+  const { name, visibility = 'private', model, autoSetup = true } = req.body;
 
   // Validate name
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name) || name.length > 100) {
@@ -104,7 +136,32 @@ router.post('/create', (req, res) => {
     return res.status(500).json({ error: err.stderr?.toString() || err.message });
   }
 
-  // Step 6: Create Claude Code session (synchronous)
+  // Step 6: Optionally fetch setup repo README for initial prompt
+  let initialPrompt = undefined;
+  if (autoSetup && settings.setup_repo) {
+    try {
+      let owner, repo;
+      const match = settings.setup_repo.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+      if (match) {
+        owner = match[1];
+        repo = match[2];
+      } else if (/^[^/]+\/[^/]+$/.test(settings.setup_repo)) {
+        [owner, repo] = settings.setup_repo.split('/');
+      }
+      if (owner && repo) {
+        const readmeContent = execSync(
+          `gh api repos/${owner}/${repo}/readme --jq '.content' | base64 -d`,
+          { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+        ).trim();
+        initialPrompt = `Follow the instructions in this setup guide to configure this new project. The project directory is already created at ${folderPath} and the git repo is initialized.\n\n---\n\n${readmeContent}`;
+      }
+    } catch (err) {
+      // Non-fatal: proceed without auto-setup if README fetch fails
+      console.warn('Failed to fetch setup repo README:', err.message);
+    }
+  }
+
+  // Step 7: Create Claude Code session (synchronous)
   try {
     const { createSession } = require('../services/sessionManager');
     const session = createSession({
@@ -112,6 +169,7 @@ router.post('/create', (req, res) => {
       workingDirectory: folderPath,
       permissionMode: 'acceptEdits',
       model,
+      initialPrompt,
     });
     res.json({ sessionId: session.id });
   } catch (err) {
