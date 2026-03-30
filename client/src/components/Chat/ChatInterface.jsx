@@ -7,7 +7,7 @@ import PermissionPrompt from './PermissionPrompt';
 import SessionControls from './SessionControls';
 import ContextIndicator from './ContextIndicator';
 import QualityScorecard from '../Quality/QualityScorecard';
-import { Send, Loader } from 'lucide-react';
+import { Send, Loader, RotateCcw } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
 export default function ChatInterface({ sessionId }) {
@@ -15,7 +15,7 @@ export default function ChatInterface({ sessionId }) {
   const session = sessions.find(s => s.id === sessionId);
   const {
     messages, setMessages, status, errorMessage, pendingPermission,
-    streamEvents, sendMessage, approvePermission
+    streamEvents, sendMessage, approvePermission, resuming
   } = useWebSocket(sessionId);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
@@ -38,7 +38,9 @@ export default function ChatInterface({ sessionId }) {
     loadMessages();
   }, [sessionId]);
 
-  const isDisabled = status === 'ended' || status === 'error';
+  // Only truly disabled on error — ended sessions can be resumed
+  const isDisabled = status === 'error';
+  const isEnded = status === 'ended';
 
   const handleSend = () => {
     const text = input.trim();
@@ -61,7 +63,6 @@ export default function ChatInterface({ sessionId }) {
 
   const handleTextareaChange = (e) => {
     setInput(e.target.value);
-    // Auto-resize
     const ta = e.target;
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
@@ -86,6 +87,14 @@ export default function ChatInterface({ sessionId }) {
         <QualityScorecard sessionId={sessionId} />
       </div>
 
+      {/* Resume Indicator */}
+      {resuming && (
+        <div className={styles.resumeIndicator}>
+          <RotateCcw size={14} className="animate-spin" />
+          <span>Restoring session context…</span>
+        </div>
+      )}
+
       {/* Messages */}
       <MessageList messages={messages} loading={loading} streamEvents={streamEvents} />
 
@@ -98,7 +107,7 @@ export default function ChatInterface({ sessionId }) {
         />
       )}
 
-      {/* Input */}
+      {/* Input — always active for ended sessions (triggers resume) */}
       <div className={styles.inputArea}>
         <div className={styles.inputWrapper}>
           <textarea
@@ -110,8 +119,8 @@ export default function ChatInterface({ sessionId }) {
             placeholder={
               status === 'error'
                 ? `Session failed to start: ${errorMessage || 'unknown error'}`
-                : status === 'ended'
-                  ? 'Session has ended'
+                : isEnded
+                  ? 'Type a message to resume this session...'
                   : 'Send a message... (Enter to send, Shift+Enter for new line)'
             }
             disabled={isDisabled}
@@ -122,7 +131,12 @@ export default function ChatInterface({ sessionId }) {
             onClick={handleSend}
             disabled={!input.trim() || isDisabled}
           >
-            {status === 'working' ? <Loader size={16} className="animate-spin" /> : <Send size={16} />}
+            {status === 'working' || resuming
+              ? <Loader size={16} className="animate-spin" />
+              : isEnded
+                ? <RotateCcw size={16} />
+                : <Send size={16} />
+            }
           </button>
         </div>
       </div>

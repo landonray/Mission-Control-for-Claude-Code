@@ -80,3 +80,15 @@
   padding: 8px 12px;
   flex-shrink: 0;
 }
+
+.resumeIndicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 13px;
+  flex-shrink: 0;
+}

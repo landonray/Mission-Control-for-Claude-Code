@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { getSession, activeSessions } = require('./services/sessionManager');
+const { getSession, activeSessions, resumeSession } = require('./services/sessionManager');
 const { watchDirectory, unwatchDirectory } = require('./services/fileWatcher');
 const { sendNotification } = require('./services/notificationService');
 
@@ -38,11 +38,14 @@ function setupWebSocket(server) {
               timestamp: new Date().toISOString()
             });
           } else {
-            // Session not in memory (e.g. server restarted) — report as ended
+            // Session not in memory — check DB for its status
+            const { getDb } = require('./database');
+            const dbSession = getDb().prepare('SELECT status FROM sessions WHERE id = ?').get(msg.sessionId);
             safeSend(ws, {
               type: 'session_status',
               sessionId: msg.sessionId,
-              status: 'ended',
+              status: dbSession ? dbSession.status : 'ended',
+              resumable: true, // Ended sessions can be resumed by sending a message
               timestamp: new Date().toISOString()
             });
           }
@@ -128,16 +131,45 @@ function handleMessage(ws, msg, state) {
 
     case 'send_message':
       if (msg.sessionId && msg.content) {
-        const session = getSession(msg.sessionId);
+        let session = getSession(msg.sessionId);
         if (session) {
           session.sendMessage(msg.content);
         } else {
-          safeSend(ws, {
-            type: 'error',
-            sessionId: msg.sessionId,
-            error: 'Session is no longer running. Create a new session to continue.',
-            timestamp: new Date().toISOString()
-          });
+          // Session not in memory — attempt to resume it
+          const { getDb } = require('./database');
+          const dbSession = getDb().prepare('SELECT id FROM sessions WHERE id = ?').get(msg.sessionId);
+          if (dbSession) {
+            // Notify client that we're resuming
+            safeSend(ws, {
+              type: 'session_resuming',
+              sessionId: msg.sessionId,
+              timestamp: new Date().toISOString()
+            });
+
+            const resumed = resumeSession(msg.sessionId, msg.content);
+            if (resumed) {
+              // Resubscribe to the new session process
+              if (state.sessionUnsubscribe) state.sessionUnsubscribe();
+              state.sessionUnsubscribe = resumed.addListener((event) => {
+                safeSend(ws, event);
+                handleNotifications(event);
+              });
+            } else {
+              safeSend(ws, {
+                type: 'error',
+                sessionId: msg.sessionId,
+                error: 'Failed to resume session.',
+                timestamp: new Date().toISOString()
+              });
+            }
+          } else {
+            safeSend(ws, {
+              type: 'error',
+              sessionId: msg.sessionId,
+              error: 'Session not found.',
+              timestamp: new Date().toISOString()
+            });
+          }
         }
       }
       break;

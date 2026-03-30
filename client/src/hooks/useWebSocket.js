@@ -6,6 +6,7 @@ export function useWebSocket(sessionId) {
   const [errorMessage, setErrorMessage] = useState(null);
   const [pendingPermission, setPendingPermission] = useState(null);
   const [streamEvents, setStreamEvents] = useState([]);
+  const [resuming, setResuming] = useState(false);
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -34,7 +35,16 @@ export function useWebSocket(sessionId) {
             }
             break;
 
+          case 'session_resuming':
+            setResuming(true);
+            setStatus('working');
+            break;
+
           case 'stream_event':
+            // First stream event after resume means context is restored
+            if (resuming) {
+              setResuming(false);
+            }
             setStatus(data.status);
             setStreamEvents(prev => [...prev, data.event]);
 
@@ -64,7 +74,6 @@ export function useWebSocket(sessionId) {
               setPendingPermission(data.event);
             }
 
-            // 'result' event is not added as a message — text already shown via 'assistant' event
             break;
 
           case 'user_message':
@@ -81,6 +90,7 @@ export function useWebSocket(sessionId) {
 
           case 'session_ended':
             setStatus('ended');
+            setResuming(false);
             break;
 
           case 'session_paused':
@@ -93,6 +103,7 @@ export function useWebSocket(sessionId) {
 
           case 'error':
             setStatus('error');
+            setResuming(false);
             if (data.error) {
               setErrorMessage(data.error);
             }
@@ -137,6 +148,7 @@ export function useWebSocket(sessionId) {
     pendingPermission,
     streamEvents,
     sendMessage,
-    approvePermission
+    approvePermission,
+    resuming
   };
 }

@@ -16,7 +16,7 @@ export default function Dashboard() {
   }, [loadSessions]);
 
   const activeSessions = sessions.filter(s => s.status !== 'ended');
-  const recentSessions = sessions.filter(s => s.status === 'ended').slice(0, 10);
+  const endedSessions = sessions.filter(s => s.status === 'ended');
 
   return (
     <div className={styles.dashboard}>
@@ -47,11 +47,12 @@ export default function Dashboard() {
         </section>
       )}
 
-      {recentSessions.length > 0 && (
+      {endedSessions.length > 0 && (
         <section className={styles.section}>
-          <h2>Recent Sessions</h2>
+          <h2>Previous Sessions</h2>
+          <p className={styles.sectionHint}>Click any session to view history or resume the conversation</p>
           <div className={styles.grid}>
-            {recentSessions.map(session => (
+            {endedSessions.map(session => (
               <SessionCard
                 key={session.id}
                 session={session}

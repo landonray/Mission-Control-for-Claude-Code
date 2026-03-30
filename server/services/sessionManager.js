@@ -1,9 +1,26 @@
-const { spawn } = require('child_process');
+const { spawn, execSync, execFile } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const treeKill = require('tree-kill');
+const fs = require('fs');
+const path = require('path');
 const { getDb } = require('../database');
 
 const activeSessions = new Map();
+
+// Check if tmux is available on the system
+let tmuxAvailable = false;
+try {
+  execSync('which tmux', { stdio: 'ignore' });
+  tmuxAvailable = true;
+} catch (e) {
+  console.warn('WARNING: tmux not found. Sessions will not survive server restarts.');
+}
+
+// Directory for tmux output files
+const TMUX_OUTPUT_DIR = path.join(__dirname, '..', '..', '.tmux-outputs');
+if (tmuxAvailable) {
+  try { fs.mkdirSync(TMUX_OUTPUT_DIR, { recursive: true }); } catch (e) {}
+}
 
 class SessionProcess {
   constructor(id, options = {}) {
@@ -19,7 +36,10 @@ class SessionProcess {
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
-    this.cliSessionId = null; // Tracks Claude CLI session ID for --resume
+    this.cliSessionId = null;
+    this.tmuxSessionName = options.tmuxSessionName || null;
+    this.outputTail = null; // file watcher for tmux output
+    this.resuming = false; // true when restoring context for a resumed session
   }
 
   addListener(callback) {
@@ -41,7 +61,6 @@ class SessionProcess {
     const db = getDb();
     const servers = {};
 
-    // Add explicitly requested MCP connections
     if (this.mcpConnections && this.mcpConnections.length > 0) {
       for (const mcpId of this.mcpConnections) {
         const mcpServer = db.prepare('SELECT * FROM mcp_servers WHERE id = ? OR name = ?').get(mcpId, mcpId);
@@ -57,7 +76,6 @@ class SessionProcess {
       }
     }
 
-    // Add auto-connect servers not already present
     const autoConnectServers = db.prepare('SELECT * FROM mcp_servers WHERE auto_connect = 1').all();
     for (const server of autoConnectServers) {
       if (!servers[server.name]) {
@@ -91,26 +109,161 @@ class SessionProcess {
       '--verbose'
     ];
 
-    // Resume existing CLI session or start a new one
     if (this.cliSessionId) {
       args.push('--resume', this.cliSessionId);
     }
 
     args.push('--permission-mode', this.permissionMode || 'acceptEdits');
 
-    // MCP server connections
     const mcpConfig = this.buildMcpConfig();
     if (mcpConfig) {
       args.push('--mcp-config', JSON.stringify(mcpConfig));
     }
 
-    // The prompt is passed as a positional argument
     args.push(prompt);
 
     return args;
   }
 
+  getOutputFilePath() {
+    return path.join(TMUX_OUTPUT_DIR, `${this.id}.jsonl`);
+  }
+
+  getTmuxName() {
+    if (!this.tmuxSessionName) {
+      this.tmuxSessionName = `mc-${this.id.substring(0, 8)}`;
+      const db = getDb();
+      db.prepare('UPDATE sessions SET tmux_session_name = ? WHERE id = ?').run(this.tmuxSessionName, this.id);
+    }
+    return this.tmuxSessionName;
+  }
+
   spawnProcess(prompt) {
+    if (tmuxAvailable) {
+      this.spawnTmuxProcess(prompt);
+    } else {
+      this.spawnDirectProcess(prompt);
+    }
+  }
+
+  spawnTmuxProcess(prompt) {
+    const tmuxName = this.getTmuxName();
+    const outputFile = this.getOutputFilePath();
+    const args = this.buildArgs(prompt);
+
+    // Ensure output file exists
+    try { fs.writeFileSync(outputFile, '', { flag: 'a' }); } catch (e) {}
+
+    // Build the claude command. We pipe stdout to a file so Mission Control can tail it.
+    const escapedArgs = args.map(a => {
+      // Shell-escape each argument
+      return `'${a.replace(/'/g, "'\\''")}'`;
+    }).join(' ');
+
+    const cwd = this.workingDirectory || process.cwd();
+    const claudeCmd = `cd '${cwd.replace(/'/g, "'\\''")}' && FORCE_COLOR=0 claude ${escapedArgs} >> '${outputFile.replace(/'/g, "'\\''")}' 2>&1; echo '{"type":"__process_exited__"}' >> '${outputFile.replace(/'/g, "'\\''")}'`;
+
+    try {
+      // Kill existing tmux session if it exists (stale)
+      try { execSync(`tmux kill-session -t ${tmuxName} 2>/dev/null`, { stdio: 'ignore' }); } catch (e) {}
+
+      // Create new tmux session running the claude command
+      execSync(`tmux new-session -d -s ${tmuxName} "${claudeCmd.replace(/"/g, '\\"')}"`, {
+        stdio: 'ignore'
+      });
+
+      // Mark process as running (we use a sentinel object since there's no direct child process)
+      this.process = { tmux: true, sessionName: tmuxName, killed: false };
+
+      // Start tailing the output file
+      this.startOutputTail(outputFile);
+
+    } catch (err) {
+      console.error(`Failed to create tmux session ${tmuxName}:`, err.message);
+      // Fall back to direct spawning
+      this.spawnDirectProcess(prompt);
+    }
+  }
+
+  startOutputTail(outputFile) {
+    // Track file position for reading new content
+    let filePos = 0;
+    try {
+      const stats = fs.statSync(outputFile);
+      filePos = stats.size;
+    } catch (e) {}
+
+    let partialLine = '';
+
+    const readNewContent = () => {
+      try {
+        const stats = fs.statSync(outputFile);
+        if (stats.size > filePos) {
+          const fd = fs.openSync(outputFile, 'r');
+          const buf = Buffer.alloc(stats.size - filePos);
+          fs.readSync(fd, buf, 0, buf.length, filePos);
+          fs.closeSync(fd);
+          filePos = stats.size;
+
+          const text = buf.toString();
+          partialLine += text;
+
+          const lines = partialLine.split('\n');
+          partialLine = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim()) {
+              if (line.trim() === '{"type":"__process_exited__"}') {
+                // Process exited inside tmux
+                this.handleTmuxProcessExit();
+                return;
+              }
+              this.handleOutputLine(line.trim());
+            }
+          }
+        }
+      } catch (e) {
+        // File may not exist yet or be briefly unavailable
+      }
+    };
+
+    // Poll the output file for new content
+    this.outputTail = setInterval(readNewContent, 100);
+
+    // Also do an immediate read
+    readNewContent();
+  }
+
+  stopOutputTail() {
+    if (this.outputTail) {
+      clearInterval(this.outputTail);
+      this.outputTail = null;
+    }
+  }
+
+  handleTmuxProcessExit() {
+    this.stopOutputTail();
+    this.process = null;
+
+    if (this.status !== 'error') {
+      this.status = 'idle';
+      this.updateDbStatus('idle');
+      this.broadcast({
+        type: 'session_status',
+        sessionId: this.id,
+        status: 'idle',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Process queued messages
+    if (this.messageQueue.length > 0) {
+      const nextMsg = this.messageQueue.shift();
+      setTimeout(() => this.sendMessage(nextMsg), 100);
+    }
+  }
+
+  spawnDirectProcess(prompt) {
     const args = this.buildArgs(prompt);
 
     this.process = spawn('claude', args, {
@@ -150,7 +303,6 @@ class SessionProcess {
 
     this.process.on('close', (code) => {
       this.process = null;
-      // Don't overwrite 'error' status — preserve the error message for the UI
       if (this.status !== 'error') {
         this.status = 'idle';
         this.updateDbStatus('idle');
@@ -181,10 +333,7 @@ class SessionProcess {
   }
 
   handleOutputLine(line) {
-    // Check for quality result markers in any output
     this.parseQualityResults(line);
-
-    // Check for dev server URLs in raw output
     this.detectDevServerUrl(line);
 
     try {
@@ -206,7 +355,6 @@ class SessionProcess {
 
     const url = match[0].replace('0.0.0.0', 'localhost');
 
-    // Only fire once per unique URL
     if (this._lastDetectedUrl === url) return;
     this._lastDetectedUrl = url;
 
@@ -229,7 +377,6 @@ class SessionProcess {
         this.status = 'working';
         this.updateDbStatus('working');
         if (event.message) {
-          // Extract text content from the message object
           let content;
           if (typeof event.message === 'string') {
             content = event.message;
@@ -276,7 +423,6 @@ class SessionProcess {
         break;
 
       case 'tool_result':
-        // Scan tool output for dev server URLs
         if (event.content) {
           const text = typeof event.content === 'string'
             ? event.content
@@ -292,7 +438,6 @@ class SessionProcess {
         break;
 
       case 'system':
-        // Capture the CLI session ID from init event for --resume
         if (event.subtype === 'init' && event.session_id) {
           this.cliSessionId = event.session_id;
         }
@@ -305,7 +450,6 @@ class SessionProcess {
             UPDATE sessions SET context_window_usage = ? WHERE id = ?
           `).run(usageRatio, this.id);
 
-          // Check for context warning notification
           const { sendNotification } = require('./notificationService');
           const settings = db.prepare('SELECT context_threshold FROM notification_settings WHERE id = 1').get();
           if (settings && usageRatio >= settings.context_threshold) {
@@ -319,7 +463,6 @@ class SessionProcess {
         break;
 
       case 'usage':
-        // Alternative event format for context tracking
         if (event.input_tokens || event.output_tokens) {
           const totalTokens = (event.input_tokens || 0) + (event.output_tokens || 0);
           const maxTokens = event.max_tokens || 200000;
@@ -331,11 +474,8 @@ class SessionProcess {
         break;
 
       case 'result':
-        // Don't insert message here — already handled by 'assistant' event
-        // Process queued messages after this turn completes
         if (this.messageQueue.length > 0) {
           const nextMsg = this.messageQueue.shift();
-          // Wait for process to fully close before starting next
           setTimeout(() => this.sendMessage(nextMsg), 100);
         }
         break;
@@ -380,20 +520,26 @@ class SessionProcess {
       timestamp: new Date().toISOString()
     });
 
-    // Spawn a new claude process for this message
     this.spawnProcess(text);
   }
 
   respondToPermission(approved) {
     if (!this.process || !this.pendingPermission) return;
 
-    // With --input-format stream-json, permission responses are JSON
-    const response = JSON.stringify({
-      type: 'permission_response',
-      id: this.pendingPermission.id || this.pendingPermission.tool_use_id,
-      approved
-    }) + '\n';
-    this.process.stdin.write(response);
+    if (this.process.tmux) {
+      // For tmux sessions, send the permission response via tmux send-keys
+      // This won't work with stream-json permission flow in tmux mode
+      // since we don't have direct stdin access. For now, we log a warning.
+      console.warn('Permission responses in tmux mode are not yet fully supported.');
+    } else {
+      const response = JSON.stringify({
+        type: 'permission_response',
+        id: this.pendingPermission.id || this.pendingPermission.tool_use_id,
+        approved
+      }) + '\n';
+      this.process.stdin.write(response);
+    }
+
     this.pendingPermission = null;
     this.status = 'working';
     this.updateDbStatus('working');
@@ -408,7 +554,13 @@ class SessionProcess {
 
   pause() {
     if (this.process && !this.process.killed) {
-      this.process.kill('SIGTSTP');
+      if (this.process.tmux) {
+        try {
+          execSync(`tmux send-keys -t ${this.process.sessionName} C-z`, { stdio: 'ignore' });
+        } catch (e) {}
+      } else {
+        this.process.kill('SIGTSTP');
+      }
       this.status = 'paused';
       this.updateDbStatus('paused');
       this.broadcast({
@@ -421,7 +573,13 @@ class SessionProcess {
 
   resume() {
     if (this.process) {
-      this.process.kill('SIGCONT');
+      if (this.process.tmux) {
+        try {
+          execSync(`tmux send-keys -t ${this.process.sessionName} 'fg' Enter`, { stdio: 'ignore' });
+        } catch (e) {}
+      } else {
+        this.process.kill('SIGCONT');
+      }
       this.status = 'working';
       this.updateDbStatus('working');
       this.broadcast({
@@ -434,36 +592,45 @@ class SessionProcess {
 
   async end() {
     this.messageQueue = [];
+    this.stopOutputTail();
+
     if (this.process && !this.process.killed) {
-      return new Promise((resolve) => {
-        this.process.on('close', () => {
-          this.status = 'ended';
-          this.updateDbStatus('ended');
-          this.broadcast({
-            type: 'session_ended',
-            sessionId: this.id,
-            timestamp: new Date().toISOString()
+      if (this.process.tmux) {
+        // Kill the tmux session
+        const tmuxName = this.process.sessionName;
+        this.process.killed = true;
+        this.process = null;
+        try {
+          execSync(`tmux kill-session -t ${tmuxName}`, { stdio: 'ignore' });
+        } catch (e) {}
+      } else {
+        return new Promise((resolve) => {
+          this.process.on('close', () => {
+            this.process = null;
+            this.finishEnd();
+            resolve();
           });
-          this.generateSummary();
-          resolve();
+          treeKill(this.process.pid, 'SIGTERM');
         });
-        treeKill(this.process.pid, 'SIGTERM');
-      });
-    } else {
-      this.status = 'ended';
-      this.updateDbStatus('ended');
-      this.broadcast({
-        type: 'session_ended',
-        sessionId: this.id,
-        timestamp: new Date().toISOString()
-      });
-      this.generateSummary();
+      }
     }
+
+    this.finishEnd();
+  }
+
+  finishEnd() {
+    this.status = 'ended';
+    this.updateDbStatus('ended');
+    this.broadcast({
+      type: 'session_ended',
+      sessionId: this.id,
+      timestamp: new Date().toISOString()
+    });
+    this.generateSummary();
   }
 
   updateDbStatus(status) {
     const db = getDb();
-    const updates = { status };
     if (status === 'ended') {
       db.prepare(`
         UPDATE sessions SET status = ?, ended_at = datetime('now'), last_activity_at = datetime('now')
@@ -478,7 +645,6 @@ class SessionProcess {
   }
 
   parseQualityResults(text) {
-    // Look for QUALITY_RESULT markers from prompt/agent hooks
     const pattern = /QUALITY_RESULT:(\S+):(\w+):(PASS|FAIL)(?::(.*))?/g;
     let match;
     while ((match = pattern.exec(text)) !== null) {
@@ -496,9 +662,7 @@ class SessionProcess {
           severity,
           details || null
         );
-      } catch (e) {
-        // Ignore DB errors for quality results
-      }
+      } catch (e) {}
     }
   }
 
@@ -529,7 +693,6 @@ class SessionProcess {
       }
     }
 
-    // Build transcript for LLM summarization (truncated)
     const transcript = messages
       .slice(-40)
       .map(m => `${m.role}: ${m.content.substring(0, 500)}`)
@@ -537,8 +700,6 @@ class SessionProcess {
 
     const summarizationPrompt = `Summarize this Claude Code session in 2-3 sentences. Focus on: what was accomplished, which files were changed, and what branch the work was on. Be concise and specific.\n\nTranscript:\n${transcript}`;
 
-    // Async LLM-based summary via Claude Code CLI (non-blocking)
-    const { execFile } = require('child_process');
     const cwd = this.workingDirectory || process.cwd();
 
     execFile('claude', [
@@ -554,7 +715,6 @@ class SessionProcess {
       if (!err && stdout && stdout.trim().length > 20) {
         this.saveSummary(db, stdout.trim(), keyActions, filesModified);
       } else {
-        // Fallback: heuristic summary
         this.saveFallbackSummary(db, messages, keyActions, filesModified);
       }
     });
@@ -589,6 +749,264 @@ class SessionProcess {
     );
   }
 }
+
+// --- Context Preamble for Session Resume ---
+
+function buildContextPreamble(sessionId) {
+  const db = getDb();
+
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!session) return null;
+
+  const parts = [];
+
+  // 1. Session summary (if available)
+  const summary = db.prepare(`
+    SELECT summary FROM session_summaries
+    WHERE session_id = ? ORDER BY created_at DESC LIMIT 1
+  `).get(sessionId);
+  if (summary) {
+    parts.push(`Session summary: ${summary.summary}`);
+  }
+
+  // 2. Original task (first user message)
+  const firstMessage = db.prepare(`
+    SELECT content FROM messages
+    WHERE session_id = ? AND role = 'user'
+    ORDER BY timestamp ASC LIMIT 1
+  `).get(sessionId);
+  if (firstMessage) {
+    parts.push(`The original task was: ${firstMessage.content.substring(0, 500)}`);
+  }
+
+  // 3. Key decisions (user messages that contain directives)
+  const allUserMessages = db.prepare(`
+    SELECT content FROM messages
+    WHERE session_id = ? AND role = 'user'
+    ORDER BY timestamp ASC
+  `).all(sessionId);
+
+  const keyDecisions = allUserMessages
+    .filter(m => {
+      const lower = m.content.toLowerCase();
+      return lower.includes('instead') || lower.includes('actually') ||
+        lower.includes('change') || lower.includes('don\'t') ||
+        lower.includes('make sure') || lower.includes('always') ||
+        lower.includes('never') || lower.includes('use ') ||
+        lower.includes('switch') || lower.includes('prefer');
+    })
+    .slice(0, 5)
+    .map(m => m.content.substring(0, 200));
+
+  if (keyDecisions.length > 0) {
+    parts.push(`Key decisions made: ${keyDecisions.join(' | ')}`);
+  }
+
+  // 4. Files modified
+  const summaryRecord = db.prepare(`
+    SELECT files_modified FROM session_summaries
+    WHERE session_id = ? ORDER BY created_at DESC LIMIT 1
+  `).get(sessionId);
+  if (summaryRecord && summaryRecord.files_modified) {
+    try {
+      const files = JSON.parse(summaryRecord.files_modified);
+      if (files.length > 0) {
+        parts.push(`Files modified: ${files.slice(0, 20).join(', ')}`);
+      }
+    } catch (e) {}
+  }
+
+  // 5. Last 5 exchanges
+  const recentMessages = db.prepare(`
+    SELECT role, content FROM messages
+    WHERE session_id = ?
+    ORDER BY timestamp DESC LIMIT 10
+  `).all(sessionId);
+
+  if (recentMessages.length > 0) {
+    const exchanges = recentMessages
+      .reverse()
+      .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content.substring(0, 300)}`)
+      .join('\n');
+    parts.push(`Last exchanges:\n${exchanges}`);
+  }
+
+  // 6. Current git state
+  let gitStatus = '';
+  try {
+    if (session.working_directory) {
+      const cwd = session.working_directory.replace(/^~/, process.env.HOME || '');
+      gitStatus = execSync('git status --short 2>/dev/null && echo "---" && git branch --show-current 2>/dev/null', {
+        cwd,
+        encoding: 'utf-8',
+        timeout: 5000
+      }).trim();
+    }
+  } catch (e) {}
+
+  if (gitStatus) {
+    parts.push(`Current git status:\n${gitStatus}`);
+  }
+
+  const preamble = `CONTEXT RECOVERY: You are resuming a previous session. Here is the context from that session:\n\n${parts.join('\n\n')}\n\nThe user's new message follows.`;
+
+  return preamble;
+}
+
+// --- Resume a closed session ---
+
+function resumeSession(sessionId, newMessage) {
+  const db = getDb();
+  const sessionRow = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  if (!sessionRow) return null;
+
+  // Build context preamble
+  const preamble = buildContextPreamble(sessionId);
+
+  // Create a new SessionProcess for this session ID
+  const session = new SessionProcess(sessionId, {
+    workingDirectory: sessionRow.working_directory,
+    permissionMode: sessionRow.permission_mode || 'acceptEdits',
+    mcpConnections: [],
+    tmuxSessionName: null // new tmux session for resumed session
+  });
+
+  session.resuming = true;
+
+  // Re-activate the session
+  activeSessions.set(sessionId, session);
+
+  // Update DB status
+  db.prepare(`
+    UPDATE sessions SET status = 'working', ended_at = NULL, last_activity_at = datetime('now')
+    WHERE id = ?
+  `).run(sessionId);
+
+  // Broadcast the resume event
+  session.broadcast({
+    type: 'session_resuming',
+    sessionId: sessionId,
+    timestamp: new Date().toISOString()
+  });
+
+  // Combine preamble + new message and send
+  const combinedPrompt = preamble
+    ? `${preamble}\n\nUser's new message: ${newMessage}`
+    : newMessage;
+
+  // Store the user message in DB
+  db.prepare(`
+    INSERT INTO messages (session_id, role, content, timestamp)
+    VALUES (?, 'user', ?, datetime('now'))
+  `).run(sessionId, newMessage);
+
+  db.prepare(`
+    UPDATE sessions SET
+      user_message_count = user_message_count + 1,
+      last_activity_at = datetime('now')
+    WHERE id = ?
+  `).run(sessionId);
+
+  session.status = 'working';
+  session.updateDbStatus('working');
+
+  session.broadcast({
+    type: 'user_message',
+    sessionId: sessionId,
+    content: newMessage,
+    timestamp: new Date().toISOString()
+  });
+
+  // Spawn the process with the combined prompt
+  session.spawnProcess(combinedPrompt);
+
+  return session;
+}
+
+// --- Tmux Session Recovery ---
+
+function recoverTmuxSessions() {
+  if (!tmuxAvailable) return;
+
+  console.log('Recovering tmux sessions...');
+
+  let tmuxSessions = [];
+  try {
+    const output = execSync('tmux list-sessions -F "#{session_name}" 2>/dev/null', {
+      encoding: 'utf-8'
+    }).trim();
+    tmuxSessions = output.split('\n').filter(s => s.startsWith('mc-'));
+  } catch (e) {
+    // No tmux sessions running
+    return;
+  }
+
+  if (tmuxSessions.length === 0) {
+    console.log('No tmux sessions to recover.');
+    return;
+  }
+
+  const db = getDb();
+
+  for (const tmuxName of tmuxSessions) {
+    // Find matching session in DB
+    const sessionRow = db.prepare('SELECT * FROM sessions WHERE tmux_session_name = ?').get(tmuxName);
+    if (!sessionRow) {
+      console.log(`  Orphan tmux session ${tmuxName} — no DB record, killing.`);
+      try { execSync(`tmux kill-session -t ${tmuxName}`, { stdio: 'ignore' }); } catch (e) {}
+      continue;
+    }
+
+    // Check if tmux session is still alive
+    let isAlive = false;
+    try {
+      execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`, { stdio: 'ignore' });
+      isAlive = true;
+    } catch (e) {}
+
+    if (!isAlive) continue;
+
+    console.log(`  Recovering session ${sessionRow.id} (tmux: ${tmuxName})`);
+
+    // Create a SessionProcess and reconnect
+    const session = new SessionProcess(sessionRow.id, {
+      workingDirectory: sessionRow.working_directory,
+      permissionMode: sessionRow.permission_mode || 'acceptEdits',
+      tmuxSessionName: tmuxName
+    });
+
+    // The tmux session may still be running a claude process
+    // We set it as active and start tailing the output
+    session.process = { tmux: true, sessionName: tmuxName, killed: false };
+
+    const outputFile = session.getOutputFilePath();
+    if (fs.existsSync(outputFile)) {
+      session.startOutputTail(outputFile);
+    }
+
+    // Determine if the session is idle or working
+    // If there's a claude process running in the tmux pane, it's working
+    let sessionStatus = 'idle';
+    try {
+      const paneCmd = execSync(`tmux display-message -p -t ${tmuxName} '#{pane_current_command}'`, {
+        encoding: 'utf-8'
+      }).trim();
+      if (paneCmd === 'claude' || paneCmd === 'node') {
+        sessionStatus = 'working';
+      }
+    } catch (e) {}
+
+    session.status = sessionStatus;
+    session.updateDbStatus(sessionStatus);
+
+    activeSessions.set(sessionRow.id, session);
+    console.log(`  Recovered session ${sessionRow.id} as ${sessionStatus}`);
+  }
+
+  console.log(`Recovered ${activeSessions.size} tmux sessions.`);
+}
+
+// --- Session CRUD ---
 
 function createSession(options = {}) {
   const db = getDb();
@@ -639,5 +1057,8 @@ module.exports = {
   getSession,
   getAllActiveSessions,
   endSession,
-  activeSessions
+  resumeSession,
+  recoverTmuxSessions,
+  activeSessions,
+  tmuxAvailable
 };

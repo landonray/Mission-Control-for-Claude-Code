@@ -2,9 +2,9 @@ const express = require('express');
 const path = require('path');
 const router = express.Router();
 const { getDb } = require('../database');
-const { createSession, getSession, getAllActiveSessions, endSession } = require('../services/sessionManager');
+const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
 
-// List all sessions (active + recent)
+// List all sessions (active + recent + ended — unified view)
 router.get('/', (req, res) => {
   const db = getDb();
   const limit = parseInt(req.query.limit) || 50;
@@ -22,14 +22,15 @@ router.get('/', (req, res) => {
   const active = getAllActiveSessions();
 
   // Reconcile stale statuses: if a session shows non-ended in DB
-  // but is no longer tracked in memory, mark it as ended
+  // but is no longer tracked in memory, mark it as ended.
+  // Skip sessions that have a tmux_session_name — they may still be running in tmux.
   const updateStale = db.prepare(
     "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?"
   );
   const activeIds = new Set(active.map(a => a.id));
 
   const enriched = sessions.map(s => {
-    const isStale = s.status !== 'ended' && !activeIds.has(s.id);
+    const isStale = s.status !== 'ended' && !activeIds.has(s.id) && !s.tmux_session_name;
     if (isStale) {
       updateStale.run(s.id);
       s.status = 'ended';
@@ -43,7 +44,8 @@ router.get('/', (req, res) => {
       project_name: projectName,
       isActive: !!activeInfo,
       pendingPermission: activeInfo?.pendingPermission || null,
-      archived: !!s.archived
+      archived: !!s.archived,
+      resumable: s.status === 'ended' // All ended sessions are resumable
     };
   });
 
@@ -61,14 +63,15 @@ router.get('/:id', (req, res) => {
 
   const activeSession = getSession(req.params.id);
 
-  // Reconcile stale status
-  if (session.status !== 'ended' && !activeSession) {
+  // Reconcile stale status — skip tmux sessions
+  if (session.status !== 'ended' && !activeSession && !session.tmux_session_name) {
     db.prepare("UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?").run(req.params.id);
     session.status = 'ended';
   }
 
   session.isActive = !!activeSession;
   session.pendingPermission = activeSession?.pendingPermission || null;
+  session.resumable = session.status === 'ended';
 
   res.json(session);
 });
@@ -111,11 +114,28 @@ router.post('/', (req, res) => {
   }
 });
 
-// Send message to session
+// Send message to session (auto-resumes ended sessions)
 router.post('/:id/message', (req, res) => {
-  const session = getSession(req.params.id);
+  let session = getSession(req.params.id);
+
   if (!session) {
-    return res.status(404).json({ error: 'Session not found or not active' });
+    // Session not in memory — check if it exists in DB for resume
+    const db = getDb();
+    const dbSession = db.prepare('SELECT id FROM sessions WHERE id = ?').get(req.params.id);
+    if (!dbSession) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Resume the session
+    try {
+      session = resumeSession(req.params.id, req.body.content);
+      if (!session) {
+        return res.status(500).json({ error: 'Failed to resume session' });
+      }
+      return res.json({ success: true, resumed: true });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   try {

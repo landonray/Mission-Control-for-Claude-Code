@@ -16,6 +16,10 @@ app.use(express.json());
 // Initialize database
 getDb();
 
+// Recover tmux sessions from previous server lifetime
+const { recoverTmuxSessions } = require('./services/sessionManager');
+recoverTmuxSessions();
+
 // API Routes
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/files', require('./routes/files'));
@@ -53,11 +57,20 @@ server.listen(PORT, '0.0.0.0', () => {
 function shutdown(signal) {
   console.log(`\n${signal} received. Shutting down gracefully...`);
 
-  // End all active sessions
-  const { activeSessions } = require('./services/sessionManager');
+  const { activeSessions, tmuxAvailable } = require('./services/sessionManager');
+
+  // Detach from active sessions without killing them
+  // Tmux sessions survive server restarts; direct-process sessions get ended
   for (const [id, session] of activeSessions) {
-    console.log(`  Ending session ${id}...`);
-    session.end().catch(() => {});
+    if (session.process && session.process.tmux) {
+      // Tmux session: just stop tailing output, don't kill the tmux session
+      console.log(`  Detaching from tmux session ${id} (will survive restart)...`);
+      session.stopOutputTail();
+    } else if (session.process) {
+      // Direct process: must be ended since it's a child of this server
+      console.log(`  Ending direct-process session ${id}...`);
+      session.end().catch(() => {});
+    }
   }
 
   // Close server
@@ -67,7 +80,7 @@ function shutdown(signal) {
       const db = getDb();
       db.close();
     } catch (e) {}
-    console.log('Server closed.');
+    console.log('Server closed. Tmux sessions remain running.');
     process.exit(0);
   });
 
