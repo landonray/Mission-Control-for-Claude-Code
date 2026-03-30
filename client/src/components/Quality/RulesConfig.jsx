@@ -18,6 +18,7 @@ const hookTypeLabels = {
   command: 'Command',
   prompt: 'Prompt',
   agent: 'Agent',
+  'command+prompt': 'Command + Prompt',
 };
 
 const severityColors = {
