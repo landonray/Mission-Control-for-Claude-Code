@@ -21,7 +21,19 @@ router.get('/', (req, res) => {
   const sessions = db.prepare(query).all(...params);
   const active = getAllActiveSessions();
 
+  // Reconcile stale statuses: if a session shows non-ended in DB
+  // but is no longer tracked in memory, mark it as ended
+  const updateStale = db.prepare(
+    "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?"
+  );
+  const activeIds = new Set(active.map(a => a.id));
+
   const enriched = sessions.map(s => {
+    const isStale = s.status !== 'ended' && !activeIds.has(s.id);
+    if (isStale) {
+      updateStale.run(s.id);
+      s.status = 'ended';
+    }
     const activeInfo = active.find(a => a.id === s.id);
     const projectName = s.working_directory
       ? path.basename(s.working_directory)
@@ -48,6 +60,13 @@ router.get('/:id', (req, res) => {
   }
 
   const activeSession = getSession(req.params.id);
+
+  // Reconcile stale status
+  if (session.status !== 'ended' && !activeSession) {
+    db.prepare("UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?").run(req.params.id);
+    session.status = 'ended';
+  }
+
   session.isActive = !!activeSession;
   session.pendingPermission = activeSession?.pendingPermission || null;
 
