@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import SessionCard from './SessionCard';
 import NewSessionModal from './NewSessionModal';
-import { Plus, RefreshCw, Filter } from 'lucide-react';
+import { Plus, RefreshCw, Filter, Rocket, Terminal } from 'lucide-react';
 import styles from './Dashboard.module.css';
 
 export default function Dashboard() {
@@ -117,10 +117,13 @@ export default function Dashboard() {
         <div className="empty-state">
           {sessions.length === 0 ? (
             <>
+              <div className={styles.emptyIcon}>
+                <Rocket size={32} />
+              </div>
               <h3>No Sessions Yet</h3>
-              <p>Create your first Claude Code session to get started</p>
-              <button className="btn btn-primary" onClick={() => setShowNewSession(true)} style={{ marginTop: 16 }}>
-                <Plus size={16} /> New Session
+              <p>Launch your first Claude Code session and start building</p>
+              <button className={`btn btn-primary ${styles.launchBtn}`} onClick={() => setShowNewSession(true)}>
+                <Terminal size={16} /> Launch Session
               </button>
             </>
           ) : (

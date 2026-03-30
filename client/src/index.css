@@ -97,16 +97,24 @@ a:hover {
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
-  transition: all 0.15s ease;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  letter-spacing: 0.01em;
 }
 
 .btn-primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent) 0%, #0ea5e9 100%);
   color: var(--bg-primary);
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.25);
 }
 .btn-primary:hover {
-  background: var(--accent-hover);
+  background: linear-gradient(135deg, var(--accent-hover) 0%, #38bdf8 100%);
+  box-shadow: 0 4px 16px rgba(56, 189, 248, 0.35);
+  transform: translateY(-1px);
+}
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(56, 189, 248, 0.2);
 }
 
 .btn-secondary {
@@ -141,6 +149,9 @@ a:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
 }
+.btn-ghost:active {
+  transform: scale(0.95);
+}
 
 .btn-sm {
   padding: 4px 10px;
@@ -148,7 +159,7 @@ a:hover {
 }
 
 .btn-icon {
-  padding: 6px;
+  padding: 8px;
   border-radius: var(--radius);
 }
 
@@ -182,11 +193,12 @@ textarea.input {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 16px;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
 .card:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow);
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(56, 189, 248, 0.1);
+  transform: translateY(-1px);
 }
 .card-clickable {
   cursor: pointer;
@@ -310,7 +322,7 @@ textarea.input {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 24px;
+  padding: 64px 24px;
   text-align: center;
   color: var(--text-muted);
 }
@@ -323,9 +335,24 @@ textarea.input {
 }
 
 .empty-state h3 {
-  font-size: 16px;
+  font-size: 20px;
+  font-weight: 700;
   margin-bottom: 8px;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.empty-state p {
+  font-size: 14px;
   color: var(--text-secondary);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.empty-state .btn-primary {
+  padding: 12px 28px;
+  font-size: 15px;
+  border-radius: var(--radius-lg);
 }
 
 /* Diff styles */
@@ -366,6 +393,16 @@ textarea.input {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes glow-ring {
+  0%, 100% { box-shadow: 0 0 20px rgba(56, 189, 248, 0.1), 0 0 60px rgba(56, 189, 248, 0.05); }
+  50% { box-shadow: 0 0 30px rgba(56, 189, 248, 0.2), 0 0 80px rgba(56, 189, 248, 0.08); }
 }
 
 .animate-pulse {

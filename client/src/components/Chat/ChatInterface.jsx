@@ -7,7 +7,7 @@ import PermissionPrompt from './PermissionPrompt';
 import SessionControls from './SessionControls';
 import ContextIndicator from './ContextIndicator';
 import QualityScorecard from '../Quality/QualityScorecard';
-import { Send, Loader, RotateCcw, Pencil, Check, X } from 'lucide-react';
+import { Send, Loader, RotateCcw, Pencil, Check, X, GitBranch } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
 export default function ChatInterface({ sessionId }) {
@@ -128,6 +128,12 @@ export default function ChatInterface({ sessionId }) {
               <h2 className={styles.title}>{session?.name || 'Session'}</h2>
               <Pencil size={12} className={styles.editIcon} />
             </div>
+          )}
+          {session?.worktree_name && (
+            <span className="badge" title="Worktree" style={{ gap: 4, display: 'inline-flex', alignItems: 'center' }}>
+              <GitBranch size={10} />
+              {session.worktree_name}
+            </span>
           )}
           <span className={`badge badge-${status}`}>{status}</span>
         </div>

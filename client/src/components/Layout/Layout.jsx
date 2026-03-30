@@ -138,7 +138,7 @@ export default function Layout() {
               />
             </div>
             {rightPanelMode === 'files' ? (
-              <FileBrowser directory={activeSession?.working_directory} />
+              <FileBrowser directory={activeSession?.working_directory} useWorktree={!!activeSession?.use_worktree} />
             ) : (
               <PreviewPanel sessionId={sessionId} />
             )}

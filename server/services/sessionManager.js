@@ -1142,9 +1142,9 @@ function createSession(options = {}) {
   options.model = options.model || DEFAULT_MODEL;
 
   query(
-    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, created_at, last_activity_at)
-     VALUES ($1, $2, 'idle', $3, $4, $5, $6, NOW(), NOW())`,
-    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'acceptEdits', options.model || 'claude-opus-4-6']
+    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, created_at, last_activity_at)
+     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, NOW(), NOW())`,
+    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'acceptEdits', options.model || 'claude-opus-4-6', options.useWorktree ? 1 : 0]
   ).catch(e => console.error('Failed to create session in DB:', e.message));
 
   const session = new SessionProcess(id, options);

@@ -171,6 +171,8 @@ function getGitDiff(directory, options = {}) {
     let cmd;
     if (options.staged) {
       cmd = 'git diff --cached';
+    } else if (options.branch && options.file) {
+      cmd = `git diff ${options.branch} -- "${options.file}"`;
     } else if (options.branch) {
       cmd = `git diff ${options.branch}`;
     } else if (options.file) {

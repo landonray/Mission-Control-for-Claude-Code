@@ -9,11 +9,18 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
 }
 
 .header h1 {
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .actions {
@@ -91,6 +98,26 @@
 .filterActive {
   color: var(--accent) !important;
   background: rgba(56, 189, 248, 0.1) !important;
+}
+
+/* Empty state enhancements */
+.emptyIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(14, 165, 233, 0.08) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: var(--accent);
+  margin-bottom: 24px;
+  animation: float 3s ease-in-out infinite;
+  box-shadow: 0 0 30px rgba(56, 189, 248, 0.1);
+}
+
+.launchBtn {
+  margin-top: 24px;
 }
 
 @media (max-width: 768px) {

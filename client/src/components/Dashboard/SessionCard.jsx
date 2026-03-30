@@ -60,7 +60,13 @@ export default function SessionCard({ session, onClick, onArchive }) {
           <Wrench size={12} />
           <span>{session.tool_call_count || 0} tools</span>
         </div>
-        {session.branch && (
+        {session.worktree_name && (
+          <div className={styles.stat} title="Worktree">
+            <GitBranch size={12} />
+            <span>{session.worktree_name}</span>
+          </div>
+        )}
+        {!session.worktree_name && session.branch && (
           <div className={styles.stat}>
             <GitBranch size={12} />
             <span>{session.branch}</span>
