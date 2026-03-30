@@ -9,10 +9,6 @@ export default function CliPanel({ sessionId }) {
   const [atBottom, setAtBottom] = useState(true);
   const outputRef = useRef(null);
   const wsRef = useRef(null);
-  const atBottomRef = useRef(true);
-
-  // Keep ref in sync with state (needed inside WS closure)
-  atBottomRef.current = atBottom;
 
   useEffect(() => {
     if (!sessionId) return;
