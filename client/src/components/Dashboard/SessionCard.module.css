@@ -2,6 +2,36 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+/* Working sessions: green throbbing outline */
+.cardWorking {
+  border-color: var(--success) !important;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.3);
+  animation: throbGreen 2s ease-in-out infinite;
+}
+
+/* Waiting sessions: yellow throbbing outline */
+.cardWaiting {
+  border-color: var(--warning) !important;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.3);
+  animation: throbYellow 2s ease-in-out infinite;
+}
+
+@keyframes throbGreen {
+  0%, 100% { box-shadow: 0 0 4px rgba(74, 222, 128, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(74, 222, 128, 0.5); }
+}
+
+@keyframes throbYellow {
+  0%, 100% { box-shadow: 0 0 4px rgba(251, 191, 36, 0.2); }
+  50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5); }
+}
+
+/* Archived card dimmed */
+.cardArchived {
+  opacity: 0.6;
 }
 
 .header {
@@ -79,6 +109,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px;
 }
 
 .time {
@@ -87,4 +118,23 @@
   gap: 4px;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.archiveBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.archiveBtn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }

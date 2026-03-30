@@ -47,6 +47,52 @@
   gap: 12px;
 }
 
+/* Filter bar */
+.filterBar {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.filterToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.filterToggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.filterLabel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.filterCount {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.filterActive {
+  color: var(--accent) !important;
+  background: rgba(56, 189, 248, 0.1) !important;
+}
+
 @media (max-width: 768px) {
   .dashboard {
     padding: 16px;

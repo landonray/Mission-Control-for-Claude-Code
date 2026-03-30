@@ -1,15 +1,23 @@
 import React from 'react';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
-import { MessageSquare, Wrench, GitBranch, Clock, Activity, Cpu } from 'lucide-react';
+import { MessageSquare, Wrench, GitBranch, Clock, Activity, Cpu, Archive, ArchiveRestore } from 'lucide-react';
 import QualityScorecard from '../Quality/QualityScorecard';
 import styles from './SessionCard.module.css';
 
-export default function SessionCard({ session, onClick }) {
+export default function SessionCard({ session, onClick, onArchive }) {
   const contextLevel = getContextHealthLevel(session.context_window_usage || 0);
   const contextPercent = Math.round((session.context_window_usage || 0) * 100);
 
+  const cardClass = [
+    'card card-clickable',
+    styles.card,
+    session.status === 'working' ? styles.cardWorking : '',
+    session.status === 'waiting' ? styles.cardWaiting : '',
+    session.archived ? styles.cardArchived : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={`card card-clickable ${styles.card}`} onClick={onClick}>
+    <div className={cardClass} onClick={onClick}>
       <div className={styles.header}>
         <h3 className={styles.name}>{session.name}</h3>
         {session.model && session.model !== 'claude-opus-4-6' && (
@@ -18,9 +26,9 @@ export default function SessionCard({ session, onClick }) {
             {session.model.includes('sonnet') ? 'Sonnet' : session.model}
           </span>
         )}
-        <span className={`badge badge-${session.status}`}>
+        <span className={`badge badge-${session.archived ? 'ended' : session.status}`}>
           {session.status === 'working' && <Activity size={10} />}
-          {session.status}
+          {session.archived ? 'archived' : session.status}
         </span>
       </div>
 
@@ -70,6 +78,18 @@ export default function SessionCard({ session, onClick }) {
       </div>
 
       <div className={styles.footer}>
+        {(session.status === 'ended' || session.archived) && onArchive && (
+          <button
+            className={styles.archiveBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              onArchive(session.id, !session.archived);
+            }}
+            title={session.archived ? 'Unarchive session' : 'Archive session'}
+          >
+            {session.archived ? <ArchiveRestore size={12} /> : <Archive size={12} />}
+          </button>
+        )}
         <span className={styles.time}>
           <Clock size={11} />
           {timeAgo(session.last_activity_at)}
