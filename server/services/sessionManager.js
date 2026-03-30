@@ -17,6 +17,7 @@ class SessionProcess {
     this.mcpConnections = options.mcpConnections || [];
     this.initialPrompt = options.initialPrompt || null;
     this.useWorktree = options.useWorktree || false;
+    this.model = options.model || 'claude-opus-4-6';
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
@@ -102,6 +103,11 @@ class SessionProcess {
     }
 
     args.push('--permission-mode', this.permissionMode || 'acceptEdits');
+
+    // Model selection
+    if (this.model) {
+      args.push('--model', this.model);
+    }
 
     // MCP server connections
     const mcpConfig = this.buildMcpConfig();
@@ -595,21 +601,31 @@ class SessionProcess {
   }
 }
 
+const VALID_MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6'];
+const DEFAULT_MODEL = 'claude-opus-4-6';
+
 function createSession(options = {}) {
   const db = getDb();
   const id = uuidv4();
   const name = options.name || `Session ${new Date().toLocaleString()}`;
 
+  // Validate and normalize model
+  if (options.model && !VALID_MODELS.includes(options.model)) {
+    throw new Error(`Invalid model "${options.model}". Must be one of: ${VALID_MODELS.join(', ')}`);
+  }
+  options.model = options.model || DEFAULT_MODEL;
+
   db.prepare(`
-    INSERT INTO sessions (id, name, status, working_directory, branch, preset_id, permission_mode, created_at, last_activity_at)
-    VALUES (?, ?, 'idle', ?, ?, ?, ?, datetime('now'), datetime('now'))
+    INSERT INTO sessions (id, name, status, working_directory, branch, preset_id, permission_mode, model, created_at, last_activity_at)
+    VALUES (?, ?, 'idle', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `).run(
     id,
     name,
     options.workingDirectory || null,
     options.branch || null,
     options.presetId || null,
-    options.permissionMode || 'acceptEdits'
+    options.permissionMode || 'acceptEdits',
+    options.model || 'claude-opus-4-6'
   );
 
   const session = new SessionProcess(id, options);
@@ -644,5 +660,7 @@ module.exports = {
   getSession,
   getAllActiveSessions,
   endSession,
-  activeSessions
+  activeSessions,
+  VALID_MODELS,
+  DEFAULT_MODEL
 };

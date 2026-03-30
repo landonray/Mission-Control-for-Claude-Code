@@ -50,7 +50,7 @@ router.get('/', (req, res) => {
 
 // POST /api/projects/create — create folder + git init + gh repo + session
 router.post('/create', (req, res) => {
-  const { name, visibility = 'private' } = req.body;
+  const { name, visibility = 'private', model } = req.body;
 
   // Validate name
   if (!name || !/^[a-zA-Z0-9_-]+$/.test(name) || name.length > 100) {
@@ -111,8 +111,7 @@ router.post('/create', (req, res) => {
       name,
       workingDirectory: folderPath,
       permissionMode: 'acceptEdits',
-      autoAccept: false,
-      planMode: false,
+      model,
     });
     res.json({ sessionId: session.id });
   } catch (err) {

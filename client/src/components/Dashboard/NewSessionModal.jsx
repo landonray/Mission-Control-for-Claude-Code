@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
-import { X, Plus, GitBranch } from 'lucide-react';
+import { X, Plus, GitBranch, Cpu } from 'lucide-react';
 import PillSelector from '../common/PillSelector';
 import ProjectCard from './ProjectCard';
 import CreateProjectPanel from './CreateProjectPanel';
@@ -17,6 +17,7 @@ export default function NewSessionModal({ onClose }) {
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [useWorktree, setUseWorktree] = useState(true);
+  const [model, setModel] = useState('claude-opus-4-6');
   const [form, setForm] = useState({
     name: '',
     workingDirectory: '',
@@ -40,13 +41,14 @@ export default function NewSessionModal({ onClose }) {
     try {
       let session;
       if (project.preset) {
-        session = await api.post('/api/sessions', { presetId: project.preset.id, useWorktree });
+        session = await api.post('/api/sessions', { presetId: project.preset.id, useWorktree, model });
       } else {
         session = await api.post('/api/sessions', {
           name: project.name,
           workingDirectory: project.path,
           permissionMode: 'acceptEdits',
           useWorktree,
+          model,
         });
       }
       await loadSessions();
@@ -75,6 +77,7 @@ export default function NewSessionModal({ onClose }) {
         initialPrompt: form.initialPrompt || undefined,
         permissionMode: form.permissionMode,
         useWorktree,
+        model,
       });
       await loadSessions();
       navigate(`/session/${session.id}`);
@@ -100,6 +103,7 @@ export default function NewSessionModal({ onClose }) {
           <CreateProjectPanel
             onBack={() => setView('tabs')}
             onCreated={handleCreated}
+            model={model}
           />
         ) : (
           <>
@@ -131,6 +135,21 @@ export default function NewSessionModal({ onClose }) {
               >
                 <span className={styles.toggleKnob} />
               </button>
+            </div>
+
+            <div className={styles.modelSelector}>
+              <label className={styles.toggleLabel}>
+                <Cpu size={14} />
+                <span>Model</span>
+              </label>
+              <PillSelector
+                options={[
+                  { value: 'claude-opus-4-6', label: 'Opus' },
+                  { value: 'claude-sonnet-4-6', label: 'Sonnet' },
+                ]}
+                value={model}
+                onChange={setModel}
+              />
             </div>
 
             {mode === 'preset' && (

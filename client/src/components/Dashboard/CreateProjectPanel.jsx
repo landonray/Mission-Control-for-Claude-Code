@@ -10,7 +10,7 @@ const STATUS_MESSAGES = [
   'Starting session…',
 ];
 
-export default function CreateProjectPanel({ onBack, onCreated }) {
+export default function CreateProjectPanel({ onBack, onCreated, model }) {
   const [name, setName] = useState('');
   const [visibility, setVisibility] = useState('private');
   const [loading, setLoading] = useState(false);
@@ -44,6 +44,7 @@ export default function CreateProjectPanel({ onBack, onCreated }) {
       const { sessionId } = await api.post('/api/projects/create', {
         name: normalized,
         visibility,
+        model,
       });
       clearTimeout(timeout);
       clearInterval(interval);

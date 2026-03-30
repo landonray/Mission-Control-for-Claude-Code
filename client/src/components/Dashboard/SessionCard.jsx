@@ -1,6 +1,6 @@
 import React from 'react';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
-import { MessageSquare, Wrench, GitBranch, Clock, Activity } from 'lucide-react';
+import { MessageSquare, Wrench, GitBranch, Clock, Activity, Cpu } from 'lucide-react';
 import QualityScorecard from '../Quality/QualityScorecard';
 import styles from './SessionCard.module.css';
 
@@ -12,6 +12,12 @@ export default function SessionCard({ session, onClick }) {
     <div className={`card card-clickable ${styles.card}`} onClick={onClick}>
       <div className={styles.header}>
         <h3 className={styles.name}>{session.name}</h3>
+        {session.model && session.model !== 'claude-opus-4-6' && (
+          <span className={`badge ${styles.modelBadge}`}>
+            <Cpu size={10} />
+            {session.model.includes('sonnet') ? 'Sonnet' : session.model}
+          </span>
+        )}
         <span className={`badge badge-${session.status}`}>
           {session.status === 'working' && <Activity size={10} />}
           {session.status}
