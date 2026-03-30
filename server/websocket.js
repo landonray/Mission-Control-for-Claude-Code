@@ -18,10 +18,10 @@ function setupWebSocket(server) {
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        handleMessage(ws, msg, state);
+        await handleMessage(ws, msg, state);
 
         if (msg.type === 'subscribe_session') {
           const session = getSession(msg.sessionId);
@@ -146,49 +146,62 @@ async function handleMessage(ws, msg, state) {
       if (msg.sessionId && msg.content) {
         let session = getSession(msg.sessionId);
         if (session) {
-          session.sendMessage(msg.content).catch(err => {
+          try {
+            await session.sendMessage(msg.content, msg.attachments || null);
+          } catch (err) {
             console.error(`[WS] sendMessage failed for ${msg.sessionId.slice(0, 8)}:`, err.message);
             safeSend(ws, {
               type: 'error',
               sessionId: msg.sessionId,
-              error: `Failed to send message: ${err.message}`,
+              error: 'Failed to send message: ' + err.message,
               timestamp: new Date().toISOString()
             });
-          });
+          }
         } else {
           // Session not in memory — attempt to resume it
-          const { query: dbQuery } = require('./database');
-          const dbResult = await dbQuery('SELECT id FROM sessions WHERE id = $1', [msg.sessionId]);
-          const dbSession = dbResult.rows[0];
-          if (dbSession) {
-            // Notify client that we're resuming
-            safeSend(ws, {
-              type: 'session_resuming',
-              sessionId: msg.sessionId,
-              timestamp: new Date().toISOString()
-            });
-
-            const resumed = await resumeSession(msg.sessionId, msg.content);
-            if (resumed) {
-              // Resubscribe to the new session process
-              if (state.sessionUnsubscribe) state.sessionUnsubscribe();
-              state.sessionUnsubscribe = resumed.addListener((event) => {
-                safeSend(ws, event);
-                handleNotifications(event);
+          try {
+            const { query: dbQuery } = require('./database');
+            const dbResult = await dbQuery('SELECT id FROM sessions WHERE id = $1', [msg.sessionId]);
+            const dbSession = dbResult.rows[0];
+            if (dbSession) {
+              // Notify client that we're resuming
+              safeSend(ws, {
+                type: 'session_resuming',
+                sessionId: msg.sessionId,
+                timestamp: new Date().toISOString()
               });
+
+              // Add listener BEFORE resuming so we don't miss events
+              const resumed = await resumeSession(msg.sessionId, msg.content);
+              if (resumed) {
+                // Resubscribe to the new session process
+                if (state.sessionUnsubscribe) state.sessionUnsubscribe();
+                state.sessionUnsubscribe = resumed.addListener((event) => {
+                  safeSend(ws, event);
+                  handleNotifications(event);
+                });
+              } else {
+                safeSend(ws, {
+                  type: 'error',
+                  sessionId: msg.sessionId,
+                  error: 'Failed to resume session.',
+                  timestamp: new Date().toISOString()
+                });
+              }
             } else {
               safeSend(ws, {
                 type: 'error',
                 sessionId: msg.sessionId,
-                error: 'Failed to resume session.',
+                error: 'Session not found.',
                 timestamp: new Date().toISOString()
               });
             }
-          } else {
+          } catch (err) {
+            console.error('send_message resume error:', err.message);
             safeSend(ws, {
               type: 'error',
               sessionId: msg.sessionId,
-              error: 'Session not found.',
+              error: 'Failed to process message: ' + err.message,
               timestamp: new Date().toISOString()
             });
           }

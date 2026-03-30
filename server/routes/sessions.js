@@ -121,7 +121,7 @@ router.post('/:id/message', async (req, res) => {
 
     // Resume the session
     try {
-      session = resumeSession(req.params.id, req.body.content);
+      session = await resumeSession(req.params.id, req.body.content);
       if (!session) {
         return res.status(500).json({ error: 'Failed to resume session' });
       }
@@ -132,7 +132,7 @@ router.post('/:id/message', async (req, res) => {
   }
 
   try {
-    session.sendMessage(req.body.content);
+    await session.sendMessage(req.body.content);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -313,8 +313,9 @@ router.post('/cwd-update', async (req, res) => {
   }
 
   // Detect worktree name for worktree sessions
-  const sessionRow = (await query('SELECT use_worktree FROM sessions WHERE id = $1', [session_id])).rows[0];
-  if (sessionRow && sessionRow.use_worktree) {
+  const sessionResult = await query('SELECT use_worktree FROM sessions WHERE id = $1', [session_id]);
+  const session = sessionResult.rows[0];
+  if (session && session.use_worktree) {
     try {
       const resolvedDir = working_directory.replace(/^~/, process.env.HOME || '');
       const worktreeName = execSync('git worktree list --porcelain 2>/dev/null | head -1', {

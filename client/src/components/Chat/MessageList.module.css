@@ -116,3 +116,56 @@
 .toolIndicator svg {
   animation: spin 1s linear infinite;
 }
+
+/* Attachments in messages */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attachmentItem {
+  display: block;
+  text-decoration: none;
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: opacity 0.15s;
+}
+
+.attachmentItem:hover {
+  opacity: 0.85;
+}
+
+.attachmentImage {
+  max-width: 280px;
+  max-height: 200px;
+  border-radius: var(--radius);
+  object-fit: contain;
+  display: block;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+}
+
+.attachmentFile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.attachmentFileName {
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachmentDownload {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
