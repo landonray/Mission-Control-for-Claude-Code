@@ -5,7 +5,7 @@ import { RotateCw, ExternalLink, Globe, Play, Loader } from 'lucide-react';
 import styles from './PreviewPanel.module.css';
 
 export default function PreviewPanel({ sessionId }) {
-  const { previewUrl, dispatch, sendWsMessage, sessions } = useApp();
+  const { previewUrl, dispatch, sessions } = useApp();
   const [inputUrl, setInputUrl] = useState('');
   const [iframeKey, setIframeKey] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -64,12 +64,19 @@ export default function PreviewPanel({ sessionId }) {
     }
   };
 
+  // Reset starting state if session ends or errors out without detecting a server
+  useEffect(() => {
+    if (starting && activeSession && ['ended', 'error', 'idle'].includes(activeSession.status)) {
+      setStarting(false);
+    }
+  }, [starting, activeSession?.status]);
+
   const handleRunServer = async () => {
     if (!sessionId) return;
     setStarting(true);
     try {
       await api.post(`/api/sessions/${sessionId}/message`, {
-        text: 'Start the dev server for this project. Look at the project files to determine the correct command (e.g. npm run dev, npm start, python manage.py runserver, etc). Run it in the background so it stays running.'
+        content: 'Start the dev server for this project. Look at the project files to determine the correct command (e.g. npm run dev, npm start, python manage.py runserver, etc). Run it in the background so it stays running.'
       });
     } catch (e) {
       setStarting(false);
