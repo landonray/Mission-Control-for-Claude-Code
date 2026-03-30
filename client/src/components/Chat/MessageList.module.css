@@ -88,6 +88,20 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
+  white-space: normal;
+}
+
+/* Reset MarkdownPreview padding inside chat bubbles */
+.assistantMessage .text > div {
+  padding: 0;
+}
+
+.assistantMessage .text > div p:first-child {
+  margin-top: 0;
+}
+
+.assistantMessage .text > div p:last-child {
+  margin-bottom: 0;
 }
 
 .resultBadge {
