@@ -7,11 +7,11 @@ import PermissionPrompt from './PermissionPrompt';
 import SessionControls from './SessionControls';
 import ContextIndicator from './ContextIndicator';
 import QualityScorecard from '../Quality/QualityScorecard';
-import { Send, Loader, RotateCcw } from 'lucide-react';
+import { Send, Loader, RotateCcw, Pencil, Check, X } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
 export default function ChatInterface({ sessionId }) {
-  const { sessions } = useApp();
+  const { sessions, loadSessions } = useApp();
   const session = sessions.find(s => s.id === sessionId);
   const {
     messages, setMessages, status, errorMessage, pendingPermission,
@@ -19,6 +19,9 @@ export default function ChatInterface({ sessionId }) {
   } = useWebSocket(sessionId);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+  const nameInputRef = useRef(null);
   const textareaRef = useRef(null);
 
   // Load existing messages
@@ -54,6 +57,36 @@ export default function ChatInterface({ sessionId }) {
     }
   };
 
+  const startEditing = () => {
+    setNameInput(session?.name || '');
+    setEditingName(true);
+    setTimeout(() => nameInputRef.current?.focus(), 0);
+  };
+
+  const saveName = async () => {
+    const trimmed = nameInput.trim();
+    if (trimmed && trimmed !== session?.name) {
+      try {
+        await api.put(`/api/sessions/${sessionId}/name`, { name: trimmed });
+        await loadSessions();
+      } catch (e) {}
+    }
+    setEditingName(false);
+  };
+
+  const cancelEditing = () => {
+    setEditingName(false);
+  };
+
+  const handleNameKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveName();
+    } else if (e.key === 'Escape') {
+      cancelEditing();
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -73,7 +106,29 @@ export default function ChatInterface({ sessionId }) {
       {/* Header */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <h2 className={styles.title}>{session?.name || 'Session'}</h2>
+          {editingName ? (
+            <div className={styles.nameEdit}>
+              <input
+                ref={nameInputRef}
+                className={styles.nameInput}
+                value={nameInput}
+                onChange={e => setNameInput(e.target.value)}
+                onKeyDown={handleNameKeyDown}
+                onBlur={saveName}
+              />
+              <button className="btn-ghost btn-icon" onMouseDown={e => { e.preventDefault(); saveName(); }}>
+                <Check size={14} />
+              </button>
+              <button className="btn-ghost btn-icon" onMouseDown={e => { e.preventDefault(); cancelEditing(); }}>
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <div className={styles.nameDisplay} onClick={startEditing}>
+              <h2 className={styles.title}>{session?.name || 'Session'}</h2>
+              <Pencil size={12} className={styles.editIcon} />
+            </div>
+          )}
           <span className={`badge badge-${status}`}>{status}</span>
         </div>
         <div className={styles.headerRight}>

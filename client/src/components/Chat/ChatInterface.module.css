@@ -37,6 +37,55 @@
   text-overflow: ellipsis;
 }
 
+.nameDisplay {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  margin: -2px -6px;
+  transition: background 0.15s;
+}
+
+.nameDisplay:hover {
+  background: var(--bg-tertiary);
+}
+
+.editIcon {
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.nameDisplay:hover .editIcon {
+  opacity: 1;
+}
+
+.nameEdit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nameInput {
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-focus, var(--border));
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 2px 8px;
+  outline: none;
+  min-width: 120px;
+  max-width: 300px;
+}
+
+.nameInput:focus {
+  border-color: var(--accent, #6366f1);
+}
+
 .inputArea {
   padding: 12px 16px;
   border-top: 1px solid var(--border);

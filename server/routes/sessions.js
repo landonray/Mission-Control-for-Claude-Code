@@ -164,6 +164,30 @@ router.post('/:id/resume', (req, res) => {
   res.json({ success: true });
 });
 
+// Rename session
+router.put('/:id/name', (req, res) => {
+  const db = getDb();
+  const { name } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Name is required' });
+  }
+  const result = db.prepare('UPDATE sessions SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  // Broadcast name change to any active session listeners
+  const session = getSession(req.params.id);
+  if (session) {
+    session.broadcast({
+      type: 'session_name_updated',
+      sessionId: req.params.id,
+      name: name.trim(),
+      timestamp: new Date().toISOString()
+    });
+  }
+  res.json({ success: true, name: name.trim() });
+});
+
 // Archive / unarchive session
 router.post('/:id/archive', (req, res) => {
   const db = getDb();

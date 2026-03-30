@@ -10,10 +10,11 @@
     "server": "node server/index.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "better-sqlite3": "^11.0.0",
+    "chokidar": "^3.6.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
-    "chokidar": "^3.6.0",
     "tree-kill": "^1.2.2",
     "uuid": "^10.0.0",
     "web-push": "^3.6.7",

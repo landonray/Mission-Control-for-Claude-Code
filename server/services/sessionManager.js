@@ -5,6 +5,16 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { getDb } = require('../database');
+const Anthropic = require('@anthropic-ai/sdk');
+
+// Lazy-init Anthropic client (only created when needed)
+let anthropicClient = null;
+function getAnthropicClient() {
+  if (!anthropicClient) {
+    anthropicClient = new Anthropic();
+  }
+  return anthropicClient;
+}
 
 const activeSessions = new Map();
 
@@ -29,6 +39,24 @@ const TMUX_SCRIPTS_DIR = path.join(__dirname, '..', '..', '.tmux-scripts');
 if (tmuxAvailable) {
   try { fs.mkdirSync(TMUX_OUTPUT_DIR, { recursive: true }); } catch (e) {}
   try { fs.mkdirSync(TMUX_SCRIPTS_DIR, { recursive: true }); } catch (e) {}
+}
+
+// Generate a short AI-powered session name from the first user message
+async function generateSessionName(messageText) {
+  try {
+    const client = getAnthropicClient();
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 30,
+      messages: [{ role: 'user', content: messageText }],
+      system: 'Generate a concise 3-6 word session name that captures the essence of this user message. Return ONLY the name, no quotes, no punctuation, no explanation. Examples: "Fix Login Page Bug", "Add Dark Mode Toggle", "Refactor Database Layer", "Debug API Endpoints".',
+    });
+    const name = response.content[0]?.text?.trim();
+    return name || null;
+  } catch (e) {
+    console.error('Failed to generate session name:', e.message);
+    return null;
+  }
 }
 
 class SessionProcess {
@@ -579,6 +607,28 @@ class SessionProcess {
     }
 
     const db = getDb();
+
+    // Check if this is the first user message — trigger AI name generation
+    const msgCount = db.prepare(
+      'SELECT user_message_count FROM sessions WHERE id = ?'
+    ).get(this.id);
+    if (msgCount && msgCount.user_message_count === 0) {
+      generateSessionName(text).then(name => {
+        if (!name) return;
+        const currentSession = db.prepare('SELECT name FROM sessions WHERE id = ?').get(this.id);
+        // Only auto-rename if the name is still the default
+        if (currentSession && currentSession.name === 'New Session') {
+          db.prepare('UPDATE sessions SET name = ? WHERE id = ?').run(name, this.id);
+          this.broadcast({
+            type: 'session_name_updated',
+            sessionId: this.id,
+            name,
+            timestamp: new Date().toISOString()
+          });
+        }
+      });
+    }
+
     db.prepare(`
       INSERT INTO messages (session_id, role, content, timestamp)
       VALUES (?, 'user', ?, datetime('now'))
@@ -1172,7 +1222,7 @@ const DEFAULT_MODEL = 'claude-opus-4-6';
 function createSession(options = {}) {
   const db = getDb();
   const id = uuidv4();
-  const name = options.name || `Session ${new Date().toLocaleString()}`;
+  const name = options.name || 'New Session';
 
   // Validate and normalize model
   if (options.model && !VALID_MODELS.includes(options.model)) {

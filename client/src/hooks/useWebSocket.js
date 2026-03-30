@@ -92,6 +92,10 @@ export function useWebSocket(sessionId) {
             setPendingPermission(null);
             break;
 
+          case 'session_name_updated':
+            // Handled by AppContext — no local state needed
+            break;
+
           case 'session_ended':
             setStatus('ended');
             resumingRef.current = false;

@@ -114,6 +114,11 @@ export function AppProvider({ children }) {
         }
         // Also handled by session-specific listeners
         break;
+      case 'session_name_updated':
+        if (data.sessionId && data.name) {
+          dispatch({ type: 'UPDATE_SESSION', payload: { id: data.sessionId, name: data.name } });
+        }
+        break;
       case 'stream_event':
       case 'user_message':
       case 'session_ended':
