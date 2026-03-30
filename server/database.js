@@ -836,23 +836,16 @@ If specific enough, respond with nothing (empty response).`,
 # Permission Auto-Approve - approves safe ops, denies dangerous ones
 TOOL="\${TOOL_NAME:-}"
 CMD="\${TOOL_INPUT:-}"
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 
 # Auto-deny: production branch pushes
 if echo "$CMD" | grep -qE 'git\\s+push.*\\b(main|master|production)\\b'; then
-  DECISION="denied"
-  curl -s -X POST http://localhost:3000/api/quality/results \\
-    -H "Content-Type: application/json" \\
-    -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"permission-auto-approve\\",\\"rule_name\\":\\"Permission Auto-Approve\\",\\"result\\":\\"fail\\",\\"severity\\":\\"low\\",\\"details\\":\\"Auto-denied push to production branch\\"}" > /dev/null 2>&1
+  echo "Auto-denied push to production branch"
   exit 1
 fi
 
 # Auto-approve: safe read-only operations
 if echo "$CMD" | grep -qE '^(git\\s+(status|diff|log|branch)|npm\\s+test|pytest|ls|cat|head|tail)'; then
-  DECISION="approved"
-  curl -s -X POST http://localhost:3000/api/quality/results \\
-    -H "Content-Type: application/json" \\
-    -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"permission-auto-approve\\",\\"rule_name\\":\\"Permission Auto-Approve\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"Auto-approved safe operation: $TOOL\\"}" > /dev/null 2>&1
+  echo "Auto-approved safe operation: $TOOL"
   exit 0
 fi
 
@@ -877,13 +870,7 @@ SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 TOOL="\${TOOL_NAME:-unknown}"
 ERROR="\${TOOL_ERROR:-unknown error}"
 
-# Truncate and escape error for JSON
-DETAILS=$(echo "$ERROR" | head -c 500 | sed 's/"/\\\\"/g' | tr '\\n' ' ')
-
-# Log to Mission Control
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"tool-failure-tracker\\",\\"rule_name\\":\\"Tool Failure Tracker\\",\\"result\\":\\"fail\\",\\"severity\\":\\"low\\",\\"details\\":\\"Tool $TOOL failed: $DETAILS\\"}" > /dev/null 2>&1
+echo "Tool $TOOL failed: $ERROR"
 
 # Send push notification for critical failures
 if echo "$TOOL" | grep -qiE '(test|build|deploy)'; then
@@ -892,7 +879,7 @@ if echo "$TOOL" | grep -qiE '(test|build|deploy)'; then
     -d "{\\"title\\":\\"Tool Failure\\",\\"body\\":\\"$TOOL failed in session $SID\\",\\"type\\":\\"error\\"}" > /dev/null 2>&1
 fi
 
-exit 0`,
+exit 1`,
       config: null,
       category: 'correctness',
       sort_order: 21
@@ -908,14 +895,10 @@ exit 0`,
       prompt: null,
       script: `#!/bin/bash
 # Subagent Spawn Tracker - logs subagent creation to Mission Control
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 SUBAGENT_ID="\${SUBAGENT_ID:-unknown}"
 SUBAGENT_TYPE="\${SUBAGENT_TYPE:-unknown}"
 
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"subagent-spawn-tracker\\",\\"rule_name\\":\\"Subagent Spawn Tracker\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"Subagent spawned: type=$SUBAGENT_TYPE id=$SUBAGENT_ID\\"}" > /dev/null 2>&1
-
+echo "Subagent spawned: type=$SUBAGENT_TYPE id=$SUBAGENT_ID"
 exit 0`,
       config: null,
       category: 'subagent',
@@ -1058,7 +1041,6 @@ exit 0`,
       prompt: null,
       script: `#!/bin/bash
 # Worktree Create Tracker - logs worktree creation and copies config
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 WORKTREE_PATH="\${WORKTREE_PATH:-}"
 SOURCE_PATH="\${SESSION_CWD:-$(pwd)}"
 
@@ -1071,12 +1053,8 @@ if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
   done
 fi
 
-# Log to Mission Control
 BRANCH=$(cd "$WORKTREE_PATH" 2>/dev/null && git branch --show-current 2>/dev/null || echo "unknown")
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"worktree-create-tracker\\",\\"rule_name\\":\\"Worktree Create Tracker\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"Worktree created: branch=$BRANCH path=$WORKTREE_PATH\\"}" > /dev/null 2>&1
-
+echo "Worktree created: branch=$BRANCH path=$WORKTREE_PATH"
 exit 0`,
       config: null,
       category: 'workspace',
@@ -1093,7 +1071,6 @@ exit 0`,
       prompt: null,
       script: `#!/bin/bash
 # Worktree Remove Guard - checks for uncommitted changes before removal
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 WORKTREE_PATH="\${WORKTREE_PATH:-}"
 
 if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
@@ -1101,10 +1078,7 @@ if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
   BRANCH=$(cd "$WORKTREE_PATH" 2>/dev/null && git branch --show-current 2>/dev/null || echo "unknown")
 
   if [ "$UNCOMMITTED" -gt 0 ]; then
-    curl -s -X POST http://localhost:3000/api/quality/results \\
-      -H "Content-Type: application/json" \\
-      -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"worktree-remove-guard\\",\\"rule_name\\":\\"Worktree Remove Guard\\",\\"result\\":\\"fail\\",\\"severity\\":\\"medium\\",\\"details\\":\\"WARNING: $UNCOMMITTED uncommitted changes in worktree $BRANCH at $WORKTREE_PATH\\"}" > /dev/null 2>&1
-    echo "WARNING: $UNCOMMITTED uncommitted changes in worktree being removed"
+    echo "WARNING: $UNCOMMITTED uncommitted changes in worktree $BRANCH at $WORKTREE_PATH"
     exit 1
   fi
 fi
@@ -1149,7 +1123,6 @@ exit 0`,
       script: `#!/bin/bash
 # Project Health Check - verifies environment setup on first entry
 CWD="\${SESSION_CWD:-$(pwd)}"
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 ISSUES=""
 
 # Check Node.js
@@ -1181,10 +1154,6 @@ if [ ! -d "$CWD/.git" ]; then
 fi
 
 if [ -n "$ISSUES" ]; then
-  DETAILS=$(echo "$ISSUES" | sed 's/"/\\\\"/g')
-  curl -s -X POST http://localhost:3000/api/quality/results \\
-    -H "Content-Type: application/json" \\
-    -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"project-health-check\\",\\"rule_name\\":\\"Project Health Check\\",\\"result\\":\\"fail\\",\\"severity\\":\\"low\\",\\"details\\":\\"$DETAILS\\"}" > /dev/null 2>&1
   echo "Health issues: $ISSUES"
   exit 1
 else
@@ -1206,7 +1175,6 @@ fi`,
       prompt: null,
       script: `#!/bin/bash
 # Instructions Loaded Logger - logs which CLAUDE.md files were loaded
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 CWD="\${SESSION_CWD:-$(pwd)}"
 FOUND=""
 
@@ -1218,18 +1186,12 @@ for f in "$CWD/CLAUDE.md" "$CWD/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"; do
 done
 
 if [ -z "$FOUND" ]; then
-  DETAILS="No CLAUDE.md files found - project may not be configured for Claude Code"
-  RESULT="fail"
+  echo "No CLAUDE.md files found - project may not be configured for Claude Code"
+  exit 1
 else
-  DETAILS="Instructions loaded from:$FOUND"
-  RESULT="pass"
-fi
-
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"instructions-loaded-logger\\",\\"rule_name\\":\\"Instructions Loaded Logger\\",\\"result\\":\\"$RESULT\\",\\"severity\\":\\"low\\",\\"details\\":\\"$DETAILS\\"}" > /dev/null 2>&1
-
-exit 0`,
+  echo "Instructions loaded from:$FOUND"
+  exit 0
+fi`,
       config: null,
       category: 'config',
       sort_order: 31
@@ -1245,16 +1207,10 @@ exit 0`,
       prompt: null,
       script: `#!/bin/bash
 # Config Change Auditor - logs settings changes to Mission Control
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 CONFIG_KEY="\${CONFIG_KEY:-unknown}"
 CONFIG_VALUE="\${CONFIG_VALUE:-unknown}"
 
-DETAILS="Config changed: $CONFIG_KEY in session $SID"
-
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"config-change-auditor\\",\\"rule_name\\":\\"Config Change Auditor\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"$DETAILS\\"}" > /dev/null 2>&1
-
+echo "Config changed: $CONFIG_KEY=$CONFIG_VALUE"
 exit 0`,
       config: null,
       category: 'config',
@@ -1271,16 +1227,10 @@ exit 0`,
       prompt: null,
       script: `#!/bin/bash
 # Task Progress Tracker - logs task creation to Mission Control
-SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 TASK_ID="\${TASK_ID:-unknown}"
 TASK_DESCRIPTION="\${TASK_DESCRIPTION:-}"
 
-DETAILS=$(echo "Task created: $TASK_DESCRIPTION" | head -c 500 | sed 's/"/\\\\"/g' | tr '\\n' ' ')
-
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"task-progress-tracker\\",\\"rule_name\\":\\"Task Progress Tracker\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"$DETAILS\\"}" > /dev/null 2>&1
-
+echo "Task created: $TASK_DESCRIPTION"
 exit 0`,
       config: null,
       category: 'tasks',
@@ -1298,15 +1248,11 @@ exit 0`,
       script: `#!/bin/bash
 # Task Completion Notifier - sends push notification on task completion
 SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
-TASK_ID="\${TASK_ID:-unknown}"
 TASK_DESCRIPTION="\${TASK_DESCRIPTION:-Task completed}"
 
 BODY=$(echo "$TASK_DESCRIPTION" | head -c 200 | sed 's/"/\\\\"/g' | tr '\\n' ' ')
 
-# Log completion
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"task-completion-notifier\\",\\"rule_name\\":\\"Task Completion Notifier\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"Task completed: $BODY\\"}" > /dev/null 2>&1
+echo "Task completed: $BODY"
 
 # Send push notification
 curl -s -X POST http://localhost:3000/api/notifications/push \\
@@ -1333,9 +1279,7 @@ SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
 TEAMMATE_ID="\${TEAMMATE_ID:-unknown}"
 TEAMMATE_STATUS="\${TEAMMATE_STATUS:-idle}"
 
-curl -s -X POST http://localhost:3000/api/quality/results \\
-  -H "Content-Type: application/json" \\
-  -d "{\\"session_id\\":\\"$SID\\",\\"rule_id\\":\\"teammate-idle-monitor\\",\\"rule_name\\":\\"Teammate Idle Monitor\\",\\"result\\":\\"pass\\",\\"severity\\":\\"low\\",\\"details\\":\\"Teammate $TEAMMATE_ID is now $TEAMMATE_STATUS\\"}" > /dev/null 2>&1
+echo "Teammate $TEAMMATE_ID is now $TEAMMATE_STATUS"
 
 # Send push notification
 curl -s -X POST http://localhost:3000/api/notifications/push \\
