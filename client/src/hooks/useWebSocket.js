@@ -84,7 +84,8 @@ export function useWebSocket(sessionId) {
             setMessages(prev => [...prev, {
               role: 'user',
               content: data.content,
-              timestamp: data.timestamp
+              timestamp: data.timestamp,
+              attachments: data.attachments || null
             }]);
             break;
 
@@ -129,13 +130,17 @@ export function useWebSocket(sessionId) {
     };
   }, [sessionId]);
 
-  const sendMessage = useCallback((content) => {
+  const sendMessage = useCallback((content, attachments = null) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
+      const msg = {
         type: 'send_message',
         sessionId,
         content
-      }));
+      };
+      if (attachments && attachments.length > 0) {
+        msg.attachments = attachments;
+      }
+      wsRef.current.send(JSON.stringify(msg));
     }
   }, [sessionId]);
 

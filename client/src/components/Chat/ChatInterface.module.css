@@ -141,3 +141,126 @@
   font-size: 13px;
   flex-shrink: 0;
 }
+
+/* Drag and drop */
+.chat.dragOver {
+  position: relative;
+}
+
+.dragOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 2px dashed var(--accent, #38bdf8);
+  border-radius: var(--radius-lg);
+  color: var(--accent, #38bdf8);
+  font-size: 16px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.dragOverlay svg {
+  opacity: 0.8;
+}
+
+/* Attach button */
+.attachBtn {
+  color: var(--text-muted);
+  padding: 6px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.attachBtn:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+/* Attachment preview bar */
+.attachmentBar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.attachmentPreview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+  max-width: 220px;
+  flex-shrink: 0;
+}
+
+.attachmentThumb {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.attachmentFileIcon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.attachmentInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+
+.attachmentName {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attachmentSize {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.attachmentRemove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.attachmentRemove:hover {
+  color: var(--error, #f87171);
+  background: rgba(248, 113, 113, 0.1);
+}

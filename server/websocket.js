@@ -147,7 +147,7 @@ async function handleMessage(ws, msg, state) {
         let session = getSession(msg.sessionId);
         if (session) {
           try {
-            await session.sendMessage(msg.content);
+            await session.sendMessage(msg.content, msg.attachments || null);
           } catch (err) {
             console.error('sendMessage error:', err.message);
             safeSend(ws, {

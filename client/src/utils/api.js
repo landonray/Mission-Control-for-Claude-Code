@@ -25,4 +25,19 @@ export const api = {
   post: (url, body) => request('POST', url, body),
   put: (url, body) => request('PUT', url, body),
   delete: (url) => request('DELETE', url),
+  uploadFiles: async (files) => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('files', file);
+    }
+    const response = await fetch(`${BASE_URL}/api/uploads`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || 'Upload failed');
+    }
+    return response.json();
+  },
 };

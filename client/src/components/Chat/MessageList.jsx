@@ -1,7 +1,35 @@
 import React, { useEffect, useRef } from 'react';
-import { User, Bot, Wrench, Loader } from 'lucide-react';
+import { User, Bot, Wrench, Loader, FileIcon, Download } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import styles from './MessageList.module.css';
+
+function MessageAttachments({ attachments }) {
+  if (!attachments || attachments.length === 0) return null;
+
+  return (
+    <div className={styles.attachments}>
+      {attachments.map((file, i) => (
+        <a
+          key={file.id || i}
+          href={file.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.attachmentItem}
+        >
+          {file.isImage ? (
+            <img src={file.url} alt={file.originalName} className={styles.attachmentImage} />
+          ) : (
+            <div className={styles.attachmentFile}>
+              <FileIcon size={16} />
+              <span className={styles.attachmentFileName}>{file.originalName}</span>
+              <Download size={12} className={styles.attachmentDownload} />
+            </div>
+          )}
+        </a>
+      ))}
+    </div>
+  );
+}
 
 export default function MessageList({ messages, loading, streamEvents }) {
   const bottomRef = useRef(null);
@@ -56,6 +84,9 @@ export default function MessageList({ messages, loading, streamEvents }) {
                 <span className={styles.time}>{formatDate(msg.timestamp)}</span>
               )}
             </div>
+            {msg.attachments && msg.attachments.length > 0 && (
+              <MessageAttachments attachments={msg.attachments} />
+            )}
             <div className={styles.text}>
               {typeof msg.content === 'string' ? msg.content.trim() : msg.content}
             </div>
