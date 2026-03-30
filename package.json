@@ -4,6 +4,8 @@
   "description": "Web-based dashboard for monitoring and interacting with Claude Code sessions",
   "main": "server/index.js",
   "scripts": {
+    "prestart": "bash setup.sh",
+    "predev": "bash setup.sh",
     "start": "node server/index.js",
     "dev": "concurrently \"node server/index.js\" \"cd client && npx vite\"",
     "build": "cd client && npx vite build",
