@@ -17,7 +17,7 @@ const initialState = {
   selectedFile: null,
   showFileBrowser: true,
   rightPanelMode: 'files',
-  previewUrl: '',
+  previewUrls: {},
 };
 
 function reducer(state, action) {
@@ -56,7 +56,7 @@ function reducer(state, action) {
     case 'SET_RIGHT_PANEL_MODE':
       return { ...state, rightPanelMode: action.payload };
     case 'SET_PREVIEW_URL':
-      return { ...state, previewUrl: action.payload };
+      return { ...state, previewUrls: { ...state.previewUrls, [action.payload.sessionId]: action.payload.url } };
     default:
       return state;
   }
@@ -67,9 +67,11 @@ export function AppProvider({ children }) {
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const fileTreePathRef = useRef(null);
+  const activeSessionIdRef = useRef(null);
 
-  // Keep ref in sync with state
+  // Keep refs in sync with state
   fileTreePathRef.current = state.fileTreePath;
+  activeSessionIdRef.current = state.activeSessionId;
 
   const connectWebSocket = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -131,8 +133,11 @@ export function AppProvider({ children }) {
         }
         break;
       case 'dev_server_detected':
-        dispatch({ type: 'SET_PREVIEW_URL', payload: data.url });
-        dispatch({ type: 'SET_RIGHT_PANEL_MODE', payload: 'preview' });
+        dispatch({ type: 'SET_PREVIEW_URL', payload: { sessionId: data.sessionId, url: data.url } });
+        // Only auto-switch to preview tab if this is the active session
+        if (data.sessionId === activeSessionIdRef.current) {
+          dispatch({ type: 'SET_RIGHT_PANEL_MODE', payload: 'preview' });
+        }
         break;
     }
   }, []);

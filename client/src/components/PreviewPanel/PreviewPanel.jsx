@@ -5,7 +5,8 @@ import { RotateCw, ExternalLink, Globe, Play, Loader } from 'lucide-react';
 import styles from './PreviewPanel.module.css';
 
 export default function PreviewPanel({ sessionId }) {
-  const { previewUrl, dispatch, sessions } = useApp();
+  const { previewUrls, dispatch, sessions } = useApp();
+  const previewUrl = previewUrls[sessionId] || '';
   const [inputUrl, setInputUrl] = useState('');
   const [iframeKey, setIframeKey] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -26,7 +27,7 @@ export default function PreviewPanel({ sessionId }) {
       const data = await api.get(`/api/sessions/${sessionId}/preview-url`);
       const url = data.preview_url || '';
       setInputUrl(url);
-      dispatch({ type: 'SET_PREVIEW_URL', payload: url });
+      dispatch({ type: 'SET_PREVIEW_URL', payload: { sessionId, url } });
     } catch (e) {}
   }, [sessionId, dispatch]);
 
@@ -52,7 +53,7 @@ export default function PreviewPanel({ sessionId }) {
       setInputUrl(url);
     }
     setLoading(true);
-    dispatch({ type: 'SET_PREVIEW_URL', payload: url });
+    dispatch({ type: 'SET_PREVIEW_URL', payload: { sessionId, url } });
     setIframeKey(k => k + 1);
     try {
       await api.put(`/api/sessions/${sessionId}/preview-url`, { url });
