@@ -198,7 +198,7 @@
 
 .ruleDescription {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   line-height: 1.5;
   margin-bottom: 12px;
 }
@@ -218,7 +218,7 @@
 .sectionLabel {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
@@ -227,7 +227,7 @@
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
