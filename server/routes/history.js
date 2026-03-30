@@ -1,24 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../database');
+const { query } = require('../database');
 
 // Get session history with summaries
-router.get('/sessions', (req, res) => {
-  const db = getDb();
+router.get('/sessions', async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const offset = parseInt(req.query.offset) || 0;
   const search = req.query.search;
 
-  let query, countQuery, params, countParams;
+  let sql, countQuery, params, countParams;
 
   if (search) {
-    query = `
+    sql = `
       SELECT s.*, ss.summary
       FROM sessions s
       LEFT JOIN session_summaries ss ON s.id = ss.session_id
-      WHERE s.name LIKE ? OR ss.summary LIKE ?
+      WHERE s.name LIKE $1 OR ss.summary LIKE $2
       ORDER BY s.created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT $3 OFFSET $4
     `;
     const searchTerm = `%${search}%`;
     params = [searchTerm, searchTerm, limit, offset];
@@ -27,16 +26,16 @@ router.get('/sessions', (req, res) => {
       SELECT COUNT(DISTINCT s.id) as count
       FROM sessions s
       LEFT JOIN session_summaries ss ON s.id = ss.session_id
-      WHERE s.name LIKE ? OR ss.summary LIKE ?
+      WHERE s.name LIKE $1 OR ss.summary LIKE $2
     `;
     countParams = [searchTerm, searchTerm];
   } else {
-    query = `
+    sql = `
       SELECT s.*, ss.summary
       FROM sessions s
       LEFT JOIN session_summaries ss ON s.id = ss.session_id
       ORDER BY s.created_at DESC
-      LIMIT ? OFFSET ?
+      LIMIT $1 OFFSET $2
     `;
     params = [limit, offset];
 
@@ -44,8 +43,8 @@ router.get('/sessions', (req, res) => {
     countParams = [];
   }
 
-  const sessions = db.prepare(query).all(...params);
-  const total = db.prepare(countQuery).get(...countParams);
+  const sessions = (await query(sql, params)).rows;
+  const total = (await query(countQuery, countParams)).rows[0];
 
   res.json({
     sessions,
@@ -56,15 +55,14 @@ router.get('/sessions', (req, res) => {
 });
 
 // Get full conversation log for a session
-router.get('/sessions/:id/log', (req, res) => {
-  const db = getDb();
-  const messages = db.prepare(`
+router.get('/sessions/:id/log', async (req, res) => {
+  const messages = (await query(`
     SELECT * FROM messages
-    WHERE session_id = ?
+    WHERE session_id = $1
     ORDER BY timestamp ASC
-  `).all(req.params.id);
+  `, [req.params.id])).rows;
 
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+  const session = (await query('SELECT * FROM sessions WHERE id = $1', [req.params.id])).rows[0];
 
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
@@ -74,53 +72,50 @@ router.get('/sessions/:id/log', (req, res) => {
 });
 
 // Search message content across all sessions
-router.get('/search', (req, res) => {
-  const db = getDb();
-  const query = req.query.q;
+router.get('/search', async (req, res) => {
+  const q = req.query.q;
   const limit = parseInt(req.query.limit) || 50;
 
-  if (!query) {
+  if (!q) {
     return res.status(400).json({ error: 'q query parameter required' });
   }
 
-  const results = db.prepare(`
+  const results = (await query(`
     SELECT m.*, s.name as session_name
     FROM messages m
     JOIN sessions s ON m.session_id = s.id
-    WHERE m.content LIKE ?
+    WHERE m.content LIKE $1
     ORDER BY m.timestamp DESC
-    LIMIT ?
-  `).all(`%${query}%`, limit);
+    LIMIT $2
+  `, [`%${q}%`, limit])).rows;
 
   res.json(results);
 });
 
 // Get daily digests
-router.get('/digests', (req, res) => {
-  const db = getDb();
+router.get('/digests', async (req, res) => {
   const limit = parseInt(req.query.limit) || 30;
 
-  const digests = db.prepare(`
+  const digests = (await query(`
     SELECT * FROM daily_digests
     ORDER BY date DESC
-    LIMIT ?
-  `).all(limit);
+    LIMIT $1
+  `, [limit])).rows;
 
   res.json(digests);
 });
 
 // Generate daily digest for a specific date
-router.post('/digests/generate', (req, res) => {
-  const db = getDb();
+router.post('/digests/generate', async (req, res) => {
   const date = req.body.date || new Date().toISOString().split('T')[0];
 
-  const sessions = db.prepare(`
+  const sessions = (await query(`
     SELECT s.*, ss.summary
     FROM sessions s
     LEFT JOIN session_summaries ss ON s.id = ss.session_id
-    WHERE DATE(s.created_at) = ? OR DATE(s.last_activity_at) = ?
+    WHERE DATE(s.created_at) = $1 OR DATE(s.last_activity_at) = $2
     ORDER BY s.created_at ASC
-  `).all(date, date);
+  `, [date, date])).rows;
 
   if (sessions.length === 0) {
     return res.json({ message: 'No sessions found for this date' });
@@ -133,10 +128,11 @@ router.post('/digests/generate', (req, res) => {
   const digest = `Daily Digest for ${date}\n\nSessions: ${sessions.length}\n\n${content}`;
 
   try {
-    db.prepare(`
-      INSERT OR REPLACE INTO daily_digests (date, content, session_count, created_at)
-      VALUES (?, ?, ?, datetime('now'))
-    `).run(date, digest, sessions.length);
+    await query(`
+      INSERT INTO daily_digests (date, content, session_count, created_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (date) DO UPDATE SET content = EXCLUDED.content, session_count = EXCLUDED.session_count, created_at = NOW()
+    `, [date, digest, sessions.length]);
 
     res.json({ date, content: digest, session_count: sessions.length });
   } catch (err) {
@@ -145,34 +141,30 @@ router.post('/digests/generate', (req, res) => {
 });
 
 // Auto-generate session summary (called by SessionEnd hook)
-router.post('/auto-summary', (req, res) => {
-  const db = getDb();
+router.post('/auto-summary', async (req, res) => {
   const { session_id, branch, files_changed } = req.body;
 
   if (!session_id) {
     return res.status(400).json({ error: 'session_id required' });
   }
 
-  // Get session info
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(session_id);
+  const session = (await query('SELECT * FROM sessions WHERE id = $1', [session_id])).rows[0];
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
 
-  // Build summary from available data
-  const messageCount = db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?').get(session_id);
+  const messageCount = (await query('SELECT COUNT(*) as count FROM messages WHERE session_id = $1', [session_id])).rows[0];
   const summary = `Session "${session.name}" ended. Branch: ${branch || session.branch || 'unknown'}. Messages: ${messageCount.count}. Files changed: ${files_changed || 0}.`;
 
   try {
-    // Check if summary already exists
-    const existing = db.prepare('SELECT id FROM session_summaries WHERE session_id = ?').get(session_id);
+    const existing = (await query('SELECT id FROM session_summaries WHERE session_id = $1', [session_id])).rows[0];
     if (existing) {
-      db.prepare('UPDATE session_summaries SET summary = ?, created_at = datetime(\'now\') WHERE session_id = ?').run(summary, session_id);
+      await query('UPDATE session_summaries SET summary = $1, created_at = NOW() WHERE session_id = $2', [summary, session_id]);
     } else {
-      db.prepare(`
+      await query(`
         INSERT INTO session_summaries (session_id, summary, key_actions, files_modified, created_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
-      `).run(session_id, summary, null, files_changed ? String(files_changed) : null);
+        VALUES ($1, $2, $3, $4, NOW())
+      `, [session_id, summary, null, files_changed ? String(files_changed) : null]);
     }
     res.json({ success: true, summary });
   } catch (err) {

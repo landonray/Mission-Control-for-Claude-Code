@@ -8,9 +8,9 @@ router.get('/vapid-key', (req, res) => {
 });
 
 // Subscribe to push notifications
-router.post('/subscribe', (req, res) => {
+router.post('/subscribe', async (req, res) => {
   try {
-    notificationService.subscribe(req.body);
+    await notificationService.subscribe(req.body);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -18,9 +18,9 @@ router.post('/subscribe', (req, res) => {
 });
 
 // Unsubscribe from push notifications
-router.post('/unsubscribe', (req, res) => {
+router.post('/unsubscribe', async (req, res) => {
   try {
-    notificationService.unsubscribe(req.body.endpoint);
+    await notificationService.unsubscribe(req.body.endpoint);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -28,9 +28,9 @@ router.post('/unsubscribe', (req, res) => {
 });
 
 // Get notification settings
-router.get('/settings', (req, res) => {
+router.get('/settings', async (req, res) => {
   try {
-    const settings = notificationService.getSettings();
+    const settings = await notificationService.getSettings();
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -38,9 +38,9 @@ router.get('/settings', (req, res) => {
 });
 
 // Update notification settings
-router.put('/settings', (req, res) => {
+router.put('/settings', async (req, res) => {
   try {
-    const settings = notificationService.updateSettings(req.body);
+    const settings = await notificationService.updateSettings(req.body);
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });

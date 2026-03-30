@@ -1,19 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../database');
+const { query } = require('../database');
 const { v4: uuidv4 } = require('uuid');
 
 // List all MCP servers
-router.get('/', (req, res) => {
-  const db = getDb();
-  const servers = db.prepare('SELECT * FROM mcp_servers ORDER BY name').all();
+router.get('/', async (req, res) => {
+  const servers = (await query('SELECT * FROM mcp_servers ORDER BY name')).rows;
   res.json(servers);
 });
 
 // Get single MCP server
-router.get('/:id', (req, res) => {
-  const db = getDb();
-  const server = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(req.params.id);
+router.get('/:id', async (req, res) => {
+  const server = (await query('SELECT * FROM mcp_servers WHERE id = $1', [req.params.id])).rows[0];
 
   if (!server) {
     return res.status(404).json({ error: 'MCP server not found' });
@@ -23,8 +21,7 @@ router.get('/:id', (req, res) => {
 });
 
 // Create MCP server config
-router.post('/', (req, res) => {
-  const db = getDb();
+router.post('/', async (req, res) => {
   const id = uuidv4();
   const { name, command, args, env, auto_connect } = req.body;
 
@@ -33,17 +30,17 @@ router.post('/', (req, res) => {
   }
 
   try {
-    db.prepare(`
+    await query(`
       INSERT INTO mcp_servers (id, name, command, args, env, auto_connect)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `, [
       id, name, command,
       args ? JSON.stringify(args) : null,
       env ? JSON.stringify(env) : null,
       auto_connect ? 1 : 0
-    );
+    ]);
 
-    const server = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(id);
+    const server = (await query('SELECT * FROM mcp_servers WHERE id = $1', [id])).rows[0];
     res.status(201).json(server);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -51,28 +48,27 @@ router.post('/', (req, res) => {
 });
 
 // Update MCP server config
-router.put('/:id', (req, res) => {
-  const db = getDb();
+router.put('/:id', async (req, res) => {
   const { name, command, args, env, auto_connect } = req.body;
 
   try {
-    db.prepare(`
+    await query(`
       UPDATE mcp_servers SET
-        name = COALESCE(?, name),
-        command = COALESCE(?, command),
-        args = COALESCE(?, args),
-        env = COALESCE(?, env),
-        auto_connect = COALESCE(?, auto_connect)
-      WHERE id = ?
-    `).run(
+        name = COALESCE($1, name),
+        command = COALESCE($2, command),
+        args = COALESCE($3, args),
+        env = COALESCE($4, env),
+        auto_connect = COALESCE($5, auto_connect)
+      WHERE id = $6
+    `, [
       name || null, command || null,
       args ? JSON.stringify(args) : null,
       env ? JSON.stringify(env) : null,
       auto_connect !== undefined ? (auto_connect ? 1 : 0) : null,
       req.params.id
-    );
+    ]);
 
-    const server = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(req.params.id);
+    const server = (await query('SELECT * FROM mcp_servers WHERE id = $1', [req.params.id])).rows[0];
     if (!server) {
       return res.status(404).json({ error: 'MCP server not found' });
     }
@@ -84,11 +80,10 @@ router.put('/:id', (req, res) => {
 });
 
 // Delete MCP server config
-router.delete('/:id', (req, res) => {
-  const db = getDb();
-  const result = db.prepare('DELETE FROM mcp_servers WHERE id = ?').run(req.params.id);
+router.delete('/:id', async (req, res) => {
+  const result = await query('DELETE FROM mcp_servers WHERE id = $1', [req.params.id]);
 
-  if (result.changes === 0) {
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: 'MCP server not found' });
   }
 
@@ -96,16 +91,15 @@ router.delete('/:id', (req, res) => {
 });
 
 // Toggle auto-connect
-router.post('/:id/toggle-auto-connect', (req, res) => {
-  const db = getDb();
-  const server = db.prepare('SELECT * FROM mcp_servers WHERE id = ?').get(req.params.id);
+router.post('/:id/toggle-auto-connect', async (req, res) => {
+  const server = (await query('SELECT * FROM mcp_servers WHERE id = $1', [req.params.id])).rows[0];
 
   if (!server) {
     return res.status(404).json({ error: 'MCP server not found' });
   }
 
   const newValue = server.auto_connect ? 0 : 1;
-  db.prepare('UPDATE mcp_servers SET auto_connect = ? WHERE id = ?').run(newValue, req.params.id);
+  await query('UPDATE mcp_servers SET auto_connect = $1 WHERE id = $2', [newValue, req.params.id]);
 
   res.json({ ...server, auto_connect: newValue });
 });

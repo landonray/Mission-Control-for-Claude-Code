@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../database');
+const { query } = require('../database');
 const { generateHooksConfig, removeHooksConfig, getHooksStatus } = require('../services/hooksGenerator');
 
 // ==========================================
@@ -8,68 +8,67 @@ const { generateHooksConfig, removeHooksConfig, getHooksStatus } = require('../s
 // ==========================================
 
 // List all quality rules
-router.get('/rules', (req, res) => {
-  const db = getDb();
-  const rules = db.prepare('SELECT * FROM quality_rules ORDER BY sort_order').all();
+router.get('/rules', async (req, res) => {
+  const { rows: rules } = await query('SELECT * FROM quality_rules ORDER BY sort_order');
   res.json(rules);
 });
 
 // Get single rule
-router.get('/rules/:id', (req, res) => {
-  const db = getDb();
-  const rule = db.prepare('SELECT * FROM quality_rules WHERE id = ?').get(req.params.id);
+router.get('/rules/:id', async (req, res) => {
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
   if (!rule) return res.status(404).json({ error: 'Rule not found' });
   res.json(rule);
 });
 
 // Toggle rule enabled/disabled
-router.post('/rules/:id/toggle', (req, res) => {
-  const db = getDb();
-  const rule = db.prepare('SELECT * FROM quality_rules WHERE id = ?').get(req.params.id);
+router.post('/rules/:id/toggle', async (req, res) => {
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
   if (!rule) return res.status(404).json({ error: 'Rule not found' });
 
   const newEnabled = rule.enabled ? 0 : 1;
-  db.prepare('UPDATE quality_rules SET enabled = ?, updated_at = datetime(\'now\') WHERE id = ?')
-    .run(newEnabled, req.params.id);
+  await query('UPDATE quality_rules SET enabled = $1, updated_at = NOW() WHERE id = $2',
+    [newEnabled, req.params.id]);
 
   // Regenerate hooks config
-  const hookResult = generateHooksConfig();
+  const hookResult = await generateHooksConfig();
 
   res.json({ ...rule, enabled: newEnabled, hooksUpdated: hookResult.success });
 });
 
 // Update rule severity
-router.put('/rules/:id/severity', (req, res) => {
-  const db = getDb();
+router.put('/rules/:id/severity', async (req, res) => {
   const { severity } = req.body;
   if (!['low', 'medium', 'high'].includes(severity)) {
     return res.status(400).json({ error: 'Severity must be low, medium, or high' });
   }
 
-  db.prepare('UPDATE quality_rules SET severity = ?, updated_at = datetime(\'now\') WHERE id = ?')
-    .run(severity, req.params.id);
+  await query('UPDATE quality_rules SET severity = $1, updated_at = NOW() WHERE id = $2',
+    [severity, req.params.id]);
 
-  const rule = db.prepare('SELECT * FROM quality_rules WHERE id = ?').get(req.params.id);
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
   if (!rule) return res.status(404).json({ error: 'Rule not found' });
 
-  generateHooksConfig();
+  await generateHooksConfig();
   res.json(rule);
 });
 
 // Update rule prompt/script (customize)
-router.put('/rules/:id/customize', (req, res) => {
-  const db = getDb();
+router.put('/rules/:id/customize', async (req, res) => {
   const { prompt, script } = req.body;
 
   const updates = [];
   const values = [];
+  let paramIdx = 1;
 
   if (prompt !== undefined) {
-    updates.push('prompt = ?');
+    updates.push(`prompt = $${paramIdx++}`);
     values.push(prompt);
   }
   if (script !== undefined) {
-    updates.push('script = ?');
+    updates.push(`script = $${paramIdx++}`);
     values.push(script);
   }
 
@@ -77,27 +76,27 @@ router.put('/rules/:id/customize', (req, res) => {
     return res.status(400).json({ error: 'Nothing to update' });
   }
 
-  updates.push('updated_at = datetime(\'now\')');
+  updates.push('updated_at = NOW()');
   values.push(req.params.id);
 
-  db.prepare(`UPDATE quality_rules SET ${updates.join(', ')} WHERE id = ?`).run(...values);
+  await query(`UPDATE quality_rules SET ${updates.join(', ')} WHERE id = $${paramIdx}`, values);
 
-  const rule = db.prepare('SELECT * FROM quality_rules WHERE id = ?').get(req.params.id);
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
   if (!rule) return res.status(404).json({ error: 'Rule not found' });
 
-  generateHooksConfig();
+  await generateHooksConfig();
   res.json(rule);
 });
 
 // Bulk enable/disable all rules
-router.post('/rules/bulk-toggle', (req, res) => {
-  const db = getDb();
+router.post('/rules/bulk-toggle', async (req, res) => {
   const { enabled } = req.body;
-  db.prepare('UPDATE quality_rules SET enabled = ?, updated_at = datetime(\'now\')')
-    .run(enabled ? 1 : 0);
+  await query('UPDATE quality_rules SET enabled = $1, updated_at = NOW()',
+    [enabled ? 1 : 0]);
 
-  generateHooksConfig();
-  const rules = db.prepare('SELECT * FROM quality_rules ORDER BY sort_order').all();
+  await generateHooksConfig();
+  const { rows: rules } = await query('SELECT * FROM quality_rules ORDER BY sort_order');
   res.json(rules);
 });
 
@@ -111,9 +110,9 @@ router.get('/hooks/status', (req, res) => {
 });
 
 // Generate and install hooks
-router.post('/hooks/install', (req, res) => {
+router.post('/hooks/install', async (req, res) => {
   try {
-    const result = generateHooksConfig();
+    const result = await generateHooksConfig();
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -121,9 +120,9 @@ router.post('/hooks/install', (req, res) => {
 });
 
 // Remove all mission-control hooks
-router.post('/hooks/uninstall', (req, res) => {
+router.post('/hooks/uninstall', async (req, res) => {
   try {
-    const result = removeHooksConfig();
+    const result = await removeHooksConfig();
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -135,8 +134,7 @@ router.post('/hooks/uninstall', (req, res) => {
 // ==========================================
 
 // Receive quality check results from hooks
-router.post('/results', (req, res) => {
-  const db = getDb();
+router.post('/results', async (req, res) => {
   const { session_id, rule_id, rule_name, result, severity, details, file_path } = req.body;
 
   if (!rule_id || !result) {
@@ -144,10 +142,10 @@ router.post('/results', (req, res) => {
   }
 
   try {
-    db.prepare(`
+    await query(`
       INSERT INTO quality_results (session_id, rule_id, rule_name, result, severity, details, file_path, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    `).run(
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+    `, [
       session_id || null,
       rule_id,
       rule_name || rule_id,
@@ -155,7 +153,7 @@ router.post('/results', (req, res) => {
       severity || 'medium',
       details || null,
       file_path || null
-    );
+    ]);
 
     res.json({ success: true });
   } catch (err) {
@@ -164,16 +162,15 @@ router.post('/results', (req, res) => {
 });
 
 // Get quality results for a session
-router.get('/results/session/:sessionId', (req, res) => {
-  const db = getDb();
+router.get('/results/session/:sessionId', async (req, res) => {
   const limit = parseInt(req.query.limit) || 100;
 
-  const results = db.prepare(`
+  const { rows: results } = await query(`
     SELECT * FROM quality_results
-    WHERE session_id = ?
+    WHERE session_id = $1
     ORDER BY timestamp DESC
-    LIMIT ?
-  `).all(req.params.sessionId, limit);
+    LIMIT $2
+  `, [req.params.sessionId, limit]);
 
   // Compute scorecard
   const passes = results.filter(r => r.result === 'pass').length;
@@ -192,21 +189,19 @@ router.get('/results/session/:sessionId', (req, res) => {
 });
 
 // Get latest quality results grouped by rule (for scorecard)
-router.get('/results/scorecard/:sessionId', (req, res) => {
-  const db = getDb();
-
-  const results = db.prepare(`
+router.get('/results/scorecard/:sessionId', async (req, res) => {
+  const { rows: results } = await query(`
     SELECT qr.*, qrl.name as display_name, qrl.description as rule_description, qrl.severity as rule_severity
     FROM quality_results qr
     LEFT JOIN quality_rules qrl ON qr.rule_id = qrl.id
-    WHERE qr.session_id = ?
+    WHERE qr.session_id = $1
     AND qr.id IN (
-      SELECT MAX(id) FROM quality_results WHERE session_id = ? GROUP BY rule_id
+      SELECT MAX(id) FROM quality_results WHERE session_id = $2 GROUP BY rule_id
     )
     ORDER BY
       CASE qr.severity WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END,
       qr.timestamp DESC
-  `).all(req.params.sessionId, req.params.sessionId);
+  `, [req.params.sessionId, req.params.sessionId]);
 
   const passes = results.filter(r => r.result === 'pass').length;
   const fails = results.filter(r => r.result === 'fail').length;
@@ -227,54 +222,54 @@ router.get('/results/scorecard/:sessionId', (req, res) => {
 // ==========================================
 
 // Get aggregated analytics across all sessions
-router.get('/analytics', (req, res) => {
-  const db = getDb();
+router.get('/analytics', async (req, res) => {
   const days = parseInt(req.query.days) || 30;
 
   // Most triggered rules
-  const mostTriggered = db.prepare(`
+  const { rows: mostTriggered } = await query(`
     SELECT rule_id, rule_name, COUNT(*) as count,
       SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) as passes,
       SUM(CASE WHEN result = 'fail' THEN 1 ELSE 0 END) as fails
     FROM quality_results
-    WHERE timestamp >= datetime('now', '-' || ? || ' days')
-    GROUP BY rule_id
+    WHERE timestamp >= NOW() - MAKE_INTERVAL(days => $1)
+    GROUP BY rule_id, rule_name
     ORDER BY count DESC
-  `).all(days);
+  `, [days]);
 
   // Most blocking rules (most fails)
-  const mostBlocking = db.prepare(`
+  const { rows: mostBlocking } = await query(`
     SELECT rule_id, rule_name, COUNT(*) as fail_count, severity
     FROM quality_results
-    WHERE result = 'fail' AND timestamp >= datetime('now', '-' || ? || ' days')
-    GROUP BY rule_id
+    WHERE result = 'fail' AND timestamp >= NOW() - MAKE_INTERVAL(days => $1)
+    GROUP BY rule_id, rule_name, severity
     ORDER BY fail_count DESC
     LIMIT 10
-  `).all(days);
+  `, [days]);
 
   // Pass rate trend (daily)
-  const dailyTrend = db.prepare(`
+  const { rows: dailyTrend } = await query(`
     SELECT DATE(timestamp) as date,
       COUNT(*) as total,
       SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) as passes,
       SUM(CASE WHEN result = 'fail' THEN 1 ELSE 0 END) as fails,
       ROUND(CAST(SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*) * 100) as pass_rate
     FROM quality_results
-    WHERE timestamp >= datetime('now', '-' || ? || ' days')
+    WHERE timestamp >= NOW() - MAKE_INTERVAL(days => $1)
     GROUP BY DATE(timestamp)
     ORDER BY date ASC
-  `).all(days);
+  `, [days]);
 
   // Overall stats
-  const overall = db.prepare(`
+  const { rows: overallRows } = await query(`
     SELECT
       COUNT(*) as total_checks,
       SUM(CASE WHEN result = 'pass' THEN 1 ELSE 0 END) as total_passes,
       SUM(CASE WHEN result = 'fail' THEN 1 ELSE 0 END) as total_fails,
       COUNT(DISTINCT session_id) as sessions_checked
     FROM quality_results
-    WHERE timestamp >= datetime('now', '-' || ? || ' days')
-  `).get(days);
+    WHERE timestamp >= NOW() - MAKE_INTERVAL(days => $1)
+  `, [days]);
+  const overall = overallRows[0];
 
   res.json({
     overall: {
@@ -290,29 +285,29 @@ router.get('/analytics', (req, res) => {
 });
 
 // Get all results with pagination
-router.get('/results', (req, res) => {
-  const db = getDb();
+router.get('/results', async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const offset = parseInt(req.query.offset) || 0;
   const ruleId = req.query.rule_id;
   const result = req.query.result;
 
-  let query = 'SELECT * FROM quality_results WHERE 1=1';
+  let paramIdx = 1;
+  let sql = 'SELECT * FROM quality_results WHERE 1=1';
   const params = [];
 
   if (ruleId) {
-    query += ' AND rule_id = ?';
+    sql += ` AND rule_id = $${paramIdx++}`;
     params.push(ruleId);
   }
   if (result) {
-    query += ' AND result = ?';
+    sql += ` AND result = $${paramIdx++}`;
     params.push(result);
   }
 
-  query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+  sql += ` ORDER BY timestamp DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
   params.push(limit, offset);
 
-  const results = db.prepare(query).all(...params);
+  const { rows: results } = await query(sql, params);
   res.json(results);
 });
 

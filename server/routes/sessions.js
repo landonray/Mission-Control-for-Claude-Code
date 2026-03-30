@@ -2,61 +2,60 @@ const express = require('express');
 const path = require('path');
 const { execSync } = require('child_process');
 const router = express.Router();
-const { getDb } = require('../database');
+const { query } = require('../database');
 const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
 
 // List all sessions (active + recent + ended — unified view)
-router.get('/', (req, res) => {
-  const db = getDb();
+router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const status = req.query.status;
 
-  let query = 'SELECT * FROM sessions ORDER BY last_activity_at DESC LIMIT ?';
+  let sql = 'SELECT * FROM sessions ORDER BY last_activity_at DESC LIMIT $1';
   let params = [limit];
 
   if (status) {
-    query = 'SELECT * FROM sessions WHERE status = ? ORDER BY last_activity_at DESC LIMIT ?';
+    sql = 'SELECT * FROM sessions WHERE status = $1 ORDER BY last_activity_at DESC LIMIT $2';
     params = [status, limit];
   }
 
-  const sessions = db.prepare(query).all(...params);
+  const sessions = (await query(sql, params)).rows;
   const active = getAllActiveSessions();
 
   // Reconcile stale statuses: if a session shows non-ended in DB
   // but is no longer tracked in memory, mark it as ended.
   // Skip sessions that have a tmux_session_name — they may still be running in tmux.
-  const updateStale = db.prepare(
-    "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?"
-  );
   const activeIds = new Set(active.map(a => a.id));
 
-  const enriched = sessions.map(s => {
+  const enriched = [];
+  for (const s of sessions) {
     const isStale = s.status !== 'ended' && !activeIds.has(s.id) && !s.tmux_session_name;
     if (isStale) {
-      updateStale.run(s.id);
+      await query(
+        "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, NOW()::text) WHERE id = $1",
+        [s.id]
+      );
       s.status = 'ended';
     }
     const activeInfo = active.find(a => a.id === s.id);
     const projectName = s.working_directory
       ? path.basename(s.working_directory)
       : 'Ungrouped';
-    return {
+    enriched.push({
       ...s,
       project_name: projectName,
       isActive: !!activeInfo,
       pendingPermission: activeInfo?.pendingPermission || null,
       archived: !!s.archived,
       resumable: s.status === 'ended' // All ended sessions are resumable
-    };
-  });
+    });
+  }
 
   res.json(enriched);
 });
 
 // Get single session details
-router.get('/:id', (req, res) => {
-  const db = getDb();
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
+router.get('/:id', async (req, res) => {
+  const session = (await query('SELECT * FROM sessions WHERE id = $1', [req.params.id])).rows[0];
 
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
@@ -66,7 +65,10 @@ router.get('/:id', (req, res) => {
 
   // Reconcile stale status — skip tmux sessions
   if (session.status !== 'ended' && !activeSession && !session.tmux_session_name) {
-    db.prepare("UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE id = ?").run(req.params.id);
+    await query(
+      "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, NOW()::text) WHERE id = $1",
+      [req.params.id]
+    );
     session.status = 'ended';
   }
 
@@ -101,13 +103,12 @@ router.post('/', (req, res) => {
 });
 
 // Send message to session (auto-resumes ended sessions)
-router.post('/:id/message', (req, res) => {
+router.post('/:id/message', async (req, res) => {
   let session = getSession(req.params.id);
 
   if (!session) {
     // Session not in memory — check if it exists in DB for resume
-    const db = getDb();
-    const dbSession = db.prepare('SELECT id FROM sessions WHERE id = ?').get(req.params.id);
+    const dbSession = (await query('SELECT id FROM sessions WHERE id = $1', [req.params.id])).rows[0];
     if (!dbSession) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -166,14 +167,13 @@ router.post('/:id/resume', (req, res) => {
 });
 
 // Rename session
-router.put('/:id/name', (req, res) => {
-  const db = getDb();
+router.put('/:id/name', async (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Name is required' });
   }
-  const result = db.prepare('UPDATE sessions SET name = ? WHERE id = ?').run(name.trim(), req.params.id);
-  if (result.changes === 0) {
+  const result = await query('UPDATE sessions SET name = $1 WHERE id = $2', [name.trim(), req.params.id]);
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: 'Session not found' });
   }
   // Broadcast name change to any active session listeners
@@ -190,12 +190,11 @@ router.put('/:id/name', (req, res) => {
 });
 
 // Archive / unarchive session
-router.post('/:id/archive', (req, res) => {
-  const db = getDb();
+router.post('/:id/archive', async (req, res) => {
   const { archived } = req.body;
   const value = archived ? 1 : 0;
-  const result = db.prepare('UPDATE sessions SET archived = ? WHERE id = ?').run(value, req.params.id);
-  if (result.changes === 0) {
+  const result = await query('UPDATE sessions SET archived = $1 WHERE id = $2', [value, req.params.id]);
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: 'Session not found' });
   }
   res.json({ success: true, archived: value });
@@ -212,19 +211,18 @@ router.post('/:id/end', (req, res) => {
 });
 
 // Get session messages
-router.get('/:id/messages', (req, res) => {
-  const db = getDb();
+router.get('/:id/messages', async (req, res) => {
   const limit = parseInt(req.query.limit) || 100;
   const offset = parseInt(req.query.offset) || 0;
 
-  const messages = db.prepare(`
+  const messages = (await query(`
     SELECT * FROM messages
-    WHERE session_id = ?
+    WHERE session_id = $1
     ORDER BY timestamp ASC
-    LIMIT ? OFFSET ?
-  `).all(req.params.id, limit, offset);
+    LIMIT $2 OFFSET $3
+  `, [req.params.id, limit, offset])).rows;
 
-  const total = db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?').get(req.params.id);
+  const total = (await query('SELECT COUNT(*) as count FROM messages WHERE session_id = $1', [req.params.id])).rows[0];
 
   res.json({
     messages,
@@ -235,14 +233,13 @@ router.get('/:id/messages', (req, res) => {
 });
 
 // Get session summary
-router.get('/:id/summary', (req, res) => {
-  const db = getDb();
-  const summary = db.prepare(`
+router.get('/:id/summary', async (req, res) => {
+  const summary = (await query(`
     SELECT * FROM session_summaries
-    WHERE session_id = ?
+    WHERE session_id = $1
     ORDER BY created_at DESC
     LIMIT 1
-  `).get(req.params.id);
+  `, [req.params.id])).rows[0];
 
   res.json(summary || null);
 });
@@ -251,7 +248,7 @@ router.get('/:id/summary', (req, res) => {
 // Note: Permission mode is set at session creation and cannot be changed mid-session
 // Update permission mode
 // Note: Permission mode is set at session creation. This updates the stored preference.
-router.post('/:id/permission-mode', (req, res) => {
+router.post('/:id/permission-mode', async (req, res) => {
   const session = getSession(req.params.id);
   if (!session) {
     return res.status(404).json({ error: 'Session not found or not active' });
@@ -264,8 +261,7 @@ router.post('/:id/permission-mode', (req, res) => {
   }
 
   session.permissionMode = permissionMode;
-  const db = getDb();
-  db.prepare('UPDATE sessions SET permission_mode = ? WHERE id = ?').run(permissionMode, req.params.id);
+  await query('UPDATE sessions SET permission_mode = $1 WHERE id = $2', [permissionMode, req.params.id]);
 
   res.json({
     success: true,
@@ -275,9 +271,8 @@ router.post('/:id/permission-mode', (req, res) => {
 });
 
 // Get session preview URL
-router.get('/:id/preview-url', (req, res) => {
-  const db = getDb();
-  const session = db.prepare('SELECT preview_url FROM sessions WHERE id = ?').get(req.params.id);
+router.get('/:id/preview-url', async (req, res) => {
+  const session = (await query('SELECT preview_url FROM sessions WHERE id = $1', [req.params.id])).rows[0];
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -285,29 +280,29 @@ router.get('/:id/preview-url', (req, res) => {
 });
 
 // Update session preview URL
-router.put('/:id/preview-url', (req, res) => {
-  const db = getDb();
+router.put('/:id/preview-url', async (req, res) => {
   const { url } = req.body;
-  const result = db.prepare('UPDATE sessions SET preview_url = ? WHERE id = ?').run(url, req.params.id);
-  if (result.changes === 0) {
+  const result = await query('UPDATE sessions SET preview_url = $1 WHERE id = $2', [url, req.params.id]);
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: 'Session not found' });
   }
   res.json({ preview_url: url });
 });
 
 // Update working directory for a session (called by CwdChanged hook)
-router.post('/cwd-update', (req, res) => {
-  const db = getDb();
+router.post('/cwd-update', async (req, res) => {
   const { session_id, working_directory } = req.body;
 
   if (!session_id || !working_directory) {
     return res.status(400).json({ error: 'session_id and working_directory required' });
   }
 
-  const result = db.prepare('UPDATE sessions SET working_directory = ?, last_activity_at = datetime(\'now\') WHERE id = ?')
-    .run(working_directory, session_id);
+  const result = await query(
+    'UPDATE sessions SET working_directory = $1, last_activity_at = NOW() WHERE id = $2',
+    [working_directory, session_id]
+  );
 
-  if (result.changes === 0) {
+  if (result.rowCount === 0) {
     return res.status(404).json({ error: 'Session not found' });
   }
 

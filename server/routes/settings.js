@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../database');
+const { query } = require('../database');
 
 // GET /api/settings/general
-router.get('/general', (req, res) => {
+router.get('/general', async (req, res) => {
   try {
-    const db = getDb();
-    const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
+    const row = (await query('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1')).rows[0];
     res.json(row || { projects_directory: null, github_username: null, setup_repo: null });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -14,13 +13,14 @@ router.get('/general', (req, res) => {
 });
 
 // PUT /api/settings/general
-router.put('/general', (req, res) => {
+router.put('/general', async (req, res) => {
   try {
     const { projects_directory, github_username, setup_repo } = req.body;
-    const db = getDb();
-    db.prepare('UPDATE app_settings SET projects_directory = ?, github_username = ?, setup_repo = ? WHERE id = 1')
-      .run(projects_directory ?? null, github_username ?? null, setup_repo ?? null);
-    const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
+    await query(
+      'UPDATE app_settings SET projects_directory = $1, github_username = $2, setup_repo = $3 WHERE id = 1',
+      [projects_directory ?? null, github_username ?? null, setup_repo ?? null]
+    );
+    const row = (await query('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1')).rows[0];
     res.json(row);
   } catch (err) {
     res.status(500).json({ error: err.message });
