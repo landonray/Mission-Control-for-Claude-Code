@@ -27,4 +27,26 @@ router.put('/general', (req, res) => {
   }
 });
 
+// POST /api/settings/restart — gracefully restart the server process
+router.post('/restart', (req, res) => {
+  const { spawn } = require('child_process');
+  const path = require('path');
+
+  res.json({ status: 'restarting' });
+
+  // Give the response time to flush, then restart
+  setTimeout(() => {
+    const serverScript = path.join(__dirname, '..', 'index.js');
+    const child = spawn(process.execPath, [serverScript], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+    child.unref();
+
+    // Exit current process (tmux sessions survive per existing graceful shutdown)
+    process.kill(process.pid, 'SIGTERM');
+  }, 500);
+});
+
 module.exports = router;
