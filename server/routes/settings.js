@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getDb } = require('../database');
+const { getDb, backupSettings } = require('../database');
 
 // GET /api/settings/general
 router.get('/general', (req, res) => {
@@ -21,6 +21,7 @@ router.put('/general', (req, res) => {
     db.prepare('UPDATE app_settings SET projects_directory = ?, github_username = ?, setup_repo = ? WHERE id = 1')
       .run(projects_directory ?? null, github_username ?? null, setup_repo ?? null);
     const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
+    backupSettings();
     res.json(row);
   } catch (err) {
     res.status(500).json({ error: err.message });

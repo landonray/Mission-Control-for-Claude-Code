@@ -1,7 +1,9 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
 const DB_PATH = path.join(__dirname, '..', 'mission-control.db');
+const SETTINGS_BACKUP_PATH = path.join(__dirname, '..', '.settings-backup.json');
 
 let db;
 
@@ -147,6 +149,36 @@ function initializeSchema() {
   try { db.exec('ALTER TABLE app_settings ADD COLUMN setup_repo TEXT'); } catch (e) { /* column already exists */ }
 
   seedQualityRules();
+  restoreSettingsFromBackup();
+}
+
+function backupSettings() {
+  try {
+    const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
+    if (row && (row.projects_directory || row.github_username || row.setup_repo)) {
+      fs.writeFileSync(SETTINGS_BACKUP_PATH, JSON.stringify(row, null, 2), 'utf8');
+    }
+  } catch (e) {
+    // Silently fail — backup is best-effort
+  }
+}
+
+function restoreSettingsFromBackup() {
+  try {
+    const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
+    // Only restore if all settings are empty (fresh database)
+    if (row && !row.projects_directory && !row.github_username && !row.setup_repo) {
+      if (fs.existsSync(SETTINGS_BACKUP_PATH)) {
+        const backup = JSON.parse(fs.readFileSync(SETTINGS_BACKUP_PATH, 'utf8'));
+        if (backup.projects_directory || backup.github_username || backup.setup_repo) {
+          db.prepare('UPDATE app_settings SET projects_directory = ?, github_username = ?, setup_repo = ? WHERE id = 1')
+            .run(backup.projects_directory ?? null, backup.github_username ?? null, backup.setup_repo ?? null);
+        }
+      }
+    }
+  } catch (e) {
+    // Silently fail — restore is best-effort
+  }
 }
 
 function seedQualityRules() {
@@ -1237,4 +1269,4 @@ exit 0`,
   }
 }
 
-module.exports = { getDb };
+module.exports = { getDb, backupSettings };
