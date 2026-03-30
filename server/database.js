@@ -1,191 +1,96 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { neon } = require('@neondatabase/serverless');
+const { ProxyAgent } = require('undici');
 
-const DB_PATH = path.join(__dirname, '..', 'mission-control.db');
-const SETTINGS_BACKUP_PATH = path.join(__dirname, '..', '.settings-backup.json');
-
-let db;
-
-function getDb() {
-  if (!db) {
-    db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-    initializeSchema();
-  }
-  return db;
+// Use HTTPS proxy if available (required in containerized environments)
+const fetchOptions = {};
+if (process.env.HTTPS_PROXY || process.env.https_proxy) {
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy;
+  const dispatcher = new ProxyAgent(proxyUrl);
+  fetchOptions.dispatcher = dispatcher;
 }
 
-function initializeSchema() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'idle',
-      working_directory TEXT,
-      branch TEXT,
-      context_window_usage REAL DEFAULT 0,
-      user_message_count INTEGER DEFAULT 0,
-      assistant_message_count INTEGER DEFAULT 0,
-      tool_call_count INTEGER DEFAULT 0,
-      last_action_summary TEXT,
-      last_activity_at TEXT,
-      permission_mode TEXT DEFAULT 'acceptEdits',
-      created_at TEXT DEFAULT (datetime('now')),
-      ended_at TEXT
-    );
+const sql = neon(process.env.DATABASE_URL, { fetchOptions });
 
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      tool_calls TEXT,
-      tool_results TEXT,
-      timestamp TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES sessions(id)
-    );
+async function query(text, params) {
+  const rows = await sql.query(text, params || []);
+  return { rows, rowCount: rows.length };
+}
 
-    CREATE TABLE IF NOT EXISTS session_summaries (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT NOT NULL,
-      summary TEXT NOT NULL,
-      key_actions TEXT,
-      files_modified TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES sessions(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS mcp_servers (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      command TEXT NOT NULL,
-      args TEXT,
-      env TEXT,
-      auto_connect INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'disconnected',
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS notification_subscriptions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      endpoint TEXT NOT NULL UNIQUE,
-      keys_p256dh TEXT NOT NULL,
-      keys_auth TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS notification_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      waiting_for_input INTEGER DEFAULT 1,
-      task_complete INTEGER DEFAULT 1,
-      error_events INTEGER DEFAULT 1,
-      context_window_warning INTEGER DEFAULT 1,
-      context_threshold REAL DEFAULT 0.8,
+async function initializeDb() {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'idle',
+      working_directory TEXT, branch TEXT, context_window_usage REAL DEFAULT 0,
+      user_message_count INTEGER DEFAULT 0, assistant_message_count INTEGER DEFAULT 0,
+      tool_call_count INTEGER DEFAULT 0, last_action_summary TEXT, last_activity_at TEXT,
+      permission_mode TEXT DEFAULT 'acceptEdits', created_at TEXT DEFAULT NOW(),
+      ended_at TEXT, preview_url TEXT, archived INTEGER DEFAULT 0,
+      tmux_session_name TEXT, model TEXT DEFAULT 'claude-opus-4-6'
+    )`,
+    `CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+      role TEXT NOT NULL, content TEXT NOT NULL, tool_calls TEXT, tool_results TEXT,
+      timestamp TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS session_summaries (
+      id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
+      summary TEXT NOT NULL, key_actions TEXT, files_modified TEXT, created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS mcp_servers (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL,
+      args TEXT, env TEXT, auto_connect INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'disconnected', created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS notification_subscriptions (
+      id SERIAL PRIMARY KEY, endpoint TEXT NOT NULL UNIQUE,
+      keys_p256dh TEXT NOT NULL, keys_auth TEXT NOT NULL, created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS notification_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1), waiting_for_input INTEGER DEFAULT 1,
+      task_complete INTEGER DEFAULT 1, error_events INTEGER DEFAULT 1,
+      context_window_warning INTEGER DEFAULT 1, context_threshold REAL DEFAULT 0.8,
       daily_digest INTEGER DEFAULT 0
-    );
+    )`,
+    `INSERT INTO notification_settings (id) VALUES (1) ON CONFLICT DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS app_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1), projects_directory TEXT,
+      github_username TEXT, setup_repo TEXT
+    )`,
+    `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT DO NOTHING`,
+    `CREATE TABLE IF NOT EXISTS daily_digests (
+      id SERIAL PRIMARY KEY, date TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL, session_count INTEGER, created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS quality_rules (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
+      hook_type TEXT NOT NULL, fires_on TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'medium',
+      enabled INTEGER DEFAULT 1, prompt TEXT, script TEXT, config TEXT, category TEXT,
+      sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), updated_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS quality_results (
+      id SERIAL PRIMARY KEY, session_id TEXT REFERENCES sessions(id),
+      rule_id TEXT NOT NULL REFERENCES quality_rules(id), rule_name TEXT NOT NULL,
+      result TEXT NOT NULL, severity TEXT NOT NULL, details TEXT, file_path TEXT,
+      timestamp TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_quality_results_session ON quality_results(session_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_quality_results_rule ON quality_results(rule_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_quality_results_timestamp ON quality_results(timestamp)`
+  ];
 
-    INSERT OR IGNORE INTO notification_settings (id) VALUES (1);
-
-    CREATE TABLE IF NOT EXISTS app_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      projects_directory TEXT,
-      github_username TEXT,
-      setup_repo TEXT
-    );
-
-    INSERT OR IGNORE INTO app_settings (id) VALUES (1);
-
-    CREATE TABLE IF NOT EXISTS daily_digests (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL UNIQUE,
-      content TEXT NOT NULL,
-      session_count INTEGER,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS quality_rules (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT NOT NULL,
-      hook_type TEXT NOT NULL,
-      fires_on TEXT NOT NULL,
-      severity TEXT NOT NULL DEFAULT 'medium',
-      enabled INTEGER DEFAULT 1,
-      prompt TEXT,
-      script TEXT,
-      config TEXT,
-      category TEXT,
-      sort_order INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS quality_results (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id TEXT,
-      rule_id TEXT NOT NULL,
-      rule_name TEXT NOT NULL,
-      result TEXT NOT NULL,
-      severity TEXT NOT NULL,
-      details TEXT,
-      file_path TEXT,
-      timestamp TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (session_id) REFERENCES sessions(id),
-      FOREIGN KEY (rule_id) REFERENCES quality_rules(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_quality_results_session ON quality_results(session_id);
-    CREATE INDEX IF NOT EXISTS idx_quality_results_rule ON quality_results(rule_id);
-    CREATE INDEX IF NOT EXISTS idx_quality_results_timestamp ON quality_results(timestamp);
-  `);
-
-  // Migrations: add columns to existing tables
-  try { db.exec('ALTER TABLE sessions ADD COLUMN preview_url TEXT'); } catch (e) { /* column already exists */ }
-  try { db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER DEFAULT 0'); } catch (e) { /* column already exists */ }
-  try { db.exec('ALTER TABLE sessions ADD COLUMN tmux_session_name TEXT'); } catch (e) { /* column already exists */ }
-  try { db.exec("ALTER TABLE sessions ADD COLUMN model TEXT DEFAULT 'claude-opus-4-6'"); } catch (e) { /* column already exists */ }
-  try { db.exec('ALTER TABLE app_settings ADD COLUMN setup_repo TEXT'); } catch (e) { /* column already exists */ }
-
-  seedQualityRules();
-  restoreSettingsFromBackup();
-}
-
-function backupSettings() {
-  try {
-    const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
-    if (row && (row.projects_directory || row.github_username || row.setup_repo)) {
-      fs.writeFileSync(SETTINGS_BACKUP_PATH, JSON.stringify(row, null, 2), 'utf8');
-    }
-  } catch (e) {
-    // Silently fail — backup is best-effort
+  for (const stmt of statements) {
+    await sql.query(stmt);
   }
+
+  await seedQualityRules();
 }
 
-function restoreSettingsFromBackup() {
-  try {
-    const row = db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
-    // Only restore if all settings are empty (fresh database)
-    if (row && !row.projects_directory && !row.github_username && !row.setup_repo) {
-      if (fs.existsSync(SETTINGS_BACKUP_PATH)) {
-        const backup = JSON.parse(fs.readFileSync(SETTINGS_BACKUP_PATH, 'utf8'));
-        if (backup.projects_directory || backup.github_username || backup.setup_repo) {
-          db.prepare('UPDATE app_settings SET projects_directory = ?, github_username = ?, setup_repo = ? WHERE id = 1')
-            .run(backup.projects_directory ?? null, backup.github_username ?? null, backup.setup_repo ?? null);
-        }
-      }
-    }
-  } catch (e) {
-    // Silently fail — restore is best-effort
-  }
-}
-
-function seedQualityRules() {
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO quality_rules (id, name, description, hook_type, fires_on, severity, enabled, prompt, script, config, category, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+async function seedQualityRules() {
+  const insertSql = `
+    INSERT INTO quality_rules (id, name, description, hook_type, fires_on, severity, enabled, prompt, script, config, category, sort_order)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    ON CONFLICT (id) DO NOTHING
+  `;
 
   const rules = [
     {
@@ -1265,8 +1170,8 @@ exit 0`,
   ];
 
   for (const r of rules) {
-    insert.run(r.id, r.name, r.description, r.hook_type, r.fires_on, r.severity, r.enabled, r.prompt, r.script, r.config, r.category, r.sort_order);
+    await sql.query(insertSql, [r.id, r.name, r.description, r.hook_type, r.fires_on, r.severity, r.enabled, r.prompt, r.script, r.config, r.category, r.sort_order]);
   }
 }
 
-module.exports = { getDb, backupSettings };
+module.exports = { query, initializeDb };

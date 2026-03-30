@@ -4,7 +4,7 @@ const treeKill = require('tree-kill');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { getDb } = require('../database');
+const { query } = require('../database');
 const Anthropic = require('@anthropic-ai/sdk');
 
 // Lazy-init Anthropic client (only created when needed)
@@ -96,13 +96,13 @@ class SessionProcess {
     }
   }
 
-  buildMcpConfig() {
-    const db = getDb();
+  async buildMcpConfig() {
     const servers = {};
 
     if (this.mcpConnections && this.mcpConnections.length > 0) {
       for (const mcpId of this.mcpConnections) {
-        const mcpServer = db.prepare('SELECT * FROM mcp_servers WHERE id = ? OR name = ?').get(mcpId, mcpId);
+        const result = await query('SELECT * FROM mcp_servers WHERE id = $1 OR name = $1', [mcpId]);
+        const mcpServer = result.rows[0];
         if (mcpServer) {
           servers[mcpServer.name] = {
             command: mcpServer.command,
@@ -115,8 +115,8 @@ class SessionProcess {
       }
     }
 
-    const autoConnectServers = db.prepare('SELECT * FROM mcp_servers WHERE auto_connect = 1').all();
-    for (const server of autoConnectServers) {
+    const autoResult = await query('SELECT * FROM mcp_servers WHERE auto_connect = 1');
+    for (const server of autoResult.rows) {
       if (!servers[server.name]) {
         servers[server.name] = {
           command: server.command,
@@ -141,7 +141,7 @@ class SessionProcess {
     }
   }
 
-  buildArgs(prompt) {
+  async buildArgs(prompt) {
     const args = [
       '--print',
       '--output-format', 'stream-json',
@@ -163,7 +163,7 @@ class SessionProcess {
       args.push('--model', this.model);
     }
 
-    const mcpConfig = this.buildMcpConfig();
+    const mcpConfig = await this.buildMcpConfig();
     if (mcpConfig) {
       args.push('--mcp-config', JSON.stringify(mcpConfig));
     }
@@ -177,20 +177,19 @@ class SessionProcess {
     return path.join(TMUX_OUTPUT_DIR, `${this.id}.jsonl`);
   }
 
-  getTmuxName() {
+  async getTmuxName() {
     if (!this.tmuxSessionName) {
       this.tmuxSessionName = `mc-${this.id.substring(0, 8)}`;
-      const db = getDb();
-      db.prepare('UPDATE sessions SET tmux_session_name = ? WHERE id = ?').run(this.tmuxSessionName, this.id);
+      await query('UPDATE sessions SET tmux_session_name = $1 WHERE id = $2', [this.tmuxSessionName, this.id]);
     }
     return this.tmuxSessionName;
   }
 
-  spawnProcess(prompt) {
+  async spawnProcess(prompt) {
     if (tmuxAvailable) {
-      this.spawnTmuxProcess(prompt);
+      await this.spawnTmuxProcess(prompt);
     } else {
-      this.spawnDirectProcess(prompt);
+      await this.spawnDirectProcess(prompt);
     }
   }
 
@@ -202,11 +201,11 @@ class SessionProcess {
     return path.join(TMUX_SCRIPTS_DIR, `${this.id}.prompt`);
   }
 
-  spawnTmuxProcess(prompt) {
-    const tmuxName = this.getTmuxName();
+  async spawnTmuxProcess(prompt) {
+    const tmuxName = await this.getTmuxName();
     const outputFile = this.getOutputFilePath();
     const stderrFile = outputFile + '.stderr';
-    const args = this.buildArgs(prompt);
+    const args = await this.buildArgs(prompt);
 
     // Ensure output file exists
     try { fs.writeFileSync(outputFile, '', { flag: 'a' }); } catch (e) {}
@@ -261,7 +260,7 @@ class SessionProcess {
       try { fs.unlinkSync(scriptPath); } catch (e) {}
       try { fs.unlinkSync(promptFile); } catch (e) {}
       // Fall back to direct spawning
-      this.spawnDirectProcess(prompt);
+      await this.spawnDirectProcess(prompt);
     }
   }
 
@@ -361,8 +360,8 @@ class SessionProcess {
     }
   }
 
-  spawnDirectProcess(prompt) {
-    const args = this.buildArgs(prompt);
+  async spawnDirectProcess(prompt) {
+    const args = await this.buildArgs(prompt);
 
     this.process = spawn('claude', args, {
       cwd: this.workingDirectory,
@@ -467,8 +466,7 @@ class SessionProcess {
     if (this._lastDetectedUrl === url) return;
     this._lastDetectedUrl = url;
 
-    const db = getDb();
-    db.prepare('UPDATE sessions SET preview_url = ? WHERE id = ?').run(url, this.id);
+    query('UPDATE sessions SET preview_url = $1 WHERE id = $2', [url, this.id]).catch(e => console.error('Failed to update preview URL:', e.message));
 
     this.broadcast({
       type: 'dev_server_detected',
@@ -479,8 +477,19 @@ class SessionProcess {
   }
 
   processStreamEvent(event) {
-    const db = getDb();
+    // Fire-and-forget async DB operations — errors logged but don't block event processing
+    this._processStreamEventAsync(event).catch(e => console.error('Stream event DB error:', e.message));
 
+    this.broadcast({
+      type: 'stream_event',
+      sessionId: this.id,
+      event: event,
+      status: this.status,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  async _processStreamEventAsync(event) {
     switch (event.type) {
       case 'assistant':
         this.status = 'working';
@@ -498,19 +507,13 @@ class SessionProcess {
             content = JSON.stringify(event.message);
           }
           if (content) {
-            db.prepare(`
-              INSERT INTO messages (session_id, role, content, timestamp)
-              VALUES (?, 'assistant', ?, datetime('now'))
-            `).run(this.id, content);
-            db.prepare(`
-              UPDATE sessions SET
-                assistant_message_count = assistant_message_count + 1,
-                last_action_summary = ?,
-                last_activity_at = datetime('now')
-              WHERE id = ?
-            `).run(
-              content.substring(0, 200),
-              this.id
+            await query(
+              `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
+              [this.id, content]
+            );
+            await query(
+              `UPDATE sessions SET assistant_message_count = assistant_message_count + 1, last_action_summary = $1, last_activity_at = NOW() WHERE id = $2`,
+              [content.substring(0, 200), this.id]
             );
           }
         }
@@ -519,15 +522,9 @@ class SessionProcess {
       case 'tool_use':
         this.status = 'working';
         this.updateDbStatus('working');
-        db.prepare(`
-          UPDATE sessions SET
-            tool_call_count = tool_call_count + 1,
-            last_action_summary = ?,
-            last_activity_at = datetime('now')
-          WHERE id = ?
-        `).run(
-          `Tool: ${event.tool || event.name || 'unknown'}`,
-          this.id
+        await query(
+          `UPDATE sessions SET tool_call_count = tool_call_count + 1, last_action_summary = $1, last_activity_at = NOW() WHERE id = $2`,
+          [`Tool: ${event.tool || event.name || 'unknown'}`, this.id]
         );
         break;
 
@@ -555,12 +552,11 @@ class SessionProcess {
           const totalTokens = (usage.input_tokens || 0) + (usage.output_tokens || 0) + (usage.cache_read_input_tokens || 0);
           const maxTokens = usage.max_tokens || 200000;
           const usageRatio = Math.min(totalTokens / maxTokens, 1.0);
-          db.prepare(`
-            UPDATE sessions SET context_window_usage = ? WHERE id = ?
-          `).run(usageRatio, this.id);
+          await query('UPDATE sessions SET context_window_usage = $1 WHERE id = $2', [usageRatio, this.id]);
 
           const { sendNotification } = require('./notificationService');
-          const settings = db.prepare('SELECT context_threshold FROM notification_settings WHERE id = 1').get();
+          const settingsResult = await query('SELECT context_threshold FROM notification_settings WHERE id = 1');
+          const settings = settingsResult.rows[0];
           if (settings && usageRatio >= settings.context_threshold) {
             sendNotification(
               'Context Window Warning',
@@ -576,9 +572,7 @@ class SessionProcess {
           const totalTokens = (event.input_tokens || 0) + (event.output_tokens || 0);
           const maxTokens = event.max_tokens || 200000;
           const usageRatio = Math.min(totalTokens / maxTokens, 1.0);
-          db.prepare(`
-            UPDATE sessions SET context_window_usage = ? WHERE id = ?
-          `).run(usageRatio, this.id);
+          await query('UPDATE sessions SET context_window_usage = $1 WHERE id = $2', [usageRatio, this.id]);
         }
         break;
 
@@ -589,36 +583,25 @@ class SessionProcess {
         }
         break;
     }
-
-    this.broadcast({
-      type: 'stream_event',
-      sessionId: this.id,
-      event: event,
-      status: this.status,
-      timestamp: new Date().toISOString()
-    });
   }
 
-  sendMessage(text) {
+  async sendMessage(text) {
     if (this.process) {
       // A process is already running — queue the message
       this.messageQueue.push(text);
       return;
     }
 
-    const db = getDb();
-
     // Check if this is the first user message — trigger AI name generation
-    const msgCount = db.prepare(
-      'SELECT user_message_count FROM sessions WHERE id = ?'
-    ).get(this.id);
+    const msgCountResult = await query('SELECT user_message_count FROM sessions WHERE id = $1', [this.id]);
+    const msgCount = msgCountResult.rows[0];
     if (msgCount && msgCount.user_message_count === 0) {
-      generateSessionName(text).then(name => {
+      generateSessionName(text).then(async (name) => {
         if (!name) return;
-        const currentSession = db.prepare('SELECT name FROM sessions WHERE id = ?').get(this.id);
-        // Only auto-rename if the name is still the default
+        const currentResult = await query('SELECT name FROM sessions WHERE id = $1', [this.id]);
+        const currentSession = currentResult.rows[0];
         if (currentSession && currentSession.name === 'New Session') {
-          db.prepare('UPDATE sessions SET name = ? WHERE id = ?').run(name, this.id);
+          await query('UPDATE sessions SET name = $1 WHERE id = $2', [name, this.id]);
           this.broadcast({
             type: 'session_name_updated',
             sessionId: this.id,
@@ -626,20 +609,18 @@ class SessionProcess {
             timestamp: new Date().toISOString()
           });
         }
-      });
+      }).catch(e => console.error('Session name generation error:', e.message));
     }
 
-    db.prepare(`
-      INSERT INTO messages (session_id, role, content, timestamp)
-      VALUES (?, 'user', ?, datetime('now'))
-    `).run(this.id, text);
+    await query(
+      `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
+      [this.id, text]
+    );
 
-    db.prepare(`
-      UPDATE sessions SET
-        user_message_count = user_message_count + 1,
-        last_activity_at = datetime('now')
-      WHERE id = ?
-    `).run(this.id);
+    await query(
+      `UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1`,
+      [this.id]
+    );
 
     this.status = 'working';
     this.updateDbStatus('working');
@@ -651,7 +632,7 @@ class SessionProcess {
       timestamp: new Date().toISOString()
     });
 
-    this.spawnProcess(text);
+    await this.spawnProcess(text);
   }
 
   respondToPermission(approved) {
@@ -799,17 +780,12 @@ class SessionProcess {
   }
 
   updateDbStatus(status) {
-    const db = getDb();
     if (status === 'ended') {
-      db.prepare(`
-        UPDATE sessions SET status = ?, ended_at = datetime('now'), last_activity_at = datetime('now')
-        WHERE id = ?
-      `).run(status, this.id);
+      query('UPDATE sessions SET status = $1, ended_at = NOW(), last_activity_at = NOW() WHERE id = $2', [status, this.id])
+        .catch(e => console.error('Failed to update session status:', e.message));
     } else {
-      db.prepare(`
-        UPDATE sessions SET status = ?, last_activity_at = datetime('now')
-        WHERE id = ?
-      `).run(status, this.id);
+      query('UPDATE sessions SET status = $1, last_activity_at = NOW() WHERE id = $2', [status, this.id])
+        .catch(e => console.error('Failed to update session status:', e.message));
     }
   }
 
@@ -818,28 +794,16 @@ class SessionProcess {
     let match;
     while ((match = pattern.exec(text)) !== null) {
       const [, ruleId, severity, result, details] = match;
-      try {
-        const db = getDb();
-        db.prepare(`
-          INSERT INTO quality_results (session_id, rule_id, rule_name, result, severity, details, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-        `).run(
-          this.id,
-          ruleId,
-          ruleId,
-          result.toLowerCase(),
-          severity,
-          details || null
-        );
-      } catch (e) {}
+      query(
+        `INSERT INTO quality_results (session_id, rule_id, rule_name, result, severity, details, timestamp) VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [this.id, ruleId, ruleId, result.toLowerCase(), severity, details || null]
+      ).catch(() => {});
     }
   }
 
-  generateSummary() {
-    const db = getDb();
-    const messages = db.prepare(`
-      SELECT role, content FROM messages WHERE session_id = ? ORDER BY timestamp
-    `).all(this.id);
+  async generateSummary() {
+    const result = await query('SELECT role, content FROM messages WHERE session_id = $1 ORDER BY timestamp', [this.id]);
+    const messages = result.rows;
 
     if (messages.length === 0) return;
 
@@ -891,18 +855,18 @@ ${transcript}`;
           const parsed = JSON.parse(cleaned);
           const summaryText = parsed.summary || stdout.trim();
           const keyDecisions = Array.isArray(parsed.key_decisions) ? parsed.key_decisions : [];
-          this.saveSummary(db, summaryText, JSON.stringify(keyDecisions), filesModified);
+          this.saveSummary(summaryText, JSON.stringify(keyDecisions), filesModified);
         } catch (parseErr) {
           // Claude returned plain text instead of JSON — use it as the summary
-          this.saveSummary(db, stdout.trim(), null, filesModified);
+          this.saveSummary(stdout.trim(), null, filesModified);
         }
       } else {
-        this.saveFallbackSummary(db, messages, filesModified);
+        this.saveFallbackSummary(messages, filesModified);
       }
     });
   }
 
-  saveFallbackSummary(db, messages, filesModified) {
+  saveFallbackSummary(messages, filesModified) {
     const userMsgs = messages.filter(m => m.role === 'user');
     const assistantMsgs = messages.filter(m => m.role === 'assistant');
     const lastAssistant = assistantMsgs[assistantMsgs.length - 1];
@@ -914,62 +878,45 @@ ${transcript}`;
     if (lastAssistant) {
       parts.push(`Last response: ${lastAssistant.content.substring(0, 300)}`);
     }
-    // No key_actions available in fallback mode
-    this.saveSummary(db, parts.join(' '), null, filesModified);
+    this.saveSummary(parts.join(' '), null, filesModified);
   }
 
-  saveSummary(db, summaryText, keyActions, filesModified) {
-    db.prepare(`
-      INSERT INTO session_summaries (session_id, summary, key_actions, files_modified, created_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
-    `).run(
-      this.id,
-      summaryText,
-      keyActions || null,
-      filesModified instanceof Set
-        ? (filesModified.size > 0 ? JSON.stringify([...filesModified]) : null)
-        : (filesModified || null)
-    );
+  saveSummary(summaryText, keyActions, filesModified) {
+    const filesStr = filesModified instanceof Set
+      ? (filesModified.size > 0 ? JSON.stringify([...filesModified]) : null)
+      : (filesModified || null);
+    query(
+      `INSERT INTO session_summaries (session_id, summary, key_actions, files_modified, created_at) VALUES ($1, $2, $3, $4, NOW())`,
+      [this.id, summaryText, keyActions || null, filesStr]
+    ).catch(e => console.error('Failed to save summary:', e.message));
   }
 }
 
 // --- Context Preamble for Session Resume ---
 
-function buildContextPreamble(sessionId) {
-  const db = getDb();
-
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+async function buildContextPreamble(sessionId) {
+  const sessionResult = await query('SELECT * FROM sessions WHERE id = $1', [sessionId]);
+  const session = sessionResult.rows[0];
   if (!session) return null;
 
   const parts = [];
 
-  // 1. Session summary (if available)
-  const summary = db.prepare(`
-    SELECT summary FROM session_summaries
-    WHERE session_id = ? ORDER BY created_at DESC LIMIT 1
-  `).get(sessionId);
+  const summaryResult = await query('SELECT summary FROM session_summaries WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1', [sessionId]);
+  const summary = summaryResult.rows[0];
   if (summary) {
     parts.push(`Session summary: ${summary.summary}`);
   }
 
-  // 2. Original task (first user message)
-  const firstMessage = db.prepare(`
-    SELECT content FROM messages
-    WHERE session_id = ? AND role = 'user'
-    ORDER BY timestamp ASC LIMIT 1
-  `).get(sessionId);
+  const firstMsgResult = await query("SELECT content FROM messages WHERE session_id = $1 AND role = 'user' ORDER BY timestamp ASC LIMIT 1", [sessionId]);
+  const firstMessage = firstMsgResult.rows[0];
   if (firstMessage) {
     parts.push(`The original task was: ${firstMessage.content.substring(0, 500)}`);
   }
 
-  // 3. Key decisions + 4. Files modified — both from session_summaries (single query)
-  const summaryDetails = db.prepare(`
-    SELECT key_actions, files_modified FROM session_summaries
-    WHERE session_id = ? ORDER BY created_at DESC LIMIT 1
-  `).get(sessionId);
+  const detailsResult = await query('SELECT key_actions, files_modified FROM session_summaries WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1', [sessionId]);
+  const summaryDetails = detailsResult.rows[0];
 
   if (summaryDetails) {
-    // Key decisions — extracted by Claude at session end
     if (summaryDetails.key_actions) {
       try {
         const decisions = JSON.parse(summaryDetails.key_actions);
@@ -977,12 +924,9 @@ function buildContextPreamble(sessionId) {
           parts.push(`Key decisions made:\n${decisions.map(d => `- ${d}`).join('\n')}`);
         }
       } catch (e) {
-        // key_actions may be legacy plain-text format — use as-is
         parts.push(`Key decisions made: ${summaryDetails.key_actions}`);
       }
     }
-
-    // Files modified
     if (summaryDetails.files_modified) {
       try {
         const files = JSON.parse(summaryDetails.files_modified);
@@ -993,12 +937,8 @@ function buildContextPreamble(sessionId) {
     }
   }
 
-  // 5. Last 5 exchanges
-  const recentMessages = db.prepare(`
-    SELECT role, content FROM messages
-    WHERE session_id = ?
-    ORDER BY timestamp DESC LIMIT 10
-  `).all(sessionId);
+  const recentResult = await query('SELECT role, content FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 10', [sessionId]);
+  const recentMessages = recentResult.rows;
 
   if (recentMessages.length > 0) {
     const exchanges = recentMessages
@@ -1035,81 +975,58 @@ function buildContextPreamble(sessionId) {
 // Guard against concurrent resume calls for the same session
 const resumeInProgress = new Set();
 
-function resumeSession(sessionId, newMessage) {
-  // Prevent concurrent resume of the same session
+async function resumeSession(sessionId, newMessage) {
   if (resumeInProgress.has(sessionId)) {
-    // Another resume is already in progress — queue via the existing session
     const existing = activeSessions.get(sessionId);
     if (existing) {
-      existing.sendMessage(newMessage);
+      await existing.sendMessage(newMessage);
       return existing;
     }
     return null;
   }
 
-  // If session is already active in memory, just send the message directly
   const alreadyActive = activeSessions.get(sessionId);
   if (alreadyActive) {
-    alreadyActive.sendMessage(newMessage);
+    await alreadyActive.sendMessage(newMessage);
     return alreadyActive;
   }
 
   resumeInProgress.add(sessionId);
 
-  const db = getDb();
-  const sessionRow = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
+  const sessionResult = await query('SELECT * FROM sessions WHERE id = $1', [sessionId]);
+  const sessionRow = sessionResult.rows[0];
   if (!sessionRow) {
     resumeInProgress.delete(sessionId);
     return null;
   }
 
-  // Build context preamble
-  const preamble = buildContextPreamble(sessionId);
+  const preamble = await buildContextPreamble(sessionId);
 
-  // Create a new SessionProcess for this session ID
   const session = new SessionProcess(sessionId, {
     workingDirectory: sessionRow.working_directory,
     permissionMode: sessionRow.permission_mode || 'acceptEdits',
     model: sessionRow.model || DEFAULT_MODEL,
     mcpConnections: [],
-    tmuxSessionName: null // new tmux session for resumed session
+    tmuxSessionName: null
   });
 
   session.resuming = true;
-
-  // Re-activate the session
   activeSessions.set(sessionId, session);
 
-  // Update DB status
-  db.prepare(`
-    UPDATE sessions SET status = 'working', ended_at = NULL, last_activity_at = datetime('now')
-    WHERE id = ?
-  `).run(sessionId);
+  await query("UPDATE sessions SET status = 'working', ended_at = NULL, last_activity_at = NOW() WHERE id = $1", [sessionId]);
 
-  // Broadcast the resume event
   session.broadcast({
     type: 'session_resuming',
     sessionId: sessionId,
     timestamp: new Date().toISOString()
   });
 
-  // Combine preamble + new message and send
   const combinedPrompt = preamble
     ? `${preamble}\n\nUser's new message: ${newMessage}`
     : newMessage;
 
-  // Store the user message in DB
-  db.prepare(`
-    INSERT INTO messages (session_id, role, content, timestamp)
-    VALUES (?, 'user', ?, datetime('now'))
-  `).run(sessionId, newMessage);
-
-  db.prepare(`
-    UPDATE sessions SET
-      user_message_count = user_message_count + 1,
-      last_activity_at = datetime('now')
-    WHERE id = ?
-  `).run(sessionId);
+  await query("INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())", [sessionId, newMessage]);
+  await query("UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1", [sessionId]);
 
   session.status = 'working';
   session.updateDbStatus('working');
@@ -1121,8 +1038,7 @@ function resumeSession(sessionId, newMessage) {
     timestamp: new Date().toISOString()
   });
 
-  // Spawn the process with the combined prompt
-  session.spawnProcess(combinedPrompt);
+  await session.spawnProcess(combinedPrompt);
 
   resumeInProgress.delete(sessionId);
 
@@ -1131,7 +1047,7 @@ function resumeSession(sessionId, newMessage) {
 
 // --- Tmux Session Recovery ---
 
-function recoverTmuxSessions() {
+async function recoverTmuxSessions() {
   if (!tmuxAvailable) return;
 
   console.log('Recovering tmux sessions...');
@@ -1143,7 +1059,6 @@ function recoverTmuxSessions() {
     }).trim();
     tmuxSessions = output.split('\n').filter(s => s.startsWith('mc-'));
   } catch (e) {
-    // No tmux sessions running
     return;
   }
 
@@ -1152,11 +1067,9 @@ function recoverTmuxSessions() {
     return;
   }
 
-  const db = getDb();
-
   for (const tmuxName of tmuxSessions) {
-    // Find matching session in DB
-    const sessionRow = db.prepare('SELECT * FROM sessions WHERE tmux_session_name = ?').get(tmuxName);
+    const sessionResult = await query('SELECT * FROM sessions WHERE tmux_session_name = $1', [tmuxName]);
+    const sessionRow = sessionResult.rows[0];
     if (!sessionRow) {
       console.log(`  Orphan tmux session ${tmuxName} — no DB record, killing.`);
       try { execSync(`tmux kill-session -t ${tmuxName}`, { stdio: 'ignore' }); } catch (e) {}
@@ -1220,27 +1133,19 @@ const VALID_MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6'];
 const DEFAULT_MODEL = 'claude-opus-4-6';
 
 function createSession(options = {}) {
-  const db = getDb();
   const id = uuidv4();
   const name = options.name || 'New Session';
 
-  // Validate and normalize model
   if (options.model && !VALID_MODELS.includes(options.model)) {
     throw new Error(`Invalid model "${options.model}". Must be one of: ${VALID_MODELS.join(', ')}`);
   }
   options.model = options.model || DEFAULT_MODEL;
 
-  db.prepare(`
-    INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, created_at, last_activity_at)
-    VALUES (?, ?, 'idle', ?, ?, ?, ?, datetime('now'), datetime('now'))
-  `).run(
-    id,
-    name,
-    options.workingDirectory || null,
-    options.branch || null,
-    options.permissionMode || 'acceptEdits',
-    options.model || 'claude-opus-4-6'
-  );
+  query(
+    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, created_at, last_activity_at)
+     VALUES ($1, $2, 'idle', $3, $4, $5, $6, NOW(), NOW())`,
+    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'acceptEdits', options.model || 'claude-opus-4-6']
+  ).catch(e => console.error('Failed to create session in DB:', e.message));
 
   const session = new SessionProcess(id, options);
   activeSessions.set(id, session);

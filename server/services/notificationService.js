@@ -1,5 +1,5 @@
 const webPush = require('web-push');
-const { getDb } = require('../database');
+const { query } = require('../database');
 
 const VAPID_SUBJECT = 'mailto:admin@mission-control.local';
 let vapidKeys = null;
@@ -21,39 +21,39 @@ function getPublicKey() {
   return keys.publicKey;
 }
 
-function subscribe(subscription) {
-  const db = getDb();
-  db.prepare(`
-    INSERT OR REPLACE INTO notification_subscriptions (endpoint, keys_p256dh, keys_auth)
-    VALUES (?, ?, ?)
-  `).run(subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth);
+async function subscribe(subscription) {
+  await query(
+    `INSERT INTO notification_subscriptions (endpoint, keys_p256dh, keys_auth)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (endpoint) DO UPDATE SET keys_p256dh = EXCLUDED.keys_p256dh, keys_auth = EXCLUDED.keys_auth`,
+    [subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth]
+  );
 }
 
-function unsubscribe(endpoint) {
-  const db = getDb();
-  db.prepare('DELETE FROM notification_subscriptions WHERE endpoint = ?').run(endpoint);
+async function unsubscribe(endpoint) {
+  await query('DELETE FROM notification_subscriptions WHERE endpoint = $1', [endpoint]);
 }
 
-function getSettings() {
-  const db = getDb();
-  return db.prepare('SELECT * FROM notification_settings WHERE id = 1').get();
+async function getSettings() {
+  const result = await query('SELECT * FROM notification_settings WHERE id = 1');
+  return result.rows[0];
 }
 
-function updateSettings(settings) {
-  const db = getDb();
+async function updateSettings(settings) {
   const fields = [];
   const values = [];
+  let paramIdx = 1;
 
   for (const [key, value] of Object.entries(settings)) {
     if (['waiting_for_input', 'task_complete', 'error_events', 'context_window_warning', 'context_threshold', 'daily_digest'].includes(key)) {
-      fields.push(`${key} = ?`);
+      fields.push(`${key} = $${paramIdx++}`);
       values.push(typeof value === 'boolean' ? (value ? 1 : 0) : value);
     }
   }
 
   if (fields.length > 0) {
     values.push(1);
-    db.prepare(`UPDATE notification_settings SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    await query(`UPDATE notification_settings SET ${fields.join(', ')} WHERE id = $${paramIdx}`, values);
   }
 
   return getSettings();
@@ -61,9 +61,9 @@ function updateSettings(settings) {
 
 async function sendNotification(title, body, data = {}) {
   initializeVapid();
-  const db = getDb();
-  const subscriptions = db.prepare('SELECT * FROM notification_subscriptions').all();
-  const settings = getSettings();
+  const subsResult = await query('SELECT * FROM notification_subscriptions');
+  const subscriptions = subsResult.rows;
+  const settings = await getSettings();
 
   const eventType = data.type;
   if (eventType === 'waiting_for_input' && !settings.waiting_for_input) return;
@@ -90,7 +90,7 @@ async function sendNotification(title, body, data = {}) {
         );
       } catch (err) {
         if (err.statusCode === 410 || err.statusCode === 404) {
-          db.prepare('DELETE FROM notification_subscriptions WHERE endpoint = ?').run(sub.endpoint);
+          await query('DELETE FROM notification_subscriptions WHERE endpoint = $1', [sub.endpoint]);
         }
         throw err;
       }

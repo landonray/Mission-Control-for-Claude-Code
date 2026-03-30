@@ -42,14 +42,24 @@ function setupWebSocket(server) {
             });
           } else {
             // Session not in memory — check DB for its status
-            const { getDb } = require('./database');
-            const dbSession = getDb().prepare('SELECT status FROM sessions WHERE id = ?').get(msg.sessionId);
-            safeSend(ws, {
-              type: 'session_status',
-              sessionId: msg.sessionId,
-              status: dbSession ? dbSession.status : 'ended',
-              resumable: true,
-              timestamp: new Date().toISOString()
+            const { query } = require('./database');
+            query('SELECT status FROM sessions WHERE id = $1', [msg.sessionId]).then(result => {
+              const dbSession = result.rows[0];
+              safeSend(ws, {
+                type: 'session_status',
+                sessionId: msg.sessionId,
+                status: dbSession ? dbSession.status : 'ended',
+                resumable: true,
+                timestamp: new Date().toISOString()
+              });
+            }).catch(() => {
+              safeSend(ws, {
+                type: 'session_status',
+                sessionId: msg.sessionId,
+                status: 'ended',
+                resumable: true,
+                timestamp: new Date().toISOString()
+              });
             });
           }
         }
@@ -95,7 +105,7 @@ function setupWebSocket(server) {
   return wss;
 }
 
-function handleMessage(ws, msg, state) {
+async function handleMessage(ws, msg, state) {
   switch (msg.type) {
     case 'subscribe_session':
       // Handled in the message handler above for closure access
@@ -139,8 +149,9 @@ function handleMessage(ws, msg, state) {
           session.sendMessage(msg.content);
         } else {
           // Session not in memory — attempt to resume it
-          const { getDb } = require('./database');
-          const dbSession = getDb().prepare('SELECT id FROM sessions WHERE id = ?').get(msg.sessionId);
+          const { query: dbQuery } = require('./database');
+          const dbResult = await dbQuery('SELECT id FROM sessions WHERE id = $1', [msg.sessionId]);
+          const dbSession = dbResult.rows[0];
           if (dbSession) {
             // Notify client that we're resuming
             safeSend(ws, {

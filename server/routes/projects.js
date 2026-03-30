@@ -3,11 +3,11 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { getDb } = require('../database');
+const { query } = require('../database');
 
-function getSettings() {
-  const db = getDb();
-  return db.prepare('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1').get();
+async function getSettings() {
+  const result = await query('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1');
+  return result.rows[0];
 }
 
 function resolveHome(p) {
@@ -15,9 +15,9 @@ function resolveHome(p) {
 }
 
 // GET /api/projects — scan projects_directory, return subdirs
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const settings = getSettings();
+    const settings = await getSettings();
     if (!settings?.projects_directory) {
       return res.json([]);
     }
@@ -43,7 +43,7 @@ router.get('/', (req, res) => {
 // GET /api/projects/setup-readme — fetch README content from the configured setup repo
 router.get('/setup-readme', async (req, res) => {
   try {
-    const settings = getSettings();
+    const settings = await getSettings();
     if (!settings?.setup_repo) {
       return res.status(400).json({ error: 'No setup repo configured.' });
     }
@@ -73,7 +73,7 @@ router.get('/setup-readme', async (req, res) => {
 });
 
 // POST /api/projects/create — create folder + git init + gh repo + session
-router.post('/create', (req, res) => {
+router.post('/create', async (req, res) => {
   const { name, visibility = 'private', model, autoSetup = true } = req.body;
 
   // Validate name
@@ -81,7 +81,7 @@ router.post('/create', (req, res) => {
     return res.status(400).json({ error: 'Project name must be alphanumeric with hyphens/underscores, max 100 chars.' });
   }
 
-  const settings = getSettings();
+  const settings = await getSettings();
   if (!settings?.projects_directory) {
     return res.status(400).json({ error: 'Projects directory not configured. Go to Settings > General.' });
   }
@@ -153,7 +153,7 @@ router.post('/create', (req, res) => {
     }
   }
 
-  // Step 7: Create Claude Code session (synchronous)
+  // Step 7: Create Claude Code session
   try {
     const { createSession } = require('../services/sessionManager');
     const session = createSession({

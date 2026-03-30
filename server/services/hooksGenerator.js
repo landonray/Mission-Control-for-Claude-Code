@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { getDb } = require('../database');
+const { query } = require('../database');
 
 const SETTINGS_PATH = path.join(os.homedir(), '.claude', 'settings.json');
 const SCRIPTS_DIR = path.join(os.homedir(), '.claude', 'mission-control-hooks');
@@ -11,9 +11,9 @@ const CALLBACK_URL = 'http://localhost:3000/api/quality/results';
  * Generates Claude Code hooks configuration from active quality rules
  * and writes it to ~/.claude/settings.json (merging with existing config).
  */
-function generateHooksConfig() {
-  const db = getDb();
-  const rules = db.prepare('SELECT * FROM quality_rules WHERE enabled = 1 ORDER BY sort_order').all();
+async function generateHooksConfig() {
+  const result = await query('SELECT * FROM quality_rules WHERE enabled = 1 ORDER BY sort_order');
+  const rules = result.rows;
 
   // All 21 Claude Code lifecycle events
   const ALL_EVENTS = [

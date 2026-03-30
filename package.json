@@ -11,11 +11,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
-    "better-sqlite3": "^11.0.0",
+    "@neondatabase/serverless": "^1.0.2",
     "chokidar": "^3.6.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "tree-kill": "^1.2.2",
+    "undici": "^7.24.6",
     "uuid": "^10.0.0",
     "web-push": "^3.6.7",
     "ws": "^8.18.0"
