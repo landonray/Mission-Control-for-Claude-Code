@@ -9,3 +9,4 @@ client/dist/
 .DS_Store
 .tmux-outputs/
 .settings-backup.json
+uploads/

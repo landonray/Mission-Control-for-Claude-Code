@@ -585,7 +585,7 @@ class SessionProcess {
     }
   }
 
-  async sendMessage(text) {
+  async sendMessage(text, attachments = null) {
     if (this.process) {
       // A process is already running — queue the message
       this.messageQueue.push(text);
@@ -613,8 +613,8 @@ class SessionProcess {
     }
 
     await query(
-      `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
-      [this.id, text]
+      `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
+      [this.id, text, attachments ? JSON.stringify(attachments) : null]
     );
 
     await query(
@@ -629,6 +629,7 @@ class SessionProcess {
       type: 'user_message',
       sessionId: this.id,
       content: text,
+      attachments: attachments || null,
       timestamp: new Date().toISOString()
     });
 

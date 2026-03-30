@@ -83,6 +83,14 @@ async function initializeDb() {
     await sql.query(stmt);
   }
 
+  // Migrations — add columns that may not exist in older schemas
+  const migrations = [
+    `ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments TEXT`
+  ];
+  for (const migration of migrations) {
+    try { await sql.query(migration); } catch (e) { /* column may already exist */ }
+  }
+
   await seedQualityRules();
 }
 

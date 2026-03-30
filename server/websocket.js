@@ -146,7 +146,7 @@ async function handleMessage(ws, msg, state) {
       if (msg.sessionId && msg.content) {
         let session = getSession(msg.sessionId);
         if (session) {
-          session.sendMessage(msg.content);
+          session.sendMessage(msg.content, msg.attachments || null);
         } else {
           // Session not in memory — attempt to resume it
           const { query: dbQuery } = require('./database');
