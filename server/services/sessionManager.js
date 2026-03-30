@@ -33,6 +33,17 @@ try {
   console.warn('WARNING: tmux not found. Sessions will not survive server restarts.');
 }
 
+// Directory where uploaded files are stored
+const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
+
+// Convert relative /api/uploads/ URLs in prompt text to absolute file paths
+// so Claude CLI can read attached images and files directly
+function resolveUploadPaths(text) {
+  return text.replace(/\(\/api\/uploads\/([^)]+)\)/g, (match, filename) => {
+    return `(${path.join(UPLOADS_DIR, filename)})`;
+  });
+}
+
 // Directory for tmux output files and launch scripts
 const TMUX_OUTPUT_DIR = path.join(__dirname, '..', '..', '.tmux-outputs');
 const TMUX_SCRIPTS_DIR = path.join(__dirname, '..', '..', '.tmux-scripts');
@@ -169,7 +180,7 @@ class SessionProcess {
       args.push('--mcp-config', JSON.stringify(mcpConfig));
     }
 
-    args.push(prompt);
+    args.push(resolveUploadPaths(prompt));
 
     return args;
   }
@@ -212,8 +223,9 @@ class SessionProcess {
     try { fs.writeFileSync(outputFile, '', { flag: 'a' }); } catch (e) {}
 
     // Write the prompt to a file to completely avoid shell interpretation.
+    // Convert relative upload URLs to absolute file paths so Claude can read them.
     const promptFile = this.getPromptFilePath();
-    fs.writeFileSync(promptFile, prompt, { mode: 0o600 });
+    fs.writeFileSync(promptFile, resolveUploadPaths(prompt), { mode: 0o600 });
 
     // Write a self-contained launch script. No user content is embedded
     // in the script — the prompt is read from the prompt file at runtime.
@@ -342,6 +354,7 @@ class SessionProcess {
   handleTmuxProcessExit() {
     this.stopOutputTail();
     this.process = null;
+    this.pendingPermission = null;
 
     if (this.status !== 'error') {
       this.status = 'idle';
@@ -417,6 +430,7 @@ class SessionProcess {
 
     this.process.on('close', (code) => {
       this.process = null;
+      this.pendingPermission = null;
 
       if (code !== 0 && this.status === 'working') {
         // Process failed without setting error status — use stderr as message
@@ -614,10 +628,8 @@ class SessionProcess {
         break;
 
       case 'result':
-        if (this.messageQueue.length > 0) {
-          const nextMsg = this.messageQueue.shift();
-          setTimeout(() => this.sendMessage(nextMsg), 100);
-        }
+        // Queue drain handled by close/exit handlers after process terminates.
+        // Draining here caused double-processing because process is still alive.
         break;
     }
   }
@@ -676,8 +688,20 @@ class SessionProcess {
       [this.id]
     );
 
+    // Clear stale error/permission state from previous process failures
+    this.errorMessage = null;
+    this.pendingPermission = null;
+
     this.status = 'working';
     this.updateDbStatus('working');
+
+    this.broadcast({
+      type: 'session_status',
+      sessionId: this.id,
+      status: 'working',
+      errorMessage: null,
+      timestamp: new Date().toISOString()
+    });
 
     this.broadcast({
       type: 'user_message',

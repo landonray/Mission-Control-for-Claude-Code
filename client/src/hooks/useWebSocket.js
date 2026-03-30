@@ -35,6 +35,9 @@ export function useWebSocket(sessionId) {
             if (data.errorMessage) {
               setErrorMessage(data.errorMessage);
             }
+            if (data.status !== 'error') {
+              setErrorMessage(null);
+            }
             break;
 
           case 'session_resuming':
