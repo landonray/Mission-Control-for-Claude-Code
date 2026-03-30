@@ -1,12 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ChevronRight, ChevronDown, File, Folder, FolderOpen, GitCompare } from 'lucide-react';
 import { formatFileSize } from '../../utils/format';
 import styles from './FileTree.module.css';
 
-function FileTreeNode({ node, depth = 0, filter, modifiedFiles, onSelect, onDiff }) {
-  const [expanded, setExpanded] = useState(depth < 2);
+function FileTreeNode({ node, depth = 0, filter, modifiedFiles, onSelect, onDiff, expandedPaths, onToggleExpand }) {
   const isModified = modifiedFiles.has(node.path) || modifiedFiles.has(node.name);
   const isDirectory = node.type === 'directory';
+  const expanded = isDirectory && (expandedPaths.has(node.path) || false);
 
   // Filter logic
   if (filter && !isDirectory) {
@@ -22,7 +22,7 @@ function FileTreeNode({ node, depth = 0, filter, modifiedFiles, onSelect, onDiff
 
   const handleClick = () => {
     if (isDirectory) {
-      setExpanded(!expanded);
+      onToggleExpand(node.path);
     } else {
       onSelect(node.path);
     }
@@ -79,6 +79,8 @@ function FileTreeNode({ node, depth = 0, filter, modifiedFiles, onSelect, onDiff
               modifiedFiles={modifiedFiles}
               onSelect={onSelect}
               onDiff={onDiff}
+              expandedPaths={expandedPaths}
+              onToggleExpand={onToggleExpand}
             />
           ))}
         </div>
@@ -95,7 +97,51 @@ function hasMatchingChild(node, filter) {
   });
 }
 
-export default function FileTree({ tree, filter, modifiedFiles, onSelect, onDiff }) {
+function getStorageKey(sessionId) {
+  return sessionId ? `file-tree-expanded-${sessionId}` : 'file-tree-expanded';
+}
+
+function loadExpandedPaths(sessionId) {
+  try {
+    const stored = sessionStorage.getItem(getStorageKey(sessionId));
+    if (stored) {
+      return new Set(JSON.parse(stored));
+    }
+  } catch (e) {}
+  return new Set();
+}
+
+function saveExpandedPaths(sessionId, paths) {
+  try {
+    sessionStorage.setItem(getStorageKey(sessionId), JSON.stringify([...paths]));
+  } catch (e) {}
+}
+
+export default function FileTree({ tree, filter, modifiedFiles, onSelect, onDiff, sessionId }) {
+  const [expandedPaths, setExpandedPaths] = useState(() => loadExpandedPaths(sessionId));
+  const prevSessionIdRef = useRef(sessionId);
+
+  // Reload expanded paths when session changes
+  useEffect(() => {
+    if (prevSessionIdRef.current !== sessionId) {
+      prevSessionIdRef.current = sessionId;
+      setExpandedPaths(loadExpandedPaths(sessionId));
+    }
+  }, [sessionId]);
+
+  const handleToggleExpand = useCallback((path) => {
+    setExpandedPaths(prev => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      saveExpandedPaths(sessionId, next);
+      return next;
+    });
+  }, [sessionId]);
+
   if (!tree || tree.length === 0) {
     return (
       <div className="empty-state" style={{ padding: '16px' }}>
@@ -115,6 +161,8 @@ export default function FileTree({ tree, filter, modifiedFiles, onSelect, onDiff
           modifiedFiles={modifiedFiles}
           onSelect={onSelect}
           onDiff={onDiff}
+          expandedPaths={expandedPaths}
+          onToggleExpand={handleToggleExpand}
         />
       ))}
     </div>

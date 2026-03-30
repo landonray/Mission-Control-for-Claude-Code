@@ -8,7 +8,7 @@ import { FolderOpen, GitBranch, Search, FileText, GitCompare } from 'lucide-reac
 import styles from './FileBrowser.module.css';
 
 export default function FileBrowser({ directory }) {
-  const { fileTree, fileTreePath, loadFileTree, sendWsMessage, selectedFile, dispatch } = useApp();
+  const { fileTree, fileTreePath, loadFileTree, sendWsMessage, selectedFile, dispatch, activeSessionId } = useApp();
   const [searchFilter, setSearchFilter] = useState('');
   const [view, setView] = useState('tree'); // 'tree' | 'preview' | 'diff' | 'branch-diff'
   const [fileContent, setFileContent] = useState(null);
@@ -160,6 +160,7 @@ export default function FileBrowser({ directory }) {
             modifiedFiles={modifiedFiles}
             onSelect={handleFileSelect}
             onDiff={handleShowDiff}
+            sessionId={activeSessionId}
           />
         )}
 
