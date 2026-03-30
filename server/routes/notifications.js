@@ -61,4 +61,24 @@ router.post('/test', async (req, res) => {
   }
 });
 
+// Push notification endpoint (called by lifecycle hooks)
+router.post('/push', async (req, res) => {
+  try {
+    const { title, body, type, session_id } = req.body;
+
+    if (!title || !body) {
+      return res.status(400).json({ error: 'title and body required' });
+    }
+
+    await notificationService.sendNotification(
+      title,
+      body,
+      { type: type || 'info', session_id: session_id || null }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

@@ -144,4 +144,40 @@ router.post('/digests/generate', (req, res) => {
   }
 });
 
+// Auto-generate session summary (called by SessionEnd hook)
+router.post('/auto-summary', (req, res) => {
+  const db = getDb();
+  const { session_id, branch, files_changed } = req.body;
+
+  if (!session_id) {
+    return res.status(400).json({ error: 'session_id required' });
+  }
+
+  // Get session info
+  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(session_id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  // Build summary from available data
+  const messageCount = db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?').get(session_id);
+  const summary = `Session "${session.name}" ended. Branch: ${branch || session.branch || 'unknown'}. Messages: ${messageCount.count}. Files changed: ${files_changed || 0}.`;
+
+  try {
+    // Check if summary already exists
+    const existing = db.prepare('SELECT id FROM session_summaries WHERE session_id = ?').get(session_id);
+    if (existing) {
+      db.prepare('UPDATE session_summaries SET summary = ?, created_at = datetime(\'now\') WHERE session_id = ?').run(summary, session_id);
+    } else {
+      db.prepare(`
+        INSERT INTO session_summaries (session_id, summary, key_actions, files_modified, created_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+      `).run(session_id, summary, null, files_changed ? String(files_changed) : null);
+    }
+    res.json({ success: true, summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

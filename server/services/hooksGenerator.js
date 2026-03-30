@@ -15,12 +15,22 @@ function generateHooksConfig() {
   const db = getDb();
   const rules = db.prepare('SELECT * FROM quality_rules WHERE enabled = 1 ORDER BY sort_order').all();
 
+  // All 21 Claude Code lifecycle events
+  const ALL_EVENTS = [
+    'SessionStart', 'SessionEnd', 'UserPromptSubmit',
+    'PreToolUse', 'PermissionRequest', 'PostToolUse', 'PostToolUseFailure',
+    'Stop', 'SubagentStop', 'SubagentStart',
+    'Notification', 'PreCompact', 'PostCompact',
+    'WorktreeCreate', 'WorktreeRemove', 'CwdChanged',
+    'Setup', 'InstructionsLoaded', 'ConfigChange',
+    'TaskCreated', 'TaskCompleted', 'TeammateIdle'
+  ];
+
   // Build hooks arrays by lifecycle event
-  const hooks = {
-    PreToolUse: [],
-    PostToolUse: [],
-    Stop: []
-  };
+  const hooks = {};
+  for (const event of ALL_EVENTS) {
+    hooks[event] = [];
+  }
 
   // Ensure scripts directory exists
   if (!fs.existsSync(SCRIPTS_DIR)) {
@@ -54,12 +64,19 @@ function generateHooksConfig() {
   // Merge hooks - preserve non-mission-control hooks
   if (!settings.hooks) settings.hooks = {};
 
-  for (const event of ['PreToolUse', 'PostToolUse', 'Stop']) {
+  for (const event of ALL_EVENTS) {
     const existing = settings.hooks[event] || [];
     // Remove old mission-control hooks (identified by tag)
     const preserved = existing.filter(h => !h._missionControl);
-    // Add new mission-control hooks
-    settings.hooks[event] = [...preserved, ...hooks[event]];
+    // Add new mission-control hooks (only add event key if there are hooks)
+    const combined = [...preserved, ...hooks[event]];
+    if (combined.length > 0) {
+      settings.hooks[event] = combined;
+    } else if (existing.length > 0 && hooks[event].length === 0) {
+      // Preserve existing non-MC hooks, remove empty arrays
+      settings.hooks[event] = preserved.length > 0 ? preserved : undefined;
+      if (!settings.hooks[event]) delete settings.hooks[event];
+    }
   }
 
   // Ensure directory exists
@@ -85,7 +102,7 @@ function buildHookEntries(rule) {
 
   for (const trigger of firesOn) {
     const [event, toolFilter] = trigger.split(':');
-    if (!['PreToolUse', 'PostToolUse', 'Stop'].includes(event)) continue;
+    // All 21 lifecycle events are supported
 
     const hook = {
       _missionControl: true,
@@ -231,9 +248,13 @@ function removeHooksConfig() {
     const settings = JSON.parse(content);
 
     if (settings.hooks) {
-      for (const event of ['PreToolUse', 'PostToolUse', 'Stop']) {
-        if (settings.hooks[event]) {
+      for (const event of Object.keys(settings.hooks)) {
+        if (Array.isArray(settings.hooks[event])) {
           settings.hooks[event] = settings.hooks[event].filter(h => !h._missionControl);
+          // Clean up empty arrays
+          if (settings.hooks[event].length === 0) {
+            delete settings.hooks[event];
+          }
         }
       }
     }
@@ -259,8 +280,8 @@ function getHooksStatus() {
     let mcHookCount = 0;
 
     if (settings.hooks) {
-      for (const event of ['PreToolUse', 'PostToolUse', 'Stop']) {
-        if (settings.hooks[event]) {
+      for (const event of Object.keys(settings.hooks)) {
+        if (Array.isArray(settings.hooks[event])) {
           mcHookCount += settings.hooks[event].filter(h => h._missionControl).length;
         }
       }

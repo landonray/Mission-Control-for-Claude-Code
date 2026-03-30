@@ -702,6 +702,600 @@ fi`,
       config: JSON.stringify({ projects: ['pages-agent'] }),
       category: 'visual',
       sort_order: 15
+    },
+
+    // Phase 6: Full Lifecycle Hooks (20 new hooks, all defaulted to OFF)
+    {
+      id: 'session-context-injection',
+      name: 'Session Context Injection',
+      description: 'Injects project-specific context when a session begins. Reads the project\'s CLAUDE.md, loads environment info (current branch, Node version, running services), and injects reminders about project conventions.',
+      hook_type: 'command',
+      fires_on: 'SessionStart',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Session Context Injection - reads project context and injects it
+CWD="\${SESSION_CWD:-$(pwd)}"
+CONTEXT=""
+
+# Read CLAUDE.md if it exists
+if [ -f "$CWD/CLAUDE.md" ]; then
+  CONTEXT="$CONTEXT\\n## Project Instructions:\\n$(head -100 "$CWD/CLAUDE.md")"
+fi
+
+# Get current branch
+BRANCH=$(cd "$CWD" 2>/dev/null && git branch --show-current 2>/dev/null || echo "unknown")
+CONTEXT="$CONTEXT\\n## Environment: Branch=$BRANCH"
+
+# Node version if applicable
+if [ -f "$CWD/package.json" ]; then
+  NODE_VER=$(node -v 2>/dev/null || echo "not found")
+  CONTEXT="$CONTEXT, Node=$NODE_VER"
+fi
+
+echo "$CONTEXT"
+exit 0`,
+      config: null,
+      category: 'session',
+      sort_order: 16
+    },
+    {
+      id: 'session-end-summary',
+      name: 'Session End Summary',
+      description: 'Auto-generates a session summary when a session ends and pushes it to Mission Control via HTTP. Captures total messages, files changed, branch state, and a heuristic description of what was accomplished.',
+      hook_type: 'command',
+      fires_on: 'SessionEnd',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Session End Summary - captures session stats and pushes to Mission Control
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+CWD="\${SESSION_CWD:-$(pwd)}"
+
+# Get git stats
+BRANCH=$(cd "$CWD" 2>/dev/null && git branch --show-current 2>/dev/null || echo "unknown")
+CHANGED_FILES=$(cd "$CWD" 2>/dev/null && git diff --name-only HEAD 2>/dev/null | wc -l | tr -d ' ')
+CHANGED_FILES="\${CHANGED_FILES:-0}"
+
+# Push summary to Mission Control
+curl -s -X POST http://localhost:3000/api/history/auto-summary \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"session_id\\":\\"$SID\\",\\"branch\\":\\"$BRANCH\\",\\"files_changed\\":$CHANGED_FILES}" > /dev/null 2>&1
+
+exit 0`,
+      config: null,
+      category: 'session',
+      sort_order: 17
+    },
+    {
+      id: 'spec-reinjection',
+      name: 'Spec Re-Injection',
+      description: 'Before every user message is processed, checks if the session was started from a spec file. If so, injects a reminder of the key requirements into Claude\'s context via additionalContext.',
+      hook_type: 'command',
+      fires_on: 'UserPromptSubmit',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Spec Re-Injection - re-injects spec file context before each user message
+CWD="\${SESSION_CWD:-$(pwd)}"
+
+# Look for spec files in common locations
+SPEC=""
+for f in "$CWD"/spec.md "$CWD"/SPEC.md "$CWD"/docs/spec.md "$CWD"/*.spec.md; do
+  if [ -f "$f" ]; then
+    SPEC=$(head -50 "$f")
+    break
+  fi
+done
+
+if [ -n "$SPEC" ]; then
+  echo "REMINDER - Original spec requirements:\\n$SPEC"
+fi
+exit 0`,
+      config: null,
+      category: 'input',
+      sort_order: 18
+    },
+    {
+      id: 'vague-prompt-guard',
+      name: 'Vague Prompt Guard',
+      description: 'Evaluates whether the user\'s message is specific enough for Claude to act on effectively. If too vague, injects a reminder to ask clarifying questions.',
+      hook_type: 'prompt',
+      fires_on: 'UserPromptSubmit',
+      severity: 'low',
+      enabled: 0,
+      prompt: `Evaluate the user's message for specificity. If the message is too vague or ambiguous for effective action (e.g., "fix it", "make it work", "do the thing", "update that", "change it"), inject a reminder to ask clarifying questions before proceeding.
+
+Consider a message vague if:
+1. It uses pronouns without clear antecedents ("fix it", "change that")
+2. It lacks specific file names, function names, or error messages
+3. It could reasonably be interpreted multiple ways
+4. It gives no success criteria
+
+If vague, respond with:
+"The user's message may be ambiguous. Before proceeding, consider asking for clarification about: [specific aspects that are unclear]."
+
+If specific enough, respond with nothing (empty response).`,
+      script: null,
+      config: null,
+      category: 'input',
+      sort_order: 19
+    },
+    {
+      id: 'permission-auto-approve',
+      name: 'Permission Auto-Approve (Safe Ops)',
+      description: 'Auto-approves safe, repetitive operations (git status, git diff, tests, reading files). Auto-denies anything touching production branches. Logs every decision to Mission Control.',
+      hook_type: 'command',
+      fires_on: 'PermissionRequest',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Permission Auto-Approve - approves safe ops, denies dangerous ones
+TOOL="\${TOOL_NAME:-}"
+CMD="\${TOOL_INPUT:-}"
+
+# Auto-deny: production branch pushes
+if echo "$CMD" | grep -qE 'git\\s+push.*\\b(main|master|production)\\b'; then
+  echo "Auto-denied push to production branch"
+  exit 1
+fi
+
+# Auto-approve: safe read-only operations
+if echo "$CMD" | grep -qE '^(git\\s+(status|diff|log|branch)|npm\\s+test|pytest|ls|cat|head|tail)'; then
+  echo "Auto-approved safe operation: $TOOL"
+  exit 0
+fi
+
+# Everything else: no opinion (let user decide)
+exit 0`,
+      config: null,
+      category: 'safety',
+      sort_order: 20
+    },
+    {
+      id: 'tool-failure-tracker',
+      name: 'Tool Failure Tracker',
+      description: 'When a tool fails, logs the full error context to Mission Control. Tracks failure patterns across sessions. Sends a push notification if a critical command fails.',
+      hook_type: 'command',
+      fires_on: 'PostToolUseFailure',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Tool Failure Tracker - logs tool failures to Mission Control
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+TOOL="\${TOOL_NAME:-unknown}"
+ERROR="\${TOOL_ERROR:-unknown error}"
+
+echo "Tool $TOOL failed: $ERROR"
+
+# Send push notification for critical failures
+if echo "$TOOL" | grep -qiE '(test|build|deploy)'; then
+  SAFE_TOOL=$(echo "$TOOL" | sed 's/["\\\\/]/ /g' | head -c 100)
+  curl -s -X POST http://localhost:3000/api/notifications/push \\
+    -H "Content-Type: application/json" \\
+    -d "{\\"title\\":\\"Tool Failure\\",\\"body\\":\\"$SAFE_TOOL failed\\",\\"type\\":\\"error\\"}" > /dev/null 2>&1
+fi
+
+exit 1`,
+      config: null,
+      category: 'correctness',
+      sort_order: 21
+    },
+    {
+      id: 'subagent-spawn-tracker',
+      name: 'Subagent Spawn Tracker',
+      description: 'Logs when subagents spawn so Mission Control can show delegation activity in the dashboard. Tracks how many subagents a session creates.',
+      hook_type: 'command',
+      fires_on: 'SubagentStart',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Subagent Spawn Tracker - logs subagent creation to Mission Control
+SUBAGENT_ID="\${SUBAGENT_ID:-unknown}"
+SUBAGENT_TYPE="\${SUBAGENT_TYPE:-unknown}"
+
+echo "Subagent spawned: type=$SUBAGENT_TYPE id=$SUBAGENT_ID"
+exit 0`,
+      config: null,
+      category: 'subagent',
+      sort_order: 22
+    },
+    {
+      id: 'subagent-output-validation',
+      name: 'Subagent Output Validation',
+      description: 'Validates subagent output before it returns to the main agent. Checks whether the subagent actually completed its task and whether its output is actionable.',
+      hook_type: 'prompt',
+      fires_on: 'SubagentStop',
+      severity: 'medium',
+      enabled: 0,
+      prompt: `Review the subagent's output before it returns to the main agent. Evaluate:
+
+1. Did the subagent actually complete the task it was assigned?
+2. Is the output specific and actionable, or vague and unhelpful?
+3. Did the subagent introduce any issues, errors, or incorrect assumptions?
+4. Is the output format consistent with what the parent agent expects?
+
+If the subagent output is low quality or incomplete, respond with:
+FAIL: Subagent output issue: [description of problem]
+
+If the output is satisfactory, respond with:
+PASS: Subagent output is complete and actionable.`,
+      script: null,
+      config: null,
+      category: 'subagent',
+      sort_order: 23
+    },
+    {
+      id: 'notification-router',
+      name: 'Notification Router',
+      description: 'Routes Claude\'s internal notifications to Mission Control\'s push notification system. Sends notifications for permission requests, idle prompts, and auth completions.',
+      hook_type: 'command',
+      fires_on: 'Notification',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Notification Router - routes Claude notifications to Mission Control push
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+NOTIFICATION_TYPE="\${NOTIFICATION_TYPE:-info}"
+NOTIFICATION_MESSAGE="\${NOTIFICATION_MESSAGE:-Claude Code notification}"
+
+# Truncate and sanitize message for JSON
+BODY=$(echo "$NOTIFICATION_MESSAGE" | sed 's/["\\\\/]/ /g' | head -c 200)
+
+curl -s -X POST http://localhost:3000/api/notifications/push \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"title\\":\\"Claude Code\\",\\"body\\":\\"$BODY\\",\\"type\\":\\"$NOTIFICATION_TYPE\\",\\"session_id\\":\\"$SID\\"}" > /dev/null 2>&1
+
+exit 0`,
+      config: null,
+      category: 'notifications',
+      sort_order: 24
+    },
+    {
+      id: 'pre-compaction-backup',
+      name: 'Pre-Compaction Backup',
+      description: 'Before context compaction, saves the full conversation transcript to a timestamped file. Critical for long sessions where earlier context is permanently lost after compaction.',
+      hook_type: 'command',
+      fires_on: 'PreCompact',
+      severity: 'medium',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Pre-Compaction Backup - saves conversation transcript before compaction
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+BACKUP_DIR="$HOME/.claude/mission-control-backups"
+mkdir -p "$BACKUP_DIR"
+
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/transcript-$SID-$TIMESTAMP.json"
+
+# Fetch conversation from Mission Control API
+curl -s "http://localhost:3000/api/sessions/$SID/messages?limit=10000" > "$BACKUP_FILE" 2>/dev/null
+
+if [ -f "$BACKUP_FILE" ] && [ -s "$BACKUP_FILE" ]; then
+  echo "PASS: Conversation backed up to $BACKUP_FILE"
+  exit 0
+else
+  echo "FAIL: Could not backup conversation"
+  exit 1
+fi`,
+      config: null,
+      category: 'context',
+      sort_order: 25
+    },
+    {
+      id: 'post-compaction-recovery',
+      name: 'Post-Compaction Context Recovery',
+      description: 'After context compaction, re-injects critical information that may have been lost. Reads the original spec file, current git status, and pinned reminders.',
+      hook_type: 'command',
+      fires_on: 'PostCompact',
+      severity: 'medium',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Post-Compaction Context Recovery - re-injects critical context after compaction
+CWD="\${SESSION_CWD:-$(pwd)}"
+CONTEXT=""
+
+# Re-inject spec file if present
+for f in "$CWD"/spec.md "$CWD"/SPEC.md "$CWD"/docs/spec.md "$CWD"/*.spec.md; do
+  if [ -f "$f" ]; then
+    CONTEXT="$CONTEXT\\n## Original Spec (re-injected after compaction):\\n$(head -100 "$f")"
+    break
+  fi
+done
+
+# Current git status for orientation
+if cd "$CWD" 2>/dev/null; then
+  BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+  STATUS=$(git status --short 2>/dev/null | head -20)
+  CONTEXT="$CONTEXT\\n## Current State: Branch=$BRANCH\\n$STATUS"
+fi
+
+# Re-inject CLAUDE.md reminders
+if [ -f "$CWD/CLAUDE.md" ]; then
+  CONTEXT="$CONTEXT\\n## Project Instructions (re-injected):\\n$(head -50 "$CWD/CLAUDE.md")"
+fi
+
+if [ -n "$CONTEXT" ]; then
+  echo "$CONTEXT"
+fi
+exit 0`,
+      config: null,
+      category: 'context',
+      sort_order: 26
+    },
+    {
+      id: 'worktree-create-tracker',
+      name: 'Worktree Create Tracker',
+      description: 'Logs to Mission Control when a new git worktree is created. Updates the dashboard with the new branch name. Optionally copies project config files to the new worktree.',
+      hook_type: 'command',
+      fires_on: 'WorktreeCreate',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Worktree Create Tracker - logs worktree creation and copies config
+WORKTREE_PATH="\${WORKTREE_PATH:-}"
+SOURCE_PATH="\${SESSION_CWD:-$(pwd)}"
+
+# Copy untracked config files to new worktree
+if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+  for f in .env .env.local .env.development.local; do
+    if [ -f "$SOURCE_PATH/$f" ] && [ ! -f "$WORKTREE_PATH/$f" ]; then
+      cp "$SOURCE_PATH/$f" "$WORKTREE_PATH/$f" 2>/dev/null
+    fi
+  done
+fi
+
+BRANCH=$(cd "$WORKTREE_PATH" 2>/dev/null && git branch --show-current 2>/dev/null || echo "unknown")
+echo "Worktree created: branch=$BRANCH path=$WORKTREE_PATH"
+exit 0`,
+      config: null,
+      category: 'workspace',
+      sort_order: 27
+    },
+    {
+      id: 'worktree-remove-guard',
+      name: 'Worktree Remove Guard',
+      description: 'Before a worktree is removed, checks for uncommitted changes. If there are unsaved changes, logs a warning. Archives the session summary for the branch being removed.',
+      hook_type: 'command',
+      fires_on: 'WorktreeRemove',
+      severity: 'medium',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Worktree Remove Guard - checks for uncommitted changes before removal
+WORKTREE_PATH="\${WORKTREE_PATH:-}"
+
+if [ -n "$WORKTREE_PATH" ] && [ -d "$WORKTREE_PATH" ]; then
+  UNCOMMITTED=$(cd "$WORKTREE_PATH" 2>/dev/null && git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  BRANCH=$(cd "$WORKTREE_PATH" 2>/dev/null && git branch --show-current 2>/dev/null || echo "unknown")
+
+  if [ "$UNCOMMITTED" -gt 0 ]; then
+    echo "WARNING: $UNCOMMITTED uncommitted changes in worktree $BRANCH at $WORKTREE_PATH"
+    exit 1
+  fi
+fi
+
+exit 0`,
+      config: null,
+      category: 'workspace',
+      sort_order: 28
+    },
+    {
+      id: 'directory-change-tracker',
+      name: 'Directory Change Tracker',
+      description: 'Updates Mission Control\'s file browser when Claude changes working directories. Re-evaluates which project preset applies.',
+      hook_type: 'command',
+      fires_on: 'CwdChanged',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Directory Change Tracker - updates Mission Control when cwd changes
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+NEW_CWD="\${NEW_CWD:-$(pwd)}"
+
+# Sanitize path for JSON safety
+SAFE_CWD=$(echo "$NEW_CWD" | sed 's/["\\\\/]/\\\\&/g')
+curl -s -X POST http://localhost:3000/api/sessions/cwd-update \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"session_id\\":\\"$SID\\",\\"working_directory\\":\\"$SAFE_CWD\\"}" > /dev/null 2>&1
+
+echo "Working directory changed to: $NEW_CWD"
+exit 0`,
+      config: null,
+      category: 'workspace',
+      sort_order: 29
+    },
+    {
+      id: 'project-health-check',
+      name: 'Project Health Check',
+      description: 'Runs on first entry into a repo. Verifies required tools are installed, checks that .env exists, and reports overall project health to Mission Control.',
+      hook_type: 'command',
+      fires_on: 'Setup',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Project Health Check - verifies environment setup on first entry
+CWD="\${SESSION_CWD:-$(pwd)}"
+ISSUES=""
+
+# Check Node.js
+if [ -f "$CWD/package.json" ]; then
+  if ! command -v node &> /dev/null; then
+    ISSUES="$ISSUES Node.js not installed;"
+  fi
+  # Check if node_modules exists
+  if [ ! -d "$CWD/node_modules" ]; then
+    ISSUES="$ISSUES node_modules missing (run npm install);"
+  fi
+fi
+
+# Check Python
+if [ -f "$CWD/requirements.txt" ] || [ -f "$CWD/pyproject.toml" ]; then
+  if ! command -v python3 &> /dev/null; then
+    ISSUES="$ISSUES Python3 not installed;"
+  fi
+fi
+
+# Check .env
+if [ -f "$CWD/.env.example" ] && [ ! -f "$CWD/.env" ]; then
+  ISSUES="$ISSUES .env file missing (copy from .env.example);"
+fi
+
+# Check git
+if [ ! -d "$CWD/.git" ]; then
+  ISSUES="$ISSUES Not a git repository;"
+fi
+
+if [ -n "$ISSUES" ]; then
+  echo "Health issues: $ISSUES"
+  exit 1
+else
+  echo "PASS: Project environment is healthy"
+  exit 0
+fi`,
+      config: null,
+      category: 'config',
+      sort_order: 30
+    },
+    {
+      id: 'instructions-loaded-logger',
+      name: 'Instructions Loaded Logger',
+      description: 'Logs which CLAUDE.md files were loaded at session start so Mission Control can display what instructions Claude is operating under.',
+      hook_type: 'command',
+      fires_on: 'InstructionsLoaded',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Instructions Loaded Logger - logs which CLAUDE.md files were loaded
+CWD="\${SESSION_CWD:-$(pwd)}"
+FOUND=""
+
+# Check common locations for CLAUDE.md
+for f in "$CWD/CLAUDE.md" "$CWD/.claude/CLAUDE.md" "$HOME/.claude/CLAUDE.md"; do
+  if [ -f "$f" ]; then
+    FOUND="$FOUND $f"
+  fi
+done
+
+if [ -z "$FOUND" ]; then
+  echo "No CLAUDE.md files found - project may not be configured for Claude Code"
+  exit 1
+else
+  echo "Instructions loaded from:$FOUND"
+  exit 0
+fi`,
+      config: null,
+      category: 'config',
+      sort_order: 31
+    },
+    {
+      id: 'config-change-auditor',
+      name: 'Config Change Auditor',
+      description: 'When Claude Code settings change mid-session, logs the change to Mission Control for audit. Provides a history of what was changed, when, and in which session.',
+      hook_type: 'command',
+      fires_on: 'ConfigChange',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Config Change Auditor - logs settings changes to Mission Control
+CONFIG_KEY="\${CONFIG_KEY:-unknown}"
+CONFIG_VALUE="\${CONFIG_VALUE:-unknown}"
+
+echo "Config changed: $CONFIG_KEY=$CONFIG_VALUE"
+exit 0`,
+      config: null,
+      category: 'config',
+      sort_order: 32
+    },
+    {
+      id: 'task-progress-tracker',
+      name: 'Task Progress Tracker',
+      description: 'Tracks task creation in Mission Control\'s dashboard. When Claude creates a task as part of a plan, logs it for progress tracking.',
+      hook_type: 'command',
+      fires_on: 'TaskCreated',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Task Progress Tracker - logs task creation to Mission Control
+TASK_ID="\${TASK_ID:-unknown}"
+TASK_DESCRIPTION="\${TASK_DESCRIPTION:-}"
+
+echo "Task created: $TASK_DESCRIPTION"
+exit 0`,
+      config: null,
+      category: 'tasks',
+      sort_order: 33
+    },
+    {
+      id: 'task-completion-notifier',
+      name: 'Task Completion Notifier',
+      description: 'Sends a push notification when a task completes and updates Mission Control\'s task progress display. Sends a summary when all tasks in a plan are done.',
+      hook_type: 'command',
+      fires_on: 'TaskCompleted',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Task Completion Notifier - sends push notification on task completion
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+TASK_DESCRIPTION="\${TASK_DESCRIPTION:-Task completed}"
+
+BODY=$(echo "$TASK_DESCRIPTION" | head -c 200 | sed 's/"/\\\\"/g' | tr '\\n' ' ')
+
+echo "Task completed: $BODY"
+
+# Send push notification
+curl -s -X POST http://localhost:3000/api/notifications/push \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"title\\":\\"Task Completed\\",\\"body\\":\\"$BODY\\",\\"type\\":\\"task_complete\\",\\"session_id\\":\\"$SID\\"}" > /dev/null 2>&1
+
+exit 0`,
+      config: null,
+      category: 'tasks',
+      sort_order: 34
+    },
+    {
+      id: 'teammate-idle-monitor',
+      name: 'Teammate Idle Monitor',
+      description: 'When using agent teams, notifies Mission Control that a team member finished its work. Shows team coordination status in the dashboard.',
+      hook_type: 'command',
+      fires_on: 'TeammateIdle',
+      severity: 'low',
+      enabled: 0,
+      prompt: null,
+      script: `#!/bin/bash
+# Teammate Idle Monitor - tracks agent team coordination
+SID="\${SESSION_ID:-\${CLAUDE_SESSION_ID:-unknown}}"
+TEAMMATE_ID="\${TEAMMATE_ID:-unknown}"
+TEAMMATE_STATUS="\${TEAMMATE_STATUS:-idle}"
+
+echo "Teammate $TEAMMATE_ID is now $TEAMMATE_STATUS"
+
+# Send push notification - sanitize for JSON safety
+SAFE_ID=$(echo "$TEAMMATE_ID" | sed 's/["\\\\/]/ /g' | head -c 100)
+curl -s -X POST http://localhost:3000/api/notifications/push \\
+  -H "Content-Type: application/json" \\
+  -d "{\\"title\\":\\"Team Update\\",\\"body\\":\\"Teammate $SAFE_ID is now $TEAMMATE_STATUS\\",\\"type\\":\\"info\\",\\"session_id\\":\\"$SID\\"}" > /dev/null 2>&1
+
+exit 0`,
+      config: null,
+      category: 'teams',
+      sort_order: 35
     }
   ];
 

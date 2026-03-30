@@ -18,6 +18,7 @@ const hookTypeLabels = {
   command: 'Command',
   prompt: 'Prompt',
   agent: 'Agent',
+  'command+prompt': 'Command + Prompt',
 };
 
 const severityColors = {
@@ -34,6 +35,15 @@ const categoryLabels = {
   process: 'Process',
   safety: 'Safety',
   visual: 'Visual',
+  session: 'Session Lifecycle',
+  input: 'User Input',
+  subagent: 'Subagent Lifecycle',
+  notifications: 'Notifications',
+  context: 'Context Management',
+  workspace: 'Workspace',
+  config: 'Configuration & Setup',
+  tasks: 'Task Lifecycle',
+  teams: 'Agent Teams',
 };
 
 export default function RulesConfig() {
