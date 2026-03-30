@@ -23,7 +23,7 @@ export default function MobileFileBrowser() {
         </div>
       )}
       {directory ? (
-        <FileBrowser directory={directory} />
+        <FileBrowser directory={directory} useWorktree={!!activeSession?.use_worktree} />
       ) : (
         <div className="empty-state" style={{ padding: '32px 16px' }}>
           <p>Enter a directory path or start a session to browse files</p>

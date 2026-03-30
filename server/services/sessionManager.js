@@ -1181,15 +1181,16 @@ function createSession(options = {}) {
   options.model = options.model || DEFAULT_MODEL;
 
   db.prepare(`
-    INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, created_at, last_activity_at)
-    VALUES (?, ?, 'idle', ?, ?, ?, ?, datetime('now'), datetime('now'))
+    INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, created_at, last_activity_at)
+    VALUES (?, ?, 'idle', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
   `).run(
     id,
     name,
     options.workingDirectory || null,
     options.branch || null,
     options.permissionMode || 'acceptEdits',
-    options.model || 'claude-opus-4-6'
+    options.model || 'claude-opus-4-6',
+    options.useWorktree ? 1 : 0
   );
 
   const session = new SessionProcess(id, options);

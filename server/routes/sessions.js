@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const { execSync } = require('child_process');
 const router = express.Router();
 const { getDb } = require('../database');
 const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
@@ -284,6 +285,29 @@ router.post('/cwd-update', (req, res) => {
 
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Session not found' });
+  }
+
+  // Detect worktree name for worktree sessions
+  const session = db.prepare('SELECT use_worktree FROM sessions WHERE id = ?').get(session_id);
+  if (session && session.use_worktree) {
+    try {
+      const resolvedDir = working_directory.replace(/^~/, process.env.HOME || '');
+      const worktreeName = execSync('git worktree list --porcelain 2>/dev/null | head -1', {
+        cwd: resolvedDir,
+        encoding: 'utf-8',
+        timeout: 5000
+      }).trim();
+      // Extract directory name from "worktree /path/to/worktree"
+      const worktreeDir = worktreeName.replace(/^worktree\s+/, '');
+      const name = path.basename(worktreeDir);
+      if (name) {
+        db.prepare('UPDATE sessions SET worktree_name = ? WHERE id = ?').run(name, session_id);
+      }
+    } catch (e) {
+      // Fall back to extracting name from directory path
+      const name = path.basename(working_directory);
+      db.prepare('UPDATE sessions SET worktree_name = ? WHERE id = ?').run(name, session_id);
+    }
   }
 
   res.json({ success: true, working_directory });

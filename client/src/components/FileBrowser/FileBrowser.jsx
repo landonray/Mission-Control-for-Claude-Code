@@ -7,7 +7,7 @@ import DiffViewer from './DiffViewer';
 import { FolderOpen, GitBranch, Search, FileText, GitCompare } from 'lucide-react';
 import styles from './FileBrowser.module.css';
 
-export default function FileBrowser({ directory }) {
+export default function FileBrowser({ directory, useWorktree = false }) {
   const { fileTree, fileTreePath, loadFileTree, sendWsMessage, selectedFile, dispatch, activeSessionId } = useApp();
   const [searchFilter, setSearchFilter] = useState('');
   const [view, setView] = useState('tree'); // 'tree' | 'preview' | 'diff' | 'branch-diff'
@@ -58,19 +58,27 @@ export default function FileBrowser({ directory }) {
 
   const handleShowDiff = useCallback(async (filePath) => {
     try {
-      const result = await api.get(`/api/files/git/diff?path=${encodeURIComponent(dir)}&file=${encodeURIComponent(filePath)}`);
+      let url = `/api/files/git/diff?path=${encodeURIComponent(dir)}&file=${encodeURIComponent(filePath)}`;
+      if (useWorktree) {
+        url += `&branch=main`;
+      }
+      const result = await api.get(url);
       setDiffData({ fileName: filePath, diff: result.diff });
       setView('diff');
     } catch (e) {}
-  }, [dir]);
+  }, [dir, useWorktree]);
 
   const handleShowAllDiffs = useCallback(async () => {
     try {
-      const result = await api.get(`/api/files/git/diff?path=${encodeURIComponent(dir)}`);
-      setDiffData({ fileName: 'All Changes', diff: result.diff });
+      let url = `/api/files/git/diff?path=${encodeURIComponent(dir)}`;
+      if (useWorktree) {
+        url += `&branch=main`;
+      }
+      const result = await api.get(url);
+      setDiffData({ fileName: useWorktree ? 'Changes vs main' : 'All Changes', diff: result.diff });
       setView('diff');
     } catch (e) {}
-  }, [dir]);
+  }, [dir, useWorktree]);
 
   const handleShowBranchDiff = useCallback(async () => {
     try {

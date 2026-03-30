@@ -145,6 +145,8 @@ function initializeSchema() {
   try { db.exec('ALTER TABLE sessions ADD COLUMN tmux_session_name TEXT'); } catch (e) { /* column already exists */ }
   try { db.exec("ALTER TABLE sessions ADD COLUMN model TEXT DEFAULT 'claude-opus-4-6'"); } catch (e) { /* column already exists */ }
   try { db.exec('ALTER TABLE app_settings ADD COLUMN setup_repo TEXT'); } catch (e) { /* column already exists */ }
+  try { db.exec('ALTER TABLE sessions ADD COLUMN use_worktree INTEGER DEFAULT 0'); } catch (e) { /* column already exists */ }
+  try { db.exec('ALTER TABLE sessions ADD COLUMN worktree_name TEXT'); } catch (e) { /* column already exists */ }
 
   seedQualityRules();
 }
