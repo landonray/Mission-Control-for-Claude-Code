@@ -9,6 +9,7 @@ export default function GeneralSettings() {
   const [form, setForm] = useState({ projects_directory: '', github_username: '' });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     if (generalSettings) {
@@ -63,6 +64,39 @@ export default function GeneralSettings() {
       <button className="btn btn-primary" type="submit" disabled={saving}>
         {saving ? 'Saving…' : saved ? 'Saved!' : 'Save'}
       </button>
+
+      <div className={styles.restartSection}>
+        <h3>Server</h3>
+        <p className={styles.hint}>Restart the Command Center server process. Active tmux sessions will survive the restart.</p>
+        <button
+          className="btn btn-danger"
+          type="button"
+          disabled={restarting}
+          onClick={async () => {
+            if (!confirm('Restart the server? The page will briefly disconnect.')) return;
+            setRestarting(true);
+            try {
+              await api.post('/api/settings/restart');
+            } catch {
+              // Expected — server shuts down before response sometimes
+            }
+            // Poll until server is back
+            const poll = setInterval(async () => {
+              try {
+                const resp = await fetch('/api/health');
+                if (resp.ok) {
+                  clearInterval(poll);
+                  window.location.reload();
+                }
+              } catch {
+                // Still down, keep polling
+              }
+            }, 1500);
+          }}
+        >
+          {restarting ? 'Restarting…' : 'Restart Server'}
+        </button>
+      </div>
     </form>
   );
 }

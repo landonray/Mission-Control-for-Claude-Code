@@ -21,3 +21,17 @@
   opacity: 0.6;
   margin: 0;
 }
+
+.restartSection {
+  border-top: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  padding-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.restartSection h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
