@@ -31,6 +31,7 @@ async function initializeDb() {
     `CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
       role TEXT NOT NULL, content TEXT NOT NULL, tool_calls TEXT, tool_results TEXT,
+      attachments TEXT,
       timestamp TEXT DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS session_summaries (
