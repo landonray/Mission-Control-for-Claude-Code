@@ -47,8 +47,6 @@ export default function ChatInterface({ sessionId }) {
     loadMessages();
   }, [sessionId]);
 
-  // Only truly disabled on error — ended sessions can be resumed
-  const isDisabled = status === 'error';
   const isEnded = status === 'ended';
 
   const handleFiles = useCallback(async (files) => {
@@ -89,7 +87,7 @@ export default function ChatInterface({ sessionId }) {
 
   const handleSend = () => {
     const text = input.trim();
-    if ((!text && attachments.length === 0) || isDisabled) return;
+    if (!text && attachments.length === 0) return;
 
     // Build message content including attachment references
     let messageContent = text;
@@ -348,7 +346,7 @@ export default function ChatInterface({ sessionId }) {
           <button
             className={`btn-ghost btn-icon ${styles.attachBtn}`}
             onClick={() => fileInputRef.current?.click()}
-            disabled={isDisabled || uploading}
+            disabled={uploading}
             title="Attach files"
           >
             {uploading ? <Loader size={16} className="animate-spin" /> : <Paperclip size={16} />}
@@ -362,18 +360,17 @@ export default function ChatInterface({ sessionId }) {
             onPaste={handlePaste}
             placeholder={
               status === 'error'
-                ? `Session failed to start: ${errorMessage || 'unknown error'}`
+                ? `Error: ${errorMessage || 'unknown error'}. Send a message to retry...`
                 : isEnded
                   ? 'Type a message to resume this session...'
                   : 'Send a message... (Enter to send, Shift+Enter for new line)'
             }
-            disabled={isDisabled}
             rows={1}
           />
           <button
             className={`btn btn-primary ${styles.sendBtn}`}
             onClick={handleSend}
-            disabled={(!input.trim() && attachments.length === 0) || isDisabled}
+            disabled={!input.trim() && attachments.length === 0}
           >
             {status === 'working' || resuming
               ? <Loader size={16} className="animate-spin" />
