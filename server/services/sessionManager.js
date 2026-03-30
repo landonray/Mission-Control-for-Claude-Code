@@ -640,10 +640,17 @@ class SessionProcess {
       this.messageQueue.push(text);
 
       // Insert into DB and broadcast so the user sees their message immediately
-      await query(
-        `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
-        [this.id, text, attachments ? JSON.stringify(attachments) : null]
-      );
+      if (attachments) {
+        await query(
+          `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
+          [this.id, text, JSON.stringify(attachments)]
+        );
+      } else {
+        await query(
+          `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
+          [this.id, text]
+        );
+      }
       await query(
         `UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1`,
         [this.id]
@@ -678,10 +685,27 @@ class SessionProcess {
       }).catch(e => console.error('Session name generation error:', e.message));
     }
 
-    await query(
-      `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
-      [this.id, text, attachments ? JSON.stringify(attachments) : null]
-    );
+    console.log(`sendMessage: inserting message for session ${this.id}, hasAttachments=${!!attachments}`);
+    try {
+      if (attachments) {
+        await query(
+          `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
+          [this.id, text, JSON.stringify(attachments)]
+        );
+      } else {
+        await query(
+          `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
+          [this.id, text]
+        );
+      }
+      console.log(`sendMessage: message inserted successfully for session ${this.id}`);
+    } catch (dbErr) {
+      console.error(`sendMessage: FAILED to insert message for session ${this.id}:`, dbErr.message);
+      // Check if session exists
+      const check = await query('SELECT id FROM sessions WHERE id = $1', [this.id]);
+      console.error(`sendMessage: session exists in DB: ${check.rows.length > 0}`);
+      throw dbErr;
+    }
 
     await query(
       `UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1`,

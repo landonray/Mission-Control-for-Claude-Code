@@ -156,7 +156,7 @@ router.post('/create', async (req, res) => {
   // Step 7: Create Claude Code session
   try {
     const { createSession } = require('../services/sessionManager');
-    const session = createSession({
+    const session = await createSession({
       name,
       workingDirectory: folderPath,
       permissionMode: 'acceptEdits',

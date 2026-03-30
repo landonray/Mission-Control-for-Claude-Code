@@ -8,5 +8,6 @@ client/dist/
 .env
 .DS_Store
 .tmux-outputs/
+.tmux-scripts/
 .settings-backup.json
 uploads/

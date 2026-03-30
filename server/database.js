@@ -31,6 +31,7 @@ async function initializeDb() {
     `CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
       role TEXT NOT NULL, content TEXT NOT NULL, tool_calls TEXT, tool_results TEXT,
+      attachments TEXT,
       timestamp TEXT DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS session_summaries (
@@ -90,7 +91,7 @@ async function initializeDb() {
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments TEXT`,
   ];
   for (const migration of migrations) {
-    try { await sql.query(migration); } catch (e) { /* column may already exist */ }
+    try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
   }
 
   await seedQualityRules();
