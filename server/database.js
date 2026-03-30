@@ -157,6 +157,7 @@ function initializeSchema() {
   // Migrations: add columns to existing tables
   try { db.exec('ALTER TABLE sessions ADD COLUMN preview_url TEXT'); } catch (e) { /* column already exists */ }
   try { db.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER DEFAULT 0'); } catch (e) { /* column already exists */ }
+  try { db.exec("ALTER TABLE sessions ADD COLUMN model TEXT DEFAULT 'claude-opus-4-6'"); } catch (e) { /* column already exists */ }
 
   seedDefaultPresets();
   seedQualityRules();
