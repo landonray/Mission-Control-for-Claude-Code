@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { User, Bot, Wrench, Loader, FileIcon, Download } from 'lucide-react';
 import { formatDate } from '../../utils/format';
+import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
 
 function MessageAttachments({ attachments }) {
@@ -88,7 +89,11 @@ export default function MessageList({ messages, loading, streamEvents }) {
               <MessageAttachments attachments={msg.attachments} />
             )}
             <div className={styles.text}>
-              {typeof msg.content === 'string' ? msg.content.trim() : msg.content}
+              {msg.role === 'assistant' && typeof msg.content === 'string' ? (
+                <MarkdownPreview content={msg.content.trim()} />
+              ) : (
+                typeof msg.content === 'string' ? msg.content.trim() : msg.content
+              )}
             </div>
             {msg.isResult && (
               <div className={styles.resultBadge}>Final Result</div>
