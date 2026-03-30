@@ -1,11 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import FileBrowser from './FileBrowser';
 import styles from './MobileFileBrowser.module.css';
 
 export default function MobileFileBrowser() {
-  const { sessions, activeSessionId } = useApp();
+  const { id } = useParams();
+  const { sessions, activeSessionId, dispatch } = useApp();
   const [customPath, setCustomPath] = useState('');
+
+  useEffect(() => {
+    if (id) {
+      dispatch({ type: 'SET_ACTIVE_SESSION', payload: id });
+    }
+  }, [id, dispatch]);
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const directory = activeSession?.working_directory || customPath;

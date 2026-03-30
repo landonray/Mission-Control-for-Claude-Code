@@ -1,18 +1,32 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutGrid, MessageSquare, FolderOpen, Settings } from 'lucide-react';
+import { LayoutGrid, MessageSquare, FolderOpen, Settings, Eye } from 'lucide-react';
 import styles from './MobileLayout.module.css';
 
-const tabs = [
-  { path: '/', icon: LayoutGrid, label: 'Dashboard' },
-  { path: '/session/active', icon: MessageSquare, label: 'Chat' },
-  { path: '/files', icon: FolderOpen, label: 'Files' },
-  { path: '/settings', icon: Settings, label: 'Settings' },
+const dashboardTabs = [
+  { id: 'dashboard', path: '/', icon: LayoutGrid, label: 'Dashboard' },
+  { id: 'settings', path: '/settings', icon: Settings, label: 'Settings' },
 ];
+
+function getSessionTabs(sessionId) {
+  return [
+    { id: 'chat', path: `/session/${sessionId}`, icon: MessageSquare, label: 'Chat' },
+    { id: 'files', path: `/session/${sessionId}/files`, icon: FolderOpen, label: 'Files' },
+    { id: 'preview', path: `/session/${sessionId}/preview`, icon: Eye, label: 'Preview' },
+  ];
+}
 
 export default function MobileLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
+
+  const sessionMatch = location.pathname.match(/^\/session\/([^/]+)/);
+  const sessionId = sessionMatch ? sessionMatch[1] : null;
+  const inSession = sessionId && sessionId !== 'active';
+
+  const tabs = useMemo(() => {
+    return inSession ? getSessionTabs(sessionId) : dashboardTabs;
+  }, [inSession, sessionId]);
 
   return (
     <div className={styles.mobileLayout}>
@@ -23,11 +37,10 @@ export default function MobileLayout({ children }) {
       <nav className={styles.tabBar}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          const isActive = location.pathname === tab.path ||
-            (tab.path === '/session/active' && location.pathname.startsWith('/session'));
+          const isActive = location.pathname === tab.path;
           return (
             <button
-              key={tab.path}
+              key={tab.id}
               className={`${styles.tab} ${isActive ? styles.active : ''}`}
               onClick={() => navigate(tab.path)}
             >
