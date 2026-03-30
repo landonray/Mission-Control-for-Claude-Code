@@ -89,7 +89,7 @@ async function initializeDb() {
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments TEXT`
   ];
   for (const migration of migrations) {
-    try { await sql.query(migration); } catch (e) { /* column may already exist */ }
+    try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
   }
 
   await seedQualityRules();

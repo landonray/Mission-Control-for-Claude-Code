@@ -636,16 +636,26 @@ class SessionProcess {
       }).catch(e => console.error('Session name generation error:', e.message));
     }
 
-    if (attachments) {
-      await query(
-        `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
-        [this.id, text, JSON.stringify(attachments)]
-      );
-    } else {
-      await query(
-        `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
-        [this.id, text]
-      );
+    console.log(`sendMessage: inserting message for session ${this.id}, hasAttachments=${!!attachments}`);
+    try {
+      if (attachments) {
+        await query(
+          `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
+          [this.id, text, JSON.stringify(attachments)]
+        );
+      } else {
+        await query(
+          `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
+          [this.id, text]
+        );
+      }
+      console.log(`sendMessage: message inserted successfully for session ${this.id}`);
+    } catch (dbErr) {
+      console.error(`sendMessage: FAILED to insert message for session ${this.id}:`, dbErr.message);
+      // Check if session exists
+      const check = await query('SELECT id FROM sessions WHERE id = $1', [this.id]);
+      console.error(`sendMessage: session exists in DB: ${check.rows.length > 0}`);
+      throw dbErr;
     }
 
     await query(
@@ -1173,11 +1183,13 @@ async function createSession(options = {}) {
   }
   options.model = options.model || DEFAULT_MODEL;
 
+  console.log(`createSession: inserting session ${id} into DB...`);
   await query(
     `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, created_at, last_activity_at)
      VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, NOW(), NOW())`,
     [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'acceptEdits', options.model || 'claude-opus-4-6', options.useWorktree ? 1 : 0]
   );
+  console.log(`createSession: session ${id} inserted successfully`);
 
   const session = new SessionProcess(id, options);
   activeSessions.set(id, session);
