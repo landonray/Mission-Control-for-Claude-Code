@@ -107,7 +107,7 @@ export default function Layout() {
       </div>
 
       {/* Right Resize Handle */}
-      {showFileBrowser && (
+      {showFileBrowser && sessionId && (
         <div
           className={`${styles.resizeHandle} ${dragging === 'right' ? styles.active : ''}`}
           onMouseDown={(e) => onMouseDown('right', e)}
@@ -116,17 +116,19 @@ export default function Layout() {
 
       {/* Right Panel: Files / Preview */}
       <div
-        className={`${styles.rightPanel} ${showFileBrowser ? '' : styles.collapsed}`}
-        style={showFileBrowser ? { width: rightWidth } : undefined}
+        className={`${styles.rightPanel} ${showFileBrowser && sessionId ? '' : styles.collapsed}`}
+        style={showFileBrowser && sessionId ? { width: rightWidth } : undefined}
       >
-        <button
-          className={`btn-ghost btn-icon ${styles.toggleBtn}`}
-          onClick={() => dispatch({ type: 'TOGGLE_FILE_BROWSER' })}
-          title={showFileBrowser ? 'Hide panel' : 'Show panel'}
-        >
-          {showFileBrowser ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-        </button>
-        {showFileBrowser && (
+        {sessionId && (
+          <button
+            className={`btn-ghost btn-icon ${styles.toggleBtn}`}
+            onClick={() => dispatch({ type: 'TOGGLE_FILE_BROWSER' })}
+            title={showFileBrowser ? 'Hide panel' : 'Show panel'}
+          >
+            {showFileBrowser ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+          </button>
+        )}
+        {showFileBrowser && sessionId && (
           <>
             <div className={styles.panelTabs}>
               <PillSelector
