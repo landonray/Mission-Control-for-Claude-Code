@@ -509,6 +509,11 @@ class SessionProcess {
         error: message,
         timestamp: new Date().toISOString()
       });
+      // Drain message queue so queued messages aren't silently lost
+      if (this.messageQueue.length > 0) {
+        const nextMsg = this.messageQueue.shift();
+        setTimeout(() => this.sendMessage(nextMsg), 100);
+      }
     });
   }
 
@@ -628,6 +633,14 @@ class SessionProcess {
       case 'system':
         if (event.subtype === 'init' && event.session_id) {
           this.cliSessionId = event.session_id;
+          // When --worktree is used, Claude CLI creates a worktree and reports
+          // the actual cwd in the init event. Update our working directory so
+          // the files panel and git operations point at the worktree, not main.
+          if (event.cwd && event.cwd !== this.workingDirectory) {
+            this.workingDirectory = event.cwd;
+            query('UPDATE sessions SET working_directory = $1 WHERE id = $2', [event.cwd, this.id])
+              .catch(e => console.error('Failed to update working directory:', e.message));
+          }
         }
         break;
 
@@ -698,9 +711,13 @@ class SessionProcess {
     if (msgCount && msgCount.user_message_count === 0) {
       generateSessionName(text).then(async (name) => {
         if (!name) return;
-        const currentResult = await query('SELECT name FROM sessions WHERE id = $1', [this.id]);
+        const currentResult = await query('SELECT name, working_directory FROM sessions WHERE id = $1', [this.id]);
         const currentSession = currentResult.rows[0];
-        if (currentSession && currentSession.name === 'New Session') {
+        const isDefaultName = currentSession && (
+          currentSession.name === 'New Session' ||
+          (currentSession.working_directory && currentSession.name === path.basename(currentSession.working_directory))
+        );
+        if (isDefaultName) {
           await query('UPDATE sessions SET name = $1 WHERE id = $2', [name, this.id]);
           this.broadcast({
             type: 'session_name_updated',
