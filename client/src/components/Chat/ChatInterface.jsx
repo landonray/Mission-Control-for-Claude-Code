@@ -18,7 +18,8 @@ export default function ChatInterface({ sessionId }) {
   const session = sessions.find(s => s.id === sessionId);
   const {
     messages, setMessages, status, errorMessage, pendingPermission,
-    streamEvents, sendMessage, approvePermission, resuming
+    streamEvents, sendMessage, approvePermission, resuming,
+    sendError, clearSendError
   } = useWebSocket(sessionId);
   const [input, setInput] = useState(() => sessionDrafts.get(sessionId) || '');
   const [loading, setLoading] = useState(true);
@@ -137,7 +138,11 @@ export default function ChatInterface({ sessionId }) {
         : attachmentText;
     }
 
-    sendMessage(messageContent, attachments);
+    const sent = sendMessage(messageContent, attachments);
+    if (sent === false) {
+      // Message failed to send — keep input so user can retry
+      return;
+    }
     setInput('');
     setAttachments([]);
 
@@ -326,7 +331,7 @@ export default function ChatInterface({ sessionId }) {
       )}
 
       {/* Messages */}
-      <MessageList messages={messages} loading={loading} streamEvents={streamEvents} />
+      <MessageList messages={messages} loading={loading} streamEvents={streamEvents} status={status} />
 
       {/* Permission Prompt */}
       {pendingPermission && (
@@ -362,6 +367,15 @@ export default function ChatInterface({ sessionId }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {sendError && (
+        <div className={styles.sendError}>
+          <span>{sendError}</span>
+          <button onClick={clearSendError} className={styles.sendErrorDismiss} aria-label="Dismiss">
+            <X size={14} />
+          </button>
         </div>
       )}
 

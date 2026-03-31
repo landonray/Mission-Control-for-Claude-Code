@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Bot, Wrench, Loader, FileIcon, Download } from 'lucide-react';
+import { User, Bot, Loader, FileIcon, Download } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
@@ -32,7 +32,55 @@ function MessageAttachments({ attachments }) {
   );
 }
 
-export default function MessageList({ messages, loading, streamEvents }) {
+const THINKING_VERBS = [
+  'Thinking', 'Pondering', 'Mulling it over', 'Reasoning', 'Considering',
+  'Working through it', 'Piecing it together', 'Connecting the dots',
+];
+
+function WorkingIndicator({ streamEvents }) {
+  const lastTool = [...streamEvents].reverse().find(e => e.type === 'tool_use');
+  const toolName = lastTool?.tool || lastTool?.name;
+
+  // Pick a stable verb based on event count so it changes as work progresses
+  const verb = THINKING_VERBS[streamEvents.length % THINKING_VERBS.length];
+
+  let label;
+  if (toolName) {
+    // Show what Claude is actually doing
+    const friendly = {
+      Bash: 'Running a command',
+      Read: 'Reading a file',
+      Edit: 'Editing a file',
+      Write: 'Writing a file',
+      Grep: 'Searching code',
+      Glob: 'Finding files',
+      WebSearch: 'Searching the web',
+      WebFetch: 'Fetching a page',
+      Agent: 'Delegating to an agent',
+    };
+    label = friendly[toolName] || `Using ${toolName}`;
+  } else {
+    label = verb;
+  }
+
+  return (
+    <div className={styles.workingIndicator}>
+      <div className={styles.workingAvatar}>
+        <Bot size={16} />
+      </div>
+      <div className={styles.workingContent}>
+        <span className={styles.workingLabel}>{label}</span>
+        <span className={styles.workingDots}>
+          <span className={styles.dot} />
+          <span className={styles.dot} />
+          <span className={styles.dot} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function MessageList({ messages, loading, streamEvents, status }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
@@ -70,12 +118,6 @@ export default function MessageList({ messages, loading, streamEvents }) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, streamEvents]);
-
-  // Extract recent tool calls from stream events for indicators
-  const recentTools = streamEvents
-    .filter(e => e.type === 'tool_use')
-    .slice(-5)
-    .map(e => e.tool || e.name || 'tool');
 
   if (loading) {
     return (
@@ -126,12 +168,9 @@ export default function MessageList({ messages, loading, streamEvents }) {
         </div>
       ))}
 
-      {/* Tool call indicators */}
-      {recentTools.length > 0 && (
-        <div className={styles.toolIndicator}>
-          <Wrench size={12} />
-          <span>Using tools: {recentTools.join(', ')}</span>
-        </div>
+      {/* Working indicator — shows real activity from stream events */}
+      {status === 'working' && (
+        <WorkingIndicator streamEvents={streamEvents} />
       )}
 
       <div ref={bottomRef} />
