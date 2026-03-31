@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
 import NewSessionModal from './NewSessionModal';
-import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings } from 'lucide-react';
+import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud } from 'lucide-react';
 import styles from './SessionList.module.css';
 
 function renderLastAction(summary) {
@@ -172,6 +172,25 @@ export default function SessionList() {
                     <div className={styles.branchTag}>
                       <GitBranch size={10} />
                       {session.worktree_name || session.branch}
+                    </div>
+                  )}
+
+                  {session.pipeline && (
+                    <div className={styles.pipeline}>
+                      <div className={styles.pipelineStage} data-status={session.pipeline.committed} title={`Committed: ${session.pipeline.committed}`}>
+                        <GitCommitHorizontal size={10} />
+                        <span>Branch</span>
+                      </div>
+                      <div className={styles.pipelineConnector} data-status={session.pipeline.merged} />
+                      <div className={styles.pipelineStage} data-status={session.pipeline.merged} title={`Merged: ${session.pipeline.merged}`}>
+                        <GitMerge size={10} />
+                        <span>Main</span>
+                      </div>
+                      <div className={styles.pipelineConnector} data-status={session.pipeline.pushed} />
+                      <div className={styles.pipelineStage} data-status={session.pipeline.pushed} title={`Pushed: ${session.pipeline.pushed}`}>
+                        <Cloud size={10} />
+                        <span>Remote</span>
+                      </div>
                     </div>
                   )}
 

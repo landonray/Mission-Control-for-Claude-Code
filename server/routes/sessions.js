@@ -4,6 +4,7 @@ const { execSync } = require('child_process');
 const router = express.Router();
 const { query } = require('../database');
 const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
+const { getGitPipeline } = require('../services/fileWatcher');
 
 // List all sessions (active + recent + ended — unified view)
 router.get('/', async (req, res) => {
@@ -49,13 +50,20 @@ router.get('/', async (req, res) => {
       const wtMatch = s.working_directory.match(/^(.+)\/\.claude\/worktrees\//);
       projectName = wtMatch ? path.basename(wtMatch[1]) : path.basename(s.working_directory);
     }
+    // Compute git pipeline status for non-archived sessions
+    let pipeline = null;
+    if (!s.archived && s.working_directory) {
+      pipeline = getGitPipeline(s.working_directory);
+    }
+
     enriched.push({
       ...s,
       project_name: projectName,
       isActive: !!activeInfo,
       pendingPermission: !!(activeInfo?.pendingPermission),
       archived: !!s.archived,
-      resumable: s.status === 'ended' // All ended sessions are resumable
+      resumable: s.status === 'ended', // All ended sessions are resumable
+      pipeline
     });
   }
 
