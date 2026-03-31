@@ -10,7 +10,12 @@ export default function SessionControls({ sessionId, status, session }) {
   const navigate = useNavigate();
   const { loadSessions, mcpServers, loadMcpServers } = useApp();
   const [showMenu, setShowMenu] = useState(false);
-  const [permissionMode, setPermissionMode] = useState(session?.permission_mode || 'acceptEdits');
+  const [permissionMode, setPermissionMode] = useState(session?.permission_mode || 'auto');
+
+  // Reset permission mode when session changes
+  useEffect(() => {
+    setPermissionMode(session?.permission_mode || 'auto');
+  }, [sessionId, session?.permission_mode]);
 
   useEffect(() => {
     loadMcpServers();
