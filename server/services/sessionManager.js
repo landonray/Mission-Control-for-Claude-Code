@@ -5,16 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { query } = require('../database');
-const Anthropic = require('@anthropic-ai/sdk');
-
-// Lazy-init Anthropic client (only created when needed)
-let anthropicClient = null;
-function getAnthropicClient() {
-  if (!anthropicClient) {
-    anthropicClient = new Anthropic();
-  }
-  return anthropicClient;
-}
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 
 const activeSessions = new Map();
 
@@ -63,14 +55,13 @@ if (tmuxAvailable) {
 // Generate a short AI-powered session name from the first user message
 async function generateSessionName(messageText) {
   try {
-    const client = getAnthropicClient();
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 30,
-      messages: [{ role: 'user', content: messageText }],
-      system: 'Generate a concise 3-6 word session name that captures the essence of this user message. Return ONLY the name, no quotes, no punctuation, no explanation. Examples: "Fix Login Page Bug", "Add Dark Mode Toggle", "Refactor Database Layer", "Debug API Endpoints".',
-    });
-    const name = response.content[0]?.text?.trim();
+    const prompt = `Generate a concise 3-6 word session name that captures the essence of this user message. Return ONLY the name, no quotes, no punctuation, no explanation. Examples: "Fix Login Page Bug", "Add Dark Mode Toggle", "Refactor Database Layer", "Debug API Endpoints".\n\nUser message: ${messageText}`;
+    const { stdout } = await execFileAsync('claude', [
+      '--print', prompt,
+      '--model', 'claude-haiku-4-5-20251001',
+      '--max-turns', '1',
+    ], { timeout: 15000 });
+    const name = stdout.trim();
     return name || null;
   } catch (e) {
     console.error('Failed to generate session name:', e.message);
