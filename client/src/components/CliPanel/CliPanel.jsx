@@ -1,6 +1,6 @@
 // client/src/components/CliPanel/CliPanel.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { subscribe, getEvents } from '../../hooks/streamEventStore';
+import { subscribe, getEvents, clearEvents } from '../../hooks/streamEventStore';
 import styles from './CliPanel.module.css';
 
 const MAX_LINES = 5000;
@@ -54,11 +54,12 @@ export default function CliPanel({ sessionId }) {
   const outputRef = useRef(null);
   const processedCountRef = useRef(0);
 
-  // Reset when session changes
+  // Reset when session changes — clear global event store so stale data isn't reprocessed
   useEffect(() => {
     setLines([]);
     setAtBottom(true);
     processedCountRef.current = 0;
+    clearEvents();
   }, [sessionId]);
 
   // Subscribe to shared stream event store

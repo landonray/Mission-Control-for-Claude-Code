@@ -15,6 +15,10 @@ export function getEvents() {
   return events;
 }
 
+export function clearEvents() {
+  events = [];
+}
+
 export function subscribe(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);

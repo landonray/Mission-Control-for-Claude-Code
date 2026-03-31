@@ -33,7 +33,13 @@ export default function ChatInterface({ sessionId }) {
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
 
-  // Save draft when input changes, clear on unmount if empty
+  // Restore draft when switching sessions
+  useEffect(() => {
+    setInput(sessionDrafts.get(sessionId) || '');
+    setAttachments([]);
+  }, [sessionId]);
+
+  // Save draft when input changes
   useEffect(() => {
     if (input) {
       sessionDrafts.set(sessionId, input);
