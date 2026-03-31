@@ -218,24 +218,29 @@ router.post('/:id/end', async (req, res) => {
 
 // Get session messages
 router.get('/:id/messages', async (req, res) => {
-  const limit = parseInt(req.query.limit) || 100;
-  const offset = parseInt(req.query.offset) || 0;
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
 
-  const messages = (await query(`
-    SELECT * FROM messages
-    WHERE session_id = $1
-    ORDER BY timestamp ASC
-    LIMIT $2 OFFSET $3
-  `, [req.params.id, limit, offset])).rows;
+    const messages = (await query(`
+      SELECT * FROM messages
+      WHERE session_id = $1
+      ORDER BY timestamp ASC
+      LIMIT $2 OFFSET $3
+    `, [req.params.id, limit, offset])).rows;
 
-  const total = (await query('SELECT COUNT(*) as count FROM messages WHERE session_id = $1', [req.params.id])).rows[0];
+    const total = (await query('SELECT COUNT(*) as count FROM messages WHERE session_id = $1', [req.params.id])).rows[0];
 
-  res.json({
-    messages,
-    total: total.count,
-    limit,
-    offset
-  });
+    res.json({
+      messages,
+      total: total.count,
+      limit,
+      offset
+    });
+  } catch (err) {
+    console.error(`[API] Failed to load messages for session ${req.params.id}:`, err.message);
+    res.status(500).json({ error: 'Failed to load messages' });
+  }
 });
 
 // Get session summary
