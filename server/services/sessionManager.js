@@ -167,7 +167,18 @@ class SessionProcess {
       args.push('--worktree');
     }
 
-    args.push('--permission-mode', this.permissionMode || 'auto');
+    // --permission-mode is ignored on --resume, so use --dangerously-skip-permissions
+    // for bypassPermissions/auto modes to ensure writes work on resumed sessions.
+    const mode = this.permissionMode || 'auto';
+    if (mode === 'bypassPermissions') {
+      args.push('--dangerously-skip-permissions');
+    } else if (mode === 'auto' || mode === 'acceptEdits') {
+      args.push('--dangerously-skip-permissions');
+      // Still pass permission-mode for new sessions (non-resume)
+      args.push('--permission-mode', mode);
+    } else {
+      args.push('--permission-mode', mode);
+    }
 
     // Model selection
     if (this.model) {
