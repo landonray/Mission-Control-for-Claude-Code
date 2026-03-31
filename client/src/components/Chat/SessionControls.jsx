@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 import { useApp } from '../../context/AppContext';
 import { Pause, Play, Square, MoreVertical, Server, Power, PowerOff } from 'lucide-react';
@@ -6,6 +7,7 @@ import PillSelector from '../common/PillSelector';
 import styles from './SessionControls.module.css';
 
 export default function SessionControls({ sessionId, status, session }) {
+  const navigate = useNavigate();
   const { loadSessions, mcpServers, loadMcpServers } = useApp();
   const [showMenu, setShowMenu] = useState(false);
   const [permissionMode, setPermissionMode] = useState(session?.permission_mode || 'acceptEdits');
@@ -28,6 +30,7 @@ export default function SessionControls({ sessionId, status, session }) {
     if (confirm('End this session?')) {
       await api.post(`/api/sessions/${sessionId}/end`);
       loadSessions();
+      navigate('/');
     }
   };
 

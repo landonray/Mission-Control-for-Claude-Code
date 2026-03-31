@@ -10,6 +10,9 @@ import QualityScorecard from '../Quality/QualityScorecard';
 import { Send, Loader, RotateCcw, Pencil, Check, X, GitBranch, Paperclip, Upload, FileIcon, Image as ImageIcon, X as XIcon } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
+// Module-level map to persist chat drafts across session switches
+const sessionDrafts = new Map();
+
 export default function ChatInterface({ sessionId }) {
   const { sessions, loadSessions } = useApp();
   const session = sessions.find(s => s.id === sessionId);
@@ -17,7 +20,7 @@ export default function ChatInterface({ sessionId }) {
     messages, setMessages, status, errorMessage, pendingPermission,
     streamEvents, sendMessage, approvePermission, resuming
   } = useWebSocket(sessionId);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => sessionDrafts.get(sessionId) || '');
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -28,6 +31,23 @@ export default function ChatInterface({ sessionId }) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
+
+  // Save draft when input changes, clear on unmount if empty
+  useEffect(() => {
+    if (input) {
+      sessionDrafts.set(sessionId, input);
+    } else {
+      sessionDrafts.delete(sessionId);
+    }
+  }, [input, sessionId]);
+
+  // Restore textarea height on mount if there's a draft
+  useEffect(() => {
+    if (textareaRef.current && input) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
+    }
+  }, [sessionId]);
 
   // Load existing messages
   useEffect(() => {
