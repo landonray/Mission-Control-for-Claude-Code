@@ -214,6 +214,9 @@
   padding: 6px;
   flex-shrink: 0;
   transition: color 0.2s;
+  border: none !important;
+  outline: none;
+  background: transparent;
 }
 
 .attachBtn:hover:not(:disabled) {

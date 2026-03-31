@@ -70,6 +70,8 @@
 
 .toggleBtn {
   margin: 12px auto 0;
+  border: none !important;
+  outline: none;
 }
 
 .panelHeader {
@@ -78,6 +80,11 @@
   gap: 8px;
   padding: 10px 12px 0;
   flex-shrink: 0;
+}
+
+.panelHeader button {
+  border: none !important;
+  outline: none;
 }
 
 .panelTabs {
