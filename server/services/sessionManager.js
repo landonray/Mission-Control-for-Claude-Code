@@ -36,11 +36,19 @@ try {
 // Directory where uploaded files are stored
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads');
 
-// Convert relative /api/uploads/ URLs in prompt text to absolute file paths
-// so Claude CLI can read attached images and files directly
-function resolveUploadPaths(text) {
+// Copy uploaded files into the session's working directory and rewrite
+// markdown references so Claude CLI can read them without extra permissions.
+function resolveUploadPaths(text, workingDirectory) {
   return text.replace(/\(\/api\/uploads\/([^)]+)\)/g, (match, filename) => {
-    return `(${path.join(UPLOADS_DIR, filename)})`;
+    const src = path.join(UPLOADS_DIR, filename);
+    if (workingDirectory && fs.existsSync(src)) {
+      const destDir = path.join(workingDirectory, '.uploads');
+      try { fs.mkdirSync(destDir, { recursive: true }); } catch (e) {}
+      const dest = path.join(destDir, filename);
+      try { fs.copyFileSync(src, dest); } catch (e) {}
+      return `(${dest})`;
+    }
+    return `(${src})`;
   });
 }
 
@@ -180,7 +188,7 @@ class SessionProcess {
       args.push('--mcp-config', JSON.stringify(mcpConfig));
     }
 
-    args.push(resolveUploadPaths(prompt));
+    args.push(resolveUploadPaths(prompt, this.workingDirectory));
 
     return args;
   }
@@ -225,7 +233,7 @@ class SessionProcess {
     // Write the prompt to a file to completely avoid shell interpretation.
     // Convert relative upload URLs to absolute file paths so Claude can read them.
     const promptFile = this.getPromptFilePath();
-    fs.writeFileSync(promptFile, resolveUploadPaths(prompt), { mode: 0o600 });
+    fs.writeFileSync(promptFile, resolveUploadPaths(prompt, this.workingDirectory), { mode: 0o600 });
 
     // Write a self-contained launch script. No user content is embedded
     // in the script — the prompt is read from the prompt file at runtime.
