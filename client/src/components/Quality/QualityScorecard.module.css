@@ -59,7 +59,7 @@
 
 .failBadge {
   font-size: 11px;
-  background: rgba(224, 107, 107, 0.12);
+  background: rgba(196, 64, 64, 0.1);
   color: var(--error);
   padding: 2px 8px;
   border-radius: 9999px;

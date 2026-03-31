@@ -34,8 +34,8 @@
 
 .userMessage .avatar {
   background: linear-gradient(135deg, var(--accent) 0%, var(--coral) 100%);
-  color: #1a1510;
-  box-shadow: 0 2px 8px rgba(232, 138, 74, 0.3);
+  color: #faf0e0;
+  box-shadow: 0 2px 8px rgba(212, 120, 48, 0.25);
 }
 
 .assistantMessage .avatar {
@@ -82,9 +82,9 @@
 
 .userMessage .text {
   background: linear-gradient(135deg, var(--accent) 0%, var(--coral) 100%);
-  color: #1a1510;
+  color: #faf0e0;
   border-bottom-right-radius: 4px;
-  box-shadow: 0 2px 12px rgba(232, 138, 74, 0.25);
+  box-shadow: 0 2px 12px rgba(212, 120, 48, 0.2);
 }
 
 .assistantMessage .text {
@@ -92,7 +92,7 @@
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   white-space: normal;
-  box-shadow: 0 2px 8px rgba(20, 12, 5, 0.2);
+  box-shadow: 0 2px 8px rgba(120, 90, 50, 0.08);
 }
 
 /* Reset MarkdownPreview padding inside chat bubbles */
@@ -111,7 +111,7 @@
 .resultBadge {
   display: inline-flex;
   padding: 3px 10px;
-  background: rgba(94, 196, 160, 0.15);
+  background: rgba(42, 144, 112, 0.12);
   color: var(--success);
   border-radius: 6px;
   font-size: 11px;
@@ -154,7 +154,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(61, 139, 139, 0.3);
+  box-shadow: 0 2px 8px rgba(42, 112, 112, 0.2);
 }
 
 .workingContent {

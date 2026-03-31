@@ -4,7 +4,7 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: #120e0a;
+  background: var(--sand-light);
 }
 
 .toolbar {
@@ -14,7 +14,7 @@
   padding: 8px 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  background: #120e0a;
+  background: var(--sand-light);
 }
 
 .toolbarLabel {
@@ -39,7 +39,7 @@
   font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--sand-light);
+  color: var(--text-primary);
 }
 
 .line {
@@ -50,7 +50,7 @@
 }
 
 .line:hover {
-  background: rgba(244, 232, 211, 0.04);
+  background: rgba(120, 90, 50, 0.06);
 }
 
 .line_stderr {
@@ -67,7 +67,7 @@
 }
 
 .line_muted {
-  color: #3e3225;
+  color: var(--text-muted);
 }
 
 .empty {
@@ -97,7 +97,7 @@
   font-size: 14px;
   opacity: 0.9;
   transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(20, 12, 5, 0.4);
+  box-shadow: 0 2px 8px rgba(120, 90, 50, 0.15);
 }
 
 .scrollToBottom:hover {

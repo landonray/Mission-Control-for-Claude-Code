@@ -61,7 +61,7 @@
 
 .toggleBtn.active {
   background: linear-gradient(135deg, var(--accent) 0%, var(--coral) 100%);
-  color: #1a1510;
+  color: #faf0e0;
   font-weight: 700;
 }
 

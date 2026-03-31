@@ -40,7 +40,7 @@
 }
 
 .statCard:hover {
-  border-color: rgba(232, 138, 74, 0.3);
+  border-color: rgba(212, 120, 48, 0.25);
 }
 
 .statValue {
@@ -140,7 +140,7 @@
 }
 
 .ruleRow:hover {
-  border-color: rgba(232, 138, 74, 0.3);
+  border-color: rgba(212, 120, 48, 0.25);
 }
 
 .ruleRank {

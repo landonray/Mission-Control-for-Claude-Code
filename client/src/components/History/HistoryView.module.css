@@ -92,7 +92,7 @@
 .sessionItem:hover {
   border-color: var(--accent);
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(20, 12, 5, 0.3);
+  box-shadow: 0 4px 16px rgba(120, 90, 50, 0.12);
 }
 
 .sessionHeader {
@@ -209,7 +209,7 @@
 }
 
 .logMessage.user {
-  background: rgba(232, 138, 74, 0.08);
+  background: rgba(212, 120, 48, 0.06);
   border-left: 3px solid var(--accent);
 }
 

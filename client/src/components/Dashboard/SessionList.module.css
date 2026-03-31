@@ -49,37 +49,37 @@
 /* Running sessions: seafoam throbbing outline */
 .cardWorking {
   border-color: var(--success);
-  box-shadow: 0 0 8px rgba(94, 196, 160, 0.3);
+  box-shadow: 0 0 8px rgba(42, 144, 112, 0.2);
   animation: throbGreen 2.5s ease-in-out infinite;
 }
 
 .cardWorking.active {
   border-color: var(--success);
-  box-shadow: inset 3px 0 0 var(--success), 0 0 8px rgba(94, 196, 160, 0.3);
+  box-shadow: inset 3px 0 0 var(--success), 0 0 8px rgba(42, 144, 112, 0.2);
   animation: throbGreen 2.5s ease-in-out infinite;
 }
 
 /* Waiting sessions: golden throbbing outline */
 .cardWaiting {
   border-color: var(--warning);
-  box-shadow: 0 0 8px rgba(232, 196, 74, 0.3);
+  box-shadow: 0 0 8px rgba(200, 160, 32, 0.2);
   animation: throbYellow 2.5s ease-in-out infinite;
 }
 
 .cardWaiting.active {
   border-color: var(--warning);
-  box-shadow: inset 3px 0 0 var(--warning), 0 0 8px rgba(232, 196, 74, 0.3);
+  box-shadow: inset 3px 0 0 var(--warning), 0 0 8px rgba(200, 160, 32, 0.2);
   animation: throbYellow 2.5s ease-in-out infinite;
 }
 
 @keyframes throbGreen {
-  0%, 100% { box-shadow: 0 0 6px rgba(94, 196, 160, 0.2); }
-  50% { box-shadow: 0 0 18px rgba(94, 196, 160, 0.45); }
+  0%, 100% { box-shadow: 0 0 6px rgba(42, 144, 112, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(42, 144, 112, 0.35); }
 }
 
 @keyframes throbYellow {
-  0%, 100% { box-shadow: 0 0 6px rgba(232, 196, 74, 0.2); }
-  50% { box-shadow: 0 0 18px rgba(232, 196, 74, 0.45); }
+  0%, 100% { box-shadow: 0 0 6px rgba(200, 160, 32, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(200, 160, 32, 0.35); }
 }
 
 /* Archived card dimmed */
@@ -166,7 +166,7 @@
 
 .filterActive {
   color: var(--accent) !important;
-  background: rgba(232, 138, 74, 0.12) !important;
+  background: rgba(212, 120, 48, 0.1) !important;
 }
 
 /* Stats section */
@@ -244,7 +244,7 @@
   gap: 4px;
   font-size: 10px;
   color: var(--accent);
-  background: rgba(232, 138, 74, 0.1);
+  background: rgba(212, 120, 48, 0.08);
   padding: 2px 8px;
   border-radius: 6px;
   margin-bottom: 8px;

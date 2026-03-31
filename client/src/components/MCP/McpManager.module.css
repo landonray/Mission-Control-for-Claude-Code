@@ -32,7 +32,7 @@
 }
 
 .serverItem:hover {
-  border-color: rgba(232, 138, 74, 0.3);
+  border-color: rgba(212, 120, 48, 0.3);
 }
 
 .serverIcon {
@@ -65,12 +65,12 @@
   border-radius: 9999px;
   font-size: 10px;
   font-weight: 700;
-  background: rgba(139, 115, 85, 0.15);
+  background: rgba(122, 101, 72, 0.12);
   color: var(--text-muted);
 }
 
 .statusBadge.connected {
-  background: rgba(94, 196, 160, 0.15);
+  background: rgba(42, 144, 112, 0.12);
   color: var(--success);
 }
 
@@ -93,7 +93,7 @@
 .editOverlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(15, 10, 5, 0.6);
+  background: rgba(26, 21, 16, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -110,7 +110,7 @@
   max-width: 480px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 16px 64px rgba(20, 12, 5, 0.6);
+  box-shadow: 0 16px 64px rgba(120, 90, 50, 0.2);
 }
 
 .editHeader {

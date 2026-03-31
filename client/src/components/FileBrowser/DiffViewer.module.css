@@ -62,7 +62,7 @@
 
 .hunkHeader {
   padding: 4px 14px;
-  background: rgba(232, 138, 74, 0.08);
+  background: rgba(212, 120, 48, 0.06);
   color: var(--accent);
   font-size: 11px;
 }
@@ -92,12 +92,12 @@
 }
 
 .addLine {
-  background: rgba(94, 196, 160, 0.08);
+  background: rgba(42, 144, 112, 0.06);
   color: var(--success);
 }
 
 .removeLine {
-  background: rgba(224, 107, 107, 0.08);
+  background: rgba(196, 64, 64, 0.06);
   color: var(--error);
 }
 

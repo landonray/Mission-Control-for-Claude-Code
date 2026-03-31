@@ -68,19 +68,19 @@
   padding: 12px 28px;
   font-size: 14px;
   font-weight: 700;
-  color: #1a1510;
+  color: #faf0e0;
   background: linear-gradient(135deg, var(--accent) 0%, var(--coral) 100%);
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   margin: 4px 0;
-  box-shadow: 0 4px 16px rgba(232, 138, 74, 0.3);
+  box-shadow: 0 4px 16px rgba(212, 120, 48, 0.25);
 }
 
 .runButton:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(232, 138, 74, 0.45);
+  box-shadow: 0 6px 24px rgba(212, 120, 48, 0.35);
 }
 
 .runButton:active {

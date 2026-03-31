@@ -1,35 +1,35 @@
 @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700;800&display=swap');
 
 :root {
-  /* Retro Surfer Palette */
-  --bg-primary: #1a1510;
-  --bg-secondary: #241e16;
-  --bg-tertiary: #342a20;
-  --bg-hover: #443828;
-  --text-primary: #f4e8d3;
-  --text-secondary: #c4a882;
-  --text-muted: #8b7355;
-  --border: #3e3225;
-  --accent: #e88a4a;
-  --accent-hover: #f0a56a;
-  --success: #5ec4a0;
-  --warning: #e8c44a;
-  --error: #e06b6b;
-  --info: #5db8d4;
+  /* Retro Surfer Palette — Light */
+  --bg-primary: #f5e6d0;
+  --bg-secondary: #eddcc4;
+  --bg-tertiary: #e2d0b8;
+  --bg-hover: #d8c4a8;
+  --text-primary: #1a1510;
+  --text-secondary: #3e2e1a;
+  --text-muted: #7a6548;
+  --border: #d4c4a8;
+  --accent: #d47830;
+  --accent-hover: #c06820;
+  --success: #2a9070;
+  --warning: #c8a020;
+  --error: #c44040;
+  --info: #3090b0;
 
   /* Surfer extended palette */
-  --coral: #e07a5f;
-  --ocean-deep: #3d8b8b;
-  --sunset-pink: #d4727a;
-  --driftwood: #a08060;
-  --seafoam: #88d4b8;
-  --sand-light: #f5e6d0;
-  --golden-hour: #f0c060;
+  --coral: #c06040;
+  --ocean-deep: #2a7070;
+  --sunset-pink: #b85060;
+  --driftwood: #8a6840;
+  --seafoam: #40a888;
+  --sand-light: #faf0e0;
+  --golden-hour: #d4a030;
 
   --radius: 12px;
   --radius-lg: 18px;
-  --shadow: 0 2px 8px rgba(20, 12, 5, 0.4);
-  --shadow-lg: 0 8px 32px rgba(20, 12, 5, 0.5);
+  --shadow: 0 2px 8px rgba(120, 90, 50, 0.12);
+  --shadow-lg: 0 8px 32px rgba(120, 90, 50, 0.18);
 
   /* Grain texture overlay */
   --grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
@@ -68,7 +68,7 @@ body::before {
   background-repeat: repeat;
   pointer-events: none;
   z-index: 9999;
-  opacity: 0.5;
+  opacity: 0.15;
 }
 
 input, textarea, select, button {
@@ -136,24 +136,24 @@ a:hover {
 
 .btn-primary {
   background: linear-gradient(135deg, var(--accent) 0%, var(--coral) 100%);
-  color: #1a1510;
-  box-shadow: 0 4px 16px rgba(232, 138, 74, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: #faf0e0;
+  box-shadow: 0 4px 16px rgba(212, 120, 48, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--accent-hover) 0%, #e88a6f 100%);
-  box-shadow: 0 6px 24px rgba(232, 138, 74, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  background: linear-gradient(135deg, var(--accent-hover) 0%, #b05838 100%);
+  box-shadow: 0 6px 24px rgba(212, 120, 48, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
   transform: translateY(-2px);
 }
 .btn-primary:active {
   transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(232, 138, 74, 0.2);
+  box-shadow: 0 2px 8px rgba(212, 120, 48, 0.15);
 }
 
 .btn-secondary {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   border: 1px solid var(--border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 .btn-secondary:hover {
   background: var(--bg-hover);
@@ -163,20 +163,20 @@ a:hover {
 .btn-danger {
   background: linear-gradient(135deg, var(--error) 0%, var(--sunset-pink) 100%);
   color: white;
-  box-shadow: 0 4px 12px rgba(224, 107, 107, 0.3);
+  box-shadow: 0 4px 12px rgba(196, 64, 64, 0.2);
 }
 .btn-danger:hover {
-  box-shadow: 0 6px 20px rgba(224, 107, 107, 0.45);
+  box-shadow: 0 6px 20px rgba(196, 64, 64, 0.3);
   transform: translateY(-1px);
 }
 
 .btn-success {
   background: linear-gradient(135deg, var(--success) 0%, var(--ocean-deep) 100%);
-  color: #1a1510;
-  box-shadow: 0 4px 12px rgba(94, 196, 160, 0.3);
+  color: #faf0e0;
+  box-shadow: 0 4px 12px rgba(42, 144, 112, 0.2);
 }
 .btn-success:hover {
-  box-shadow: 0 6px 20px rgba(94, 196, 160, 0.45);
+  box-shadow: 0 6px 20px rgba(42, 144, 112, 0.3);
   transform: translateY(-1px);
 }
 
@@ -213,11 +213,11 @@ a:hover {
   font-size: 14px;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15);
+  box-shadow: inset 0 2px 4px rgba(120, 90, 50, 0.08);
 }
 .input:focus {
   border-color: var(--accent);
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.15), 0 0 0 3px rgba(232, 138, 74, 0.15);
+  box-shadow: inset 0 2px 4px rgba(120, 90, 50, 0.08), 0 0 0 3px rgba(212, 120, 48, 0.15);
 }
 .input::placeholder {
   color: var(--text-muted);
@@ -235,11 +235,11 @@ textarea.input {
   border-radius: var(--radius-lg);
   padding: 18px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(20, 12, 5, 0.3);
+  box-shadow: 0 2px 8px rgba(120, 90, 50, 0.1);
 }
 .card:hover {
   border-color: rgba(232, 138, 74, 0.4);
-  box-shadow: 0 8px 32px rgba(20, 12, 5, 0.4), 0 0 0 1px rgba(232, 138, 74, 0.15);
+  box-shadow: 0 8px 32px rgba(120, 90, 50, 0.15), 0 0 0 1px rgba(212, 120, 48, 0.2);
   transform: translateY(-2px);
 }
 .card-clickable {
@@ -260,29 +260,29 @@ textarea.input {
 }
 
 .badge-working {
-  background: rgba(94, 196, 160, 0.15);
+  background: rgba(42, 144, 112, 0.12);
   color: var(--success);
-  box-shadow: 0 0 8px rgba(94, 196, 160, 0.15);
+  box-shadow: 0 0 8px rgba(42, 144, 112, 0.1);
 }
 .badge-idle {
-  background: rgba(136, 212, 184, 0.15);
+  background: rgba(64, 168, 136, 0.12);
   color: var(--seafoam);
 }
 .badge-waiting {
-  background: rgba(232, 196, 74, 0.15);
+  background: rgba(200, 160, 32, 0.12);
   color: var(--warning);
-  box-shadow: 0 0 8px rgba(232, 196, 74, 0.15);
+  box-shadow: 0 0 8px rgba(200, 160, 32, 0.1);
 }
 .badge-error {
-  background: rgba(224, 107, 107, 0.15);
+  background: rgba(196, 64, 64, 0.12);
   color: var(--error);
 }
 .badge-ended {
-  background: rgba(139, 115, 85, 0.15);
+  background: rgba(122, 101, 72, 0.12);
   color: var(--text-muted);
 }
 .badge-paused {
-  background: rgba(93, 184, 212, 0.15);
+  background: rgba(48, 144, 176, 0.12);
   color: var(--info);
 }
 
@@ -350,7 +350,7 @@ textarea.input {
   background: var(--text-secondary);
   border-radius: 50%;
   transition: 0.25s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 3px rgba(120, 90, 50, 0.15);
 }
 
 .toggle input:checked + .toggle-slider {
@@ -416,12 +416,12 @@ textarea.input {
 }
 
 .diff-add {
-  background: rgba(94, 196, 160, 0.1);
+  background: rgba(42, 144, 112, 0.08);
   color: var(--success);
 }
 
 .diff-remove {
-  background: rgba(224, 107, 107, 0.1);
+  background: rgba(196, 64, 64, 0.08);
   color: var(--error);
 }
 
@@ -448,8 +448,8 @@ textarea.input {
 }
 
 @keyframes glow-ring {
-  0%, 100% { box-shadow: 0 0 20px rgba(232, 138, 74, 0.1), 0 0 60px rgba(232, 138, 74, 0.05); }
-  50% { box-shadow: 0 0 30px rgba(232, 138, 74, 0.25), 0 0 80px rgba(232, 138, 74, 0.1); }
+  0%, 100% { box-shadow: 0 0 20px rgba(212, 120, 48, 0.08), 0 0 60px rgba(212, 120, 48, 0.04); }
+  50% { box-shadow: 0 0 30px rgba(212, 120, 48, 0.18), 0 0 80px rgba(212, 120, 48, 0.08); }
 }
 
 @keyframes wave {

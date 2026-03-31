@@ -51,7 +51,7 @@
 
 .tab.active {
   color: var(--accent);
-  background: rgba(232, 138, 74, 0.1);
+  background: rgba(212, 120, 48, 0.08);
 }
 
 .tab.active::before {

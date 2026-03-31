@@ -8,25 +8,25 @@
 /* Working sessions: seafoam throbbing outline */
 .cardWorking {
   border-color: var(--success) !important;
-  box-shadow: 0 0 8px rgba(94, 196, 160, 0.3);
+  box-shadow: 0 0 8px rgba(42, 144, 112, 0.2);
   animation: throbGreen 2.5s ease-in-out infinite;
 }
 
 /* Waiting sessions: golden throbbing outline */
 .cardWaiting {
   border-color: var(--warning) !important;
-  box-shadow: 0 0 8px rgba(232, 196, 74, 0.3);
+  box-shadow: 0 0 8px rgba(200, 160, 32, 0.2);
   animation: throbYellow 2.5s ease-in-out infinite;
 }
 
 @keyframes throbGreen {
-  0%, 100% { box-shadow: 0 0 6px rgba(94, 196, 160, 0.2); }
-  50% { box-shadow: 0 0 18px rgba(94, 196, 160, 0.45); }
+  0%, 100% { box-shadow: 0 0 6px rgba(42, 144, 112, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(42, 144, 112, 0.35); }
 }
 
 @keyframes throbYellow {
-  0%, 100% { box-shadow: 0 0 6px rgba(232, 196, 74, 0.2); }
-  50% { box-shadow: 0 0 18px rgba(232, 196, 74, 0.45); }
+  0%, 100% { box-shadow: 0 0 6px rgba(200, 160, 32, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(200, 160, 32, 0.35); }
 }
 
 /* Archived card dimmed */

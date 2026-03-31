@@ -97,7 +97,7 @@
 
 .filterActive {
   color: var(--accent) !important;
-  background: rgba(232, 138, 74, 0.12) !important;
+  background: rgba(212, 120, 48, 0.1) !important;
 }
 
 /* Empty state enhancements */
@@ -108,12 +108,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(232, 138, 74, 0.2) 0%, rgba(224, 122, 95, 0.1) 100%);
-  border: 1px solid rgba(232, 138, 74, 0.25);
+  background: linear-gradient(135deg, rgba(212, 120, 48, 0.15) 0%, rgba(192, 96, 64, 0.08) 100%);
+  border: 1px solid rgba(212, 120, 48, 0.2);
   color: var(--accent);
   margin-bottom: 24px;
   animation: float 4s ease-in-out infinite;
-  box-shadow: 0 0 40px rgba(232, 138, 74, 0.1);
+  box-shadow: 0 0 40px rgba(212, 120, 48, 0.08);
 }
 
 .launchBtn {

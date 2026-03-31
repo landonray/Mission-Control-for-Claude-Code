@@ -4,7 +4,7 @@
   height: 100dvh;
   width: 100%;
   overflow: hidden;
-  background: linear-gradient(180deg, var(--bg-primary) 0%, #1e1812 100%);
+  background: linear-gradient(180deg, var(--bg-primary) 0%, #eddcc4 100%);
 }
 
 .leftPanel {
@@ -39,7 +39,7 @@
 .resizeHandle:hover,
 .resizeHandle.active {
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(232, 138, 74, 0.3);
+  box-shadow: 0 0 8px rgba(212, 120, 48, 0.25);
 }
 
 .centerPanel {
