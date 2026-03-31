@@ -58,7 +58,7 @@ async function generateSessionName(messageText) {
     const prompt = `Generate a concise 3-6 word session name that captures the essence of this user message. Return ONLY the name, no quotes, no punctuation, no explanation. Examples: "Fix Login Page Bug", "Add Dark Mode Toggle", "Refactor Database Layer", "Debug API Endpoints".\n\nUser message: ${messageText}`;
     const { stdout } = await execFileAsync('claude', [
       '--print', prompt,
-      '--model', 'claude-haiku-4-5-20251001',
+      '--model', 'claude-haiku-4-5',
       '--max-turns', '1',
     ], { timeout: 15000 });
     const name = stdout.trim();
