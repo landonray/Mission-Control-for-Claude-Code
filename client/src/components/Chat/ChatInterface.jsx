@@ -19,7 +19,7 @@ export default function ChatInterface({ sessionId }) {
   const {
     messages, setMessages, status, errorMessage, pendingPermission,
     streamEvents, sendMessage, approvePermission, resuming,
-    sendError, clearSendError
+    sendError, clearSendError, optimisticMessagesRef
   } = useWebSocket(sessionId);
   const [input, setInput] = useState(() => sessionDrafts.get(sessionId) || '');
   const [loading, setLoading] = useState(true);
@@ -58,13 +58,18 @@ export default function ChatInterface({ sessionId }) {
         try {
           const result = await api.get(`/api/sessions/${sessionId}/messages`);
           if (cancelled) return;
-          setMessages(result.messages.map(m => ({
+          const dbMessages = result.messages.map(m => ({
             role: m.role,
             content: m.content,
             timestamp: m.timestamp,
             toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : null,
             attachments: m.attachments ? JSON.parse(m.attachments) : null,
-          })));
+          }));
+          // Re-append any optimistic messages not yet in DB
+          const pending = optimisticMessagesRef.current.filter(
+            opt => !dbMessages.some(db => db.role === 'user' && db.content === opt.content)
+          );
+          setMessages([...dbMessages, ...pending]);
           setLoading(false);
           return;
         } catch (e) {

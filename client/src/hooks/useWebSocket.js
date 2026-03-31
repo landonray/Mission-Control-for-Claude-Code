@@ -18,6 +18,8 @@ export function useWebSocket(sessionId) {
   const reconnectTimerRef = useRef(null);
   // Map of messageId -> { timeout, resolve } for pending ack tracking
   const pendingMessagesRef = useRef(new Map());
+  // Track optimistic user messages that haven't been confirmed by DB yet
+  const optimisticMessagesRef = useRef([]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -98,12 +100,23 @@ export function useWebSocket(sessionId) {
               break;
 
             case 'user_message':
-              setMessages(prev => [...prev, {
-                role: 'user',
-                content: data.content,
-                timestamp: data.timestamp,
-                attachments: data.attachments || null
-              }]);
+              // Clear from optimistic tracking — it's now confirmed in DB
+              optimisticMessagesRef.current = optimisticMessagesRef.current.filter(
+                m => m.content !== data.content
+              );
+              // Deduplicate — the message may already exist from optimistic add
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                if (last && last.role === 'user' && last.content === data.content) {
+                  return prev;
+                }
+                return [...prev, {
+                  role: 'user',
+                  content: data.content,
+                  timestamp: data.timestamp,
+                  attachments: data.attachments || null
+                }];
+              });
               break;
 
             case 'permission_response':
@@ -174,13 +187,18 @@ export function useWebSocket(sessionId) {
               // Reload messages from DB since we may have missed events while disconnected
               api.get(`/api/sessions/${sessionId}/messages`).then(result => {
                 if (!cancelled) {
-                  setMessages(result.messages.map(m => ({
+                  const dbMessages = result.messages.map(m => ({
                     role: m.role,
                     content: m.content,
                     timestamp: m.timestamp,
                     toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : null,
                     attachments: m.attachments ? JSON.parse(m.attachments) : null,
-                  })));
+                  }));
+                  // Re-append any optimistic messages not yet in DB
+                  const pending = optimisticMessagesRef.current.filter(
+                    opt => !dbMessages.some(db => db.role === 'user' && db.content === opt.content)
+                  );
+                  setMessages([...dbMessages, ...pending]);
                 }
               }).catch(e => console.error('[WS] Failed to reload messages on reconnect:', e.message));
             }
@@ -220,6 +238,16 @@ export function useWebSocket(sessionId) {
       setSendError('Failed to send message. Please try again.');
       return false;
     }
+    // Optimistically add user message so it appears immediately
+    // (don't wait for server broadcast, which can race with loadMessages)
+    const optimisticMsg = {
+      role: 'user',
+      content,
+      timestamp: new Date().toISOString(),
+      attachments: attachments || null
+    };
+    optimisticMessagesRef.current.push(optimisticMsg);
+    setMessages(prev => [...prev, optimisticMsg]);
     // Track this message — if no ack within 10s, show error
     const timeout = setTimeout(() => {
       if (pendingMessagesRef.current.has(messageId)) {
@@ -256,6 +284,7 @@ export function useWebSocket(sessionId) {
     approvePermission,
     resuming,
     sendError,
-    clearSendError
+    clearSendError,
+    optimisticMessagesRef
   };
 }
