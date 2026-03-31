@@ -21,6 +21,11 @@ export function useWebSocket(sessionId) {
   // Track optimistic user messages that haven't been confirmed by DB yet
   const optimisticMessagesRef = useRef([]);
 
+  // Reset stream events when session changes so stale CLI output doesn't bleed across sessions
+  useEffect(() => {
+    setStreamEvents([]);
+  }, [sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
