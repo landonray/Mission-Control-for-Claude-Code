@@ -27,11 +27,9 @@ export default function SessionControls({ sessionId, status, session }) {
   };
 
   const handleEnd = async () => {
-    if (confirm('End this session?')) {
-      await api.post(`/api/sessions/${sessionId}/end`);
-      loadSessions();
-      navigate('/');
-    }
+    await api.post(`/api/sessions/${sessionId}/end`);
+    loadSessions();
+    navigate('/');
   };
 
   const changePermissionMode = async (mode) => {
