@@ -122,7 +122,7 @@ export default function CliPanel({ sessionId }) {
         <span className={styles.toolbarLabel}>CLI Output</span>
         <div className={styles.toolbarActions}>
           <button
-            className="btn-ghost btn-sm"
+            className={`btn-ghost btn-sm ${styles.clearBtn}`}
             onClick={clearLines}
             title="Clear output"
           >
