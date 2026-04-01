@@ -10,6 +10,7 @@ import styles from './SettingsView.module.css';
 const sections = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'quality', label: 'Quality Rules', icon: Shield },
+  { id: 'quality-analytics', label: 'Quality Analytics', icon: BarChart3, route: '/quality-analytics' },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'mcp', label: 'MCP Servers', icon: Server },
 ];
@@ -25,9 +26,6 @@ export default function SettingsView() {
           <ArrowLeft size={14} /> Back
         </button>
         <h1><Sliders size={20} /> Settings</h1>
-        <button className="btn btn-ghost btn-sm" onClick={() => navigate('/quality-analytics')}>
-          <BarChart3 size={14} /> Quality Analytics
-        </button>
       </div>
 
       <div className={styles.layout}>
@@ -38,7 +36,7 @@ export default function SettingsView() {
               <button
                 key={section.id}
                 className={`${styles.navItem} ${activeSection === section.id ? styles.activeNav : ''}`}
-                onClick={() => setActiveSection(section.id)}
+                onClick={() => section.route ? navigate(section.route) : setActiveSection(section.id)}
               >
                 <Icon size={16} />
                 <span>{section.label}</span>
