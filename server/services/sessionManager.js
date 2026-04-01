@@ -57,21 +57,29 @@ if (tmuxAvailable) {
   try { fs.mkdirSync(TMUX_SCRIPTS_DIR, { recursive: true }); } catch (e) {}
 }
 
+// File-based logging for AutoName debugging
+const AUTONAME_LOG = path.join(__dirname, '..', '..', 'autoname.log');
+function autoNameLog(...args) {
+  const line = `[${new Date().toISOString()}] ${args.join(' ')}\n`;
+  fs.appendFileSync(AUTONAME_LOG, line);
+  console.log('[AutoName]', ...args);
+}
+
 // Resolve full path to claude CLI at startup for reliable invocation
 let claudePath = 'claude';
 try {
   claudePath = execSync('which claude', { encoding: 'utf8' }).trim();
-  console.log('[AutoName] Claude CLI resolved to:', claudePath);
+  autoNameLog('Claude CLI resolved to:', claudePath);
 } catch (e) {
-  console.warn('[AutoName] Could not resolve claude path, using "claude":', e.message);
+  autoNameLog('WARN: Could not resolve claude path, using "claude":', e.message);
 }
 
 // Generate a short AI-powered session name from the first user message
 async function generateSessionName(messageText) {
   try {
     const prompt = `Generate a concise 3-6 word session name that captures the essence of this user message. Return ONLY the name, no quotes, no punctuation, no explanation. Examples: "Fix Login Page Bug", "Add Dark Mode Toggle", "Refactor Database Layer", "Debug API Endpoints".\n\nUser message: ${messageText}`;
-    console.log('[AutoName] Generating name for:', messageText.slice(0, 80));
-    const { stdout } = await execFileAsync(claudePath, [
+    autoNameLog('Generating name for:', messageText.slice(0, 80));
+    const { stdout, stderr } = await execFileAsync(claudePath, [
       '--print', prompt,
       '--model', 'claude-haiku-4-5',
       '--max-turns', '1',
@@ -80,12 +88,20 @@ async function generateSessionName(messageText) {
       // Close stdin immediately so claude CLI doesn't wait 3s for piped input
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    if (stderr) autoNameLog('stderr:', stderr);
     const name = stdout.trim();
-    console.log('[AutoName] Generated name:', name || '(empty)');
-    return name || null;
+    autoNameLog('Generated name:', name || '(empty)');
+    // Reject names that are too long (conversational responses) or too short
+    if (!name) return null;
+    const wordCount = name.split(/\s+/).length;
+    if (wordCount > 8 || name.length > 60) {
+      autoNameLog(`Rejected name (too long: ${wordCount} words, ${name.length} chars)`);
+      return null;
+    }
+    return name;
   } catch (e) {
-    console.error('[AutoName] Failed to generate session name:', e.message);
-    if (e.stderr) console.error('[AutoName] stderr:', e.stderr);
+    autoNameLog('ERROR:', e.message);
+    if (e.stderr) autoNameLog('stderr:', e.stderr);
     return null;
   }
 }
