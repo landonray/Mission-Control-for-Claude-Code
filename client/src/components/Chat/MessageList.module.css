@@ -87,6 +87,15 @@
   box-shadow: 0 2px 12px rgba(212, 120, 48, 0.2);
 }
 
+.userMessage .text > div {
+  padding: 0;
+  line-height: 1.5;
+}
+
+.userMessage .text > div p {
+  margin: 0;
+}
+
 .assistantMessage .text {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
