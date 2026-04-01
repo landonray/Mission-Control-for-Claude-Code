@@ -61,7 +61,12 @@ function renderMarkdown(text) {
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 
   // Auto-link raw URLs (but not ones already inside an href or <a> tag)
-  html = html.replace(/(^|[^"'>])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  html = html.replace(/(^|[^"'>])(https?:\/\/[^\s<]+)/g, (match, prefix, url) => {
+    const trailingPunct = url.match(/[.,;:!?)]+$/);
+    const cleanUrl = trailingPunct ? url.slice(0, -trailingPunct[0].length) : url;
+    const suffix = trailingPunct ? trailingPunct[0] : '';
+    return `${prefix}<a href="${cleanUrl}" target="_blank" rel="noopener">${cleanUrl}</a>${suffix}`;
+  });
 
   // Images
   html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width: 100%;" />');
