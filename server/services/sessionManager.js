@@ -77,7 +77,7 @@ try {
 // Generate a short AI-powered session name from the first user message
 async function generateSessionName(messageText) {
   try {
-    const prompt = `Generate a concise 3-6 word session name that captures the essence of this user message. Return ONLY the name, no quotes, no punctuation, no explanation. Examples: "Fix Login Page Bug", "Add Dark Mode Toggle", "Refactor Database Layer", "Debug API Endpoints".\n\nUser message: ${messageText}`;
+    const prompt = `You are a session naming tool. Your ONLY job is to output a concise 3-6 word title. Do NOT respond conversationally. Do NOT ask questions. Do NOT explain anything. Output ONLY the title, nothing else.\n\nIf the message describes a task, name it after the task. If the message is vague or not about a specific task, name it "General Chat".\n\nExamples:\n- "fix the login bug" → Fix Login Page Bug\n- "hello" → General Chat\n- "name this session" → General Chat\n- "add dark mode" → Add Dark Mode Toggle\n\nUser message: ${messageText}\n\nTitle:`;
     autoNameLog('Generating name for:', messageText.slice(0, 80));
     const { stdout, stderr } = await execFileAsync(claudePath, [
       '--print', prompt,
