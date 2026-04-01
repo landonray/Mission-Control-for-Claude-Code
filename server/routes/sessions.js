@@ -50,11 +50,11 @@ router.get('/', async (req, res) => {
       const wtMatch = s.working_directory.match(/^(.+)\/\.claude\/worktrees\//);
       projectName = wtMatch ? path.basename(wtMatch[1]) : path.basename(s.working_directory);
     }
-    // Compute git pipeline status for non-archived sessions
-    let pipeline = null;
-    if (!s.archived && s.working_directory) {
-      pipeline = getGitPipeline(s.working_directory);
-    }
+    // Only compute pipeline when worktree is ready (or session doesn't use worktrees).
+    // Before init fires, working_directory still points at the main repo, which would
+    // produce misleading status (e.g. "merged: done" when the branch doesn't exist yet).
+    const worktreeReady = activeInfo ? activeInfo.worktreeReady : true; // ended sessions are already resolved
+    const needsPipeline = !s.archived && s.working_directory && worktreeReady;
 
     enriched.push({
       ...s,
@@ -63,9 +63,18 @@ router.get('/', async (req, res) => {
       pendingPermission: !!(activeInfo?.pendingPermission),
       archived: !!s.archived,
       resumable: s.status === 'ended', // All ended sessions are resumable
-      pipeline
+      pipeline: null, // filled below
+      _needsPipeline: needsPipeline
     });
   }
+
+  // Compute git pipelines in parallel (async)
+  await Promise.all(enriched.map(async (s) => {
+    if (s._needsPipeline) {
+      s.pipeline = await getGitPipeline(s.working_directory);
+    }
+    delete s._needsPipeline;
+  }));
 
   res.json(enriched);
 });
