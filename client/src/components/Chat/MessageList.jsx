@@ -191,10 +191,10 @@ export default function MessageList({ messages, loading, streamEvents, status })
                 <MessageAttachments attachments={msg.attachments} />
               )}
               <div className={styles.text}>
-                {msg.role === 'assistant' && typeof msg.content === 'string' ? (
+                {typeof msg.content === 'string' ? (
                   <MarkdownPreview content={msg.content.trim()} />
                 ) : (
-                  typeof msg.content === 'string' ? msg.content.trim() : msg.content
+                  msg.content
                 )}
               </div>
               {msg.isResult && (
