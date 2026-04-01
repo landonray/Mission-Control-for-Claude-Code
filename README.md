@@ -19,7 +19,6 @@ Mission Control is as close to "Claude Desktop on the web" as you can get — a 
 - **MCP Integration** — Configure Model Context Protocol servers to auto-attach to new sessions
 - **Session History** — Search previous sessions, view message logs, and daily digests
 - **Mobile Support** — Responsive design with tab-based navigation on mobile, 3-panel layout on desktop
-- **PWA** — Install it as an app on your phone or tablet with offline support
 
 ## Prerequisites
 
