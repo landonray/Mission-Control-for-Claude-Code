@@ -148,7 +148,11 @@ export default function Layout() {
                 />
               </div>
             </div>
-            {rightPanelMode === 'files' ? (
+            {activeSession?.status === 'ended' ? (
+              <div className="empty-state" style={{ height: '100%' }}>
+                <p>Session ended</p>
+              </div>
+            ) : rightPanelMode === 'files' ? (
               <FileBrowser directory={activeSession?.working_directory} useWorktree={!!activeSession?.use_worktree} />
             ) : rightPanelMode === 'preview' ? (
               <PreviewPanel sessionId={sessionId} />
