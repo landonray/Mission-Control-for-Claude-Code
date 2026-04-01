@@ -68,6 +68,18 @@ Sessions run inside tmux so they survive server restarts. Without it, sessions f
 brew install tmux
 ```
 
+### Anthropic API Key
+
+Mission Control uses the Anthropic API directly for two things: auto-naming sessions (via Haiku) and running server-side quality checks. Both are extremely cheap — session naming costs fractions of a penny per session. The SDK reads your key from the `ANTHROPIC_API_KEY` environment variable.
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Add it to your `.env` file (see below) or your shell profile.
+
+**Why server-side hooks?** Claude Code's CLI hooks only fire inside the CLI process. Since Mission Control runs sessions via `--print` mode over WebSocket, those lifecycle hooks (PostToolUse, Stop, etc.) never fire. Mission Control reimplements them server-side — it watches the stream for tool use events and runs quality rule prompts against the Anthropic API directly. This is what powers the Quality Rules Engine.
+
 ### GitHub CLI (optional)
 
 Only needed for the "Create New Project" feature.
@@ -99,6 +111,7 @@ Create a `.env` file in the project root:
 
 ```bash
 DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
+ANTHROPIC_API_KEY=sk-ant-...
 NODE_ENV=development
 ```
 
