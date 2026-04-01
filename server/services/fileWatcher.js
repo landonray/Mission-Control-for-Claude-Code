@@ -1,7 +1,9 @@
 const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
 const activeWatchers = new Map();
 
@@ -255,49 +257,56 @@ function getBranchDiff(directory, baseBranch = 'main') {
 }
 
 /**
- * Get git pipeline status for a session's working directory.
+ * Cache for git pipeline results.
+ * Key: directory path, Value: { result, timestamp }
+ */
+const pipelineCache = new Map();
+const PIPELINE_CACHE_TTL = 10_000; // 10 seconds
+
+/**
+ * Get git pipeline status for a session's working directory (async).
  * Returns { branch, committed, merged, pushed } where each stage is 'done', 'pending', or 'unknown'.
  */
-function getGitPipeline(directory) {
+async function getGitPipeline(directory) {
   const result = { branch: '', committed: 'unknown', merged: 'unknown', pushed: 'unknown' };
   if (!directory) return result;
+
+  // Check cache
+  const cached = pipelineCache.get(directory);
+  if (cached && Date.now() - cached.timestamp < PIPELINE_CACHE_TTL) {
+    return cached.result;
+  }
 
   try {
     const resolved = directory.startsWith('~')
       ? path.join(require('os').homedir(), directory.slice(1))
       : directory;
 
-    // Current branch
-    const branch = execSync('git branch --show-current', {
-      cwd: resolved, encoding: 'utf-8', timeout: 3000
-    }).trim();
-    result.branch = branch;
+    const opts = { cwd: resolved, encoding: 'utf-8', timeout: 3000 };
+    const shellOpts = { ...opts, shell: true };
 
-    // Stage 1: Committed? (clean working tree)
-    const porcelain = execSync('git status --porcelain', {
-      cwd: resolved, encoding: 'utf-8', timeout: 3000
-    }).trim();
-    result.committed = porcelain.length === 0 ? 'done' : 'pending';
+    // Run branch + status in parallel
+    const [branchOut, porcelainOut] = await Promise.all([
+      execAsync('git branch --show-current', opts).then(r => r.stdout.trim()).catch(() => ''),
+      execAsync('git status --porcelain', opts).then(r => r.stdout.trim()).catch(() => null),
+    ]);
+
+    result.branch = branchOut;
+    result.committed = porcelainOut !== null ? (porcelainOut.length === 0 ? 'done' : 'pending') : 'unknown';
 
     // Stage 2: Merged to main?
-    const isMain = branch === 'main' || branch === 'master';
+    const isMain = branchOut === 'main' || branchOut === 'master';
     if (isMain) {
       result.merged = 'done';
     } else {
-      // Check if there are commits on this branch not on main/master
       try {
-        const base = execSync('git rev-parse --verify main 2>/dev/null || git rev-parse --verify master 2>/dev/null', {
-          cwd: resolved, encoding: 'utf-8', timeout: 3000, shell: true
-        }).trim();
-        if (base) {
-          const baseName = execSync('git rev-parse --verify main 2>/dev/null && echo main || echo master', {
-            cwd: resolved, encoding: 'utf-8', timeout: 3000, shell: true
-          }).trim().split('\n').pop();
-          const unmerged = execSync(`git log ${baseName}..HEAD --oneline`, {
-            cwd: resolved, encoding: 'utf-8', timeout: 3000
-          }).trim();
-          result.merged = unmerged.length === 0 ? 'done' : 'pending';
-        }
+        const baseOut = await execAsync(
+          'git rev-parse --verify main 2>/dev/null && echo main || echo master',
+          shellOpts
+        );
+        const baseName = baseOut.stdout.trim().split('\n').pop();
+        const unmergedOut = await execAsync(`git log ${baseName}..HEAD --oneline`, opts);
+        result.merged = unmergedOut.stdout.trim().length === 0 ? 'done' : 'pending';
       } catch {
         result.merged = 'unknown';
       }
@@ -305,27 +314,16 @@ function getGitPipeline(directory) {
 
     // Stage 3: Pushed to remote?
     try {
-      const trackingBranch = isMain ? 'origin/main' : `origin/${branch}`;
-      // Check if the remote ref exists
-      execSync(`git rev-parse --verify ${trackingBranch} 2>/dev/null`, {
-        cwd: resolved, encoding: 'utf-8', timeout: 3000, shell: true
-      });
-      // Check for unpushed commits
-      const unpushed = execSync(`git log ${trackingBranch}..HEAD --oneline`, {
-        cwd: resolved, encoding: 'utf-8', timeout: 3000
-      }).trim();
-      result.pushed = unpushed.length === 0 && result.committed === 'done' ? 'done' : 'pending';
+      const trackingBranch = isMain ? 'origin/main' : `origin/${branchOut}`;
+      await execAsync(`git rev-parse --verify ${trackingBranch} 2>/dev/null`, shellOpts);
+      const unpushedOut = await execAsync(`git log ${trackingBranch}..HEAD --oneline`, opts);
+      result.pushed = unpushedOut.stdout.trim().length === 0 && result.committed === 'done' ? 'done' : 'pending';
     } catch {
-      // No remote tracking branch — check if origin/master exists for main-branch fallback
       if (isMain) {
         try {
-          execSync('git rev-parse --verify origin/master 2>/dev/null', {
-            cwd: resolved, encoding: 'utf-8', timeout: 3000, shell: true
-          });
-          const unpushed = execSync('git log origin/master..HEAD --oneline', {
-            cwd: resolved, encoding: 'utf-8', timeout: 3000
-          }).trim();
-          result.pushed = unpushed.length === 0 && result.committed === 'done' ? 'done' : 'pending';
+          await execAsync('git rev-parse --verify origin/master 2>/dev/null', shellOpts);
+          const unpushedOut = await execAsync('git log origin/master..HEAD --oneline', opts);
+          result.pushed = unpushedOut.stdout.trim().length === 0 && result.committed === 'done' ? 'done' : 'pending';
         } catch {
           result.pushed = 'unknown';
         }
@@ -334,6 +332,7 @@ function getGitPipeline(directory) {
       }
     }
 
+    pipelineCache.set(directory, { result, timestamp: Date.now() });
     return result;
   } catch (e) {
     return result;

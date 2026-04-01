@@ -81,6 +81,7 @@ class SessionProcess {
     this.mcpConnections = options.mcpConnections || [];
     this.initialPrompt = options.initialPrompt || null;
     this.useWorktree = options.useWorktree || false;
+    this.worktreeReady = !this.useWorktree; // non-worktree sessions are immediately ready
     this.model = options.model || 'claude-opus-4-6';
     this.pendingPermission = null;
     this.errorMessage = null;
@@ -643,6 +644,7 @@ class SessionProcess {
           // the files panel and git operations point at the worktree, not main.
           if (event.cwd && event.cwd !== this.workingDirectory) {
             this.workingDirectory = event.cwd;
+            this.worktreeReady = true;
             query('UPDATE sessions SET working_directory = $1 WHERE id = $2', [event.cwd, this.id])
               .catch(e => console.error('Failed to update working directory:', e.message));
           }
@@ -1319,7 +1321,8 @@ function getAllActiveSessions() {
   return Array.from(activeSessions.entries()).map(([id, session]) => ({
     id,
     status: session.status,
-    pendingPermission: session.pendingPermission
+    pendingPermission: session.pendingPermission,
+    worktreeReady: session.worktreeReady
   }));
 }
 
