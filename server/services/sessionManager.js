@@ -8,6 +8,7 @@ const EventEmitter = require('events');
 const { query } = require('../database');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
+const qualityRunner = require('./qualityRunner');
 
 const activeSessions = new Map();
 
@@ -418,6 +419,9 @@ class SessionProcess {
         status: 'idle',
         timestamp: new Date().toISOString()
       });
+      // Run Stop quality checks (--print mode doesn't fire Stop hooks)
+      qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).catch(e =>
+        console.error('[QualityRunner] onSessionStop error:', e.message));
     }
 
     // Process queued messages
@@ -509,6 +513,9 @@ class SessionProcess {
           status: 'idle',
           timestamp: new Date().toISOString()
         });
+        // Run Stop quality checks (--print mode doesn't fire Stop hooks)
+        qualityRunner.onSessionStop(this.id).catch(e =>
+          console.error('[QualityRunner] onSessionStop error:', e.message));
       }
 
       // Drain message queue (matches tmux behavior)
@@ -621,6 +628,14 @@ class SessionProcess {
               .filter(block => block.type === 'text')
               .map(block => block.text)
               .join('\n');
+
+            // Run quality checks for tool_use blocks (PostToolUse hooks don't fire in --print mode)
+            for (const block of event.message.content) {
+              if (block.type === 'tool_use') {
+                qualityRunner.onToolUse(this.id, block.name, block.input, this.broadcast.bind(this)).catch(e =>
+                  console.error('[QualityRunner] onToolUse error:', e.message));
+              }
+            }
           } else {
             content = JSON.stringify(event.message);
           }
@@ -673,6 +688,11 @@ class SessionProcess {
             query('UPDATE sessions SET working_directory = $1 WHERE id = $2', [event.cwd, this.id])
               .catch(e => console.error('Failed to update working directory:', e.message));
           }
+        }
+        // Extract quality results from hook response output
+        if (event.subtype === 'hook_response') {
+          const hookOutput = event.stdout || event.output || '';
+          this.parseQualityResults(hookOutput);
         }
         break;
 

@@ -166,6 +166,20 @@ export function useWebSocket(sessionId) {
               break;
             }
 
+            case 'quality_result':
+              setMessages(prev => [...prev, {
+                role: 'quality',
+                ruleId: data.ruleId,
+                ruleName: data.ruleName,
+                result: data.result,
+                severity: data.severity,
+                details: data.details,
+                analysis: data.analysis,
+                trigger: data.trigger,
+                timestamp: data.timestamp
+              }]);
+              break;
+
             case 'error':
               setStatus('error');
               resumingRef.current = false;

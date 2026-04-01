@@ -259,3 +259,107 @@
   color: var(--text-muted);
   flex-shrink: 0;
 }
+
+/* Quality check results */
+.qualityResult {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  align-self: stretch;
+  border-left: 3px solid;
+}
+
+.qualityPass {
+  background: color-mix(in srgb, var(--success, #22c55e) 8%, transparent);
+  border-left-color: var(--success, #22c55e);
+}
+
+.qualityFail {
+  background: color-mix(in srgb, var(--error, #ef4444) 8%, transparent);
+  border-left-color: var(--error, #ef4444);
+}
+
+.qualityIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.qualityPass .qualityIcon {
+  color: var(--success, #22c55e);
+}
+
+.qualityFail .qualityIcon {
+  color: var(--error, #ef4444);
+}
+
+.qualityBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.qualityLabel {
+  font-weight: 600;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qualityBadge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.severity-high {
+  background: color-mix(in srgb, var(--error, #ef4444) 15%, transparent);
+  color: var(--error, #ef4444);
+}
+
+.severity-medium {
+  background: color-mix(in srgb, var(--warning, #f59e0b) 15%, transparent);
+  color: var(--warning, #f59e0b);
+}
+
+.severity-low {
+  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+  color: var(--text-muted);
+}
+
+.qualityDetails {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.qualityTime {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.qualityClickable {
+  cursor: pointer;
+}
+
+.qualityClickable:hover {
+  filter: brightness(0.95);
+}
+
+.qualityAnalysis {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}

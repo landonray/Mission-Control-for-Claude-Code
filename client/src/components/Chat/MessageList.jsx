@@ -1,5 +1,5 @@
-import React, { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Bot, Loader, FileIcon, Download } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
@@ -80,6 +80,37 @@ function WorkingIndicator({ streamEvents }) {
   );
 }
 
+function QualityResultItem({ msg }) {
+  const [expanded, setExpanded] = useState(false);
+  const isFail = msg.result === 'fail';
+  const hasAnalysis = msg.analysis && msg.analysis.length > 0;
+
+  return (
+    <div
+      className={`${styles.qualityResult} ${isFail ? styles.qualityFail : styles.qualityPass} ${hasAnalysis ? styles.qualityClickable : ''}`}
+      onClick={() => hasAnalysis && setExpanded(!expanded)}
+    >
+      <div className={styles.qualityIcon}>
+        {isFail ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
+      </div>
+      <div className={styles.qualityBody}>
+        <span className={styles.qualityLabel}>
+          {hasAnalysis && (expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
+          {msg.ruleName}
+          <span className={`${styles.qualityBadge} ${styles[`severity-${msg.severity}`]}`}>{msg.severity}</span>
+        </span>
+        {msg.details && <span className={styles.qualityDetails}>{msg.details}</span>}
+        {expanded && hasAnalysis && (
+          <div className={styles.qualityAnalysis}>
+            <MarkdownPreview content={msg.analysis} />
+          </div>
+        )}
+      </div>
+      {msg.timestamp && <span className={styles.qualityTime}>{formatDate(msg.timestamp)}</span>}
+    </div>
+  );
+}
+
 export default function MessageList({ messages, loading, streamEvents, status }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
@@ -136,37 +167,43 @@ export default function MessageList({ messages, loading, streamEvents, status })
         </div>
       )}
 
-      {messages.map((msg, i) => (
-        <div
-          key={i}
-          className={`${styles.message} ${msg.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
-        >
-          <div className={styles.avatar}>
-            {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-          </div>
-          <div className={styles.content}>
-            <div className={styles.meta}>
-              <span className={styles.role}>{msg.role === 'user' ? 'You' : 'Claude'}</span>
-              {msg.timestamp && (
-                <span className={styles.time}>{formatDate(msg.timestamp)}</span>
+      {messages.map((msg, i) => {
+        if (msg.role === 'quality') {
+          return <QualityResultItem key={i} msg={msg} />;
+        }
+
+        return (
+          <div
+            key={i}
+            className={`${styles.message} ${msg.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
+          >
+            <div className={styles.avatar}>
+              {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+            </div>
+            <div className={styles.content}>
+              <div className={styles.meta}>
+                <span className={styles.role}>{msg.role === 'user' ? 'You' : 'Claude'}</span>
+                {msg.timestamp && (
+                  <span className={styles.time}>{formatDate(msg.timestamp)}</span>
+                )}
+              </div>
+              {msg.attachments && msg.attachments.length > 0 && (
+                <MessageAttachments attachments={msg.attachments} />
+              )}
+              <div className={styles.text}>
+                {msg.role === 'assistant' && typeof msg.content === 'string' ? (
+                  <MarkdownPreview content={msg.content.trim()} />
+                ) : (
+                  typeof msg.content === 'string' ? msg.content.trim() : msg.content
+                )}
+              </div>
+              {msg.isResult && (
+                <div className={styles.resultBadge}>Final Result</div>
               )}
             </div>
-            {msg.attachments && msg.attachments.length > 0 && (
-              <MessageAttachments attachments={msg.attachments} />
-            )}
-            <div className={styles.text}>
-              {msg.role === 'assistant' && typeof msg.content === 'string' ? (
-                <MarkdownPreview content={msg.content.trim()} />
-              ) : (
-                typeof msg.content === 'string' ? msg.content.trim() : msg.content
-              )}
-            </div>
-            {msg.isResult && (
-              <div className={styles.resultBadge}>Final Result</div>
-            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Working indicator — shows real activity from stream events */}
       {status === 'working' && (
