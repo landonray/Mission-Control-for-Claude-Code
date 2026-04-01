@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../utils/api';
-import { pushEvents } from './streamEventStore';
+import { pushEvents, clearEvents } from './streamEventStore';
 
 let messageIdCounter = 0;
 
@@ -142,6 +142,10 @@ export function useWebSocket(sessionId) {
               setStatus('ended');
               resumingRef.current = false;
               setResuming(false);
+              // Blank chat and CLI panels
+              setMessages([]);
+              setStreamEvents([]);
+              clearEvents();
               break;
 
             case 'session_paused':
