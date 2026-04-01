@@ -828,7 +828,24 @@ class SessionProcess {
       timestamp: new Date().toISOString()
     });
 
-    await this.spawnProcess(text);
+    // If we have no cliSessionId and there are prior messages, this is a fresh
+    // Claude CLI invocation with no conversation history (e.g. after server
+    // restart / tmux recovery). Build a context preamble so Claude knows what
+    // happened in the previous session.
+    let prompt = text;
+    if (!this.cliSessionId && msgCount && msgCount.user_message_count > 0) {
+      this.broadcast({
+        type: 'session_resuming',
+        sessionId: this.id,
+        timestamp: new Date().toISOString()
+      });
+      const preamble = await buildContextPreamble(this.id);
+      if (preamble) {
+        prompt = `${preamble}\n\nUser's new message: ${text}`;
+      }
+    }
+
+    await this.spawnProcess(prompt);
   }
 
   respondToPermission(approved) {
