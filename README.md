@@ -1,204 +1,168 @@
 # Mission Control
 
-Web-based dashboard for monitoring and interacting with Claude Code sessions running on a Mac Studio. Provides reliable remote access from any device via Tailscale with real-time streaming, file browsing, quality assurance, and persistent session management.
+**Claude Code in your browser. From your couch.**
 
-## Quick Start
+The Claude CLI is incredible, but it lives in the terminal. VS Code and Cursor are a fucking faceful. Claude Desktop is nice, but (1) it's stuck on the desktop so you can't take it with you and (2) no hooks.
 
-```bash
-# Install dependencies
-npm install
-cd client && npm install && cd ..
+Mission Control is as close to "Claude Desktop on the web" as you can get — a full web UI for Claude Code that runs on your home server and is accessible from any device. Create sessions, stream output in real-time, approve permissions from your phone, browse files, enforce quality rules, and get push notifications when Claude needs you. All without leaving the browser.
 
-# Build the frontend
-npm run build
-
-# Start the server
-npm start
-```
-
-The server starts on `http://0.0.0.0:3000` (configurable via `PORT` env var).
-
-## Development
-
-```bash
-# Run server and client dev server concurrently
-npm run dev
-```
-
-- Backend: `http://localhost:3000`
-- Frontend dev server: `http://localhost:5173` (proxies API and WebSocket to backend)
-
-## Features
+## What's Included
 
 - **Session Management** — Create, monitor, resume, and manage multiple Claude Code sessions simultaneously
 - **Real-time Streaming** — WebSocket-based live streaming of AI agent output, messages, and permission requests
+- **Permission Approvals** — Approve or deny tool calls from anywhere, on any device
 - **File Browser** — Browse project file trees, preview code with syntax highlighting, render Markdown, and view git diffs
-- **Quality Rules Engine** — Configure and enforce quality rules that hook into Claude Code lifecycle events with pass/fail scorecards and analytics
-- **Project Creation** — Create new GitHub projects with local git init + `gh repo create` in one step
+- **Quality Rules Engine** — 21+ lifecycle hooks (SessionStart, Stop, PostToolUse, etc.) with prompt-based, agent-based, and command-based rules, scorecards, and analytics
+- **Project Creation** — Create new GitHub repos with local git init + `gh repo create` in one step
 - **Session Persistence** — Tmux-backed sessions survive server restarts; automatic recovery on startup
 - **Push Notifications** — Web Push API alerts for permission requests, task completion, errors, and context window warnings
 - **MCP Integration** — Configure Model Context Protocol servers to auto-attach to new sessions
 - **Session History** — Search previous sessions, view message logs, and daily digests
 - **Mobile Support** — Responsive design with tab-based navigation on mobile, 3-panel layout on desktop
-- **PWA** — Installable as a Progressive Web App with service worker and offline support
+- **PWA** — Install it as an app on your phone or tablet with offline support
+
+## Prerequisites
+
+You'll need all of these installed on the machine that will run Mission Control:
+
+### Node.js 18+
+
+```bash
+# macOS
+brew install node
+```
+
+### Claude Code CLI
+
+This is what Mission Control wraps — the actual Claude Code agent.
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+Run it once to authenticate:
+
+```bash
+claude
+```
+
+### PostgreSQL (via Neon)
+
+Mission Control uses [Neon](https://neon.tech) serverless PostgreSQL as its database. You'll need:
+
+1. A Neon account (free tier works fine)
+2. A project named `command-center` in your Neon dashboard
+3. The connection string (`DATABASE_URL`) for that project
+
+The database schema is auto-created on first startup — no manual migrations needed. Tables include sessions, messages, quality rules, MCP configs, notification settings, and more.
+
+**Automatic setup (optional):** If you store a `NEON_API_KEY` in `~/setup-tools/.env`, the setup script will fetch your connection string automatically. Otherwise, just create a `.env` file manually (see below).
+
+### tmux (recommended)
+
+Sessions run inside tmux so they survive server restarts. Without it, sessions fall back to direct child processes (which die if the server restarts).
+
+```bash
+# macOS
+brew install tmux
+```
+
+### GitHub CLI (optional)
+
+Only needed for the "Create New Project" feature.
+
+```bash
+brew install gh
+gh auth login
+```
+
+## Setup
+
+### 1. Clone the repo
+
+```bash
+git clone <your-repo-url> command-center
+cd command-center
+```
+
+### 2. Install dependencies
+
+```bash
+npm install
+cd client && npm install && cd ..
+```
+
+### 3. Configure environment
+
+Create a `.env` file in the project root:
+
+```bash
+DATABASE_URL=postgresql://user:pass@host/dbname?sslmode=require
+NODE_ENV=development
+```
+
+Get your `DATABASE_URL` from the Neon dashboard (project → Connection Details → Connection string).
+
+Or, if you have a Neon API key stored at `~/setup-tools/.env`:
+
+```bash
+# setup.sh will auto-fetch the connection string
+# Just run npm dev and it handles it
+```
+
+### 4. Build the frontend
+
+```bash
+npm run build
+```
+
+### 5. Start the server
+
+```bash
+# Production
+npm start
+
+# Development (server + Vite HMR)
+npm run dev
+```
+
+The server starts on `http://0.0.0.0:3000`. In dev mode, the Vite frontend runs on `http://localhost:5173` and proxies API/WebSocket requests to the backend.
+
+## Remote Access with Tailscale
+
+This is how you use Mission Control from your phone, tablet, or any other device on your network.
+
+1. Install [Tailscale](https://tailscale.com) on your server and on your phone/tablet
+2. Start Tailscale on both devices
+3. Find your server's Tailscale IP: `tailscale ip -4`
+4. Open your browser and go to `http://<tailscale-ip>:5173` (dev) or `http://<tailscale-ip>:3000` (production)
+
+Since Tailscale creates an encrypted private network, there's no need for an auth layer or HTTPS — only your devices can reach it. Install it as a PWA on your phone for the full "Claude Desktop on your phone" experience.
 
 ## Architecture
 
-- **Backend:** Node.js / Express on port 3000
-- **Frontend:** React 18 + React Router 6 (Vite)
-- **Database:** SQLite via better-sqlite3 (local, stored as `mission-control.db`)
-- **Real-time:** WebSocket (ws) for session streaming, file change notifications, and heartbeat
-- **Process Management:** Claude Code CLI spawned as child processes; tmux for persistence
-- **Notifications:** Web Push API with VAPID keys (auto-generated)
-- **Network:** Tailscale-only (no public internet, no auth layer needed)
+| Layer | Tech |
+|-------|------|
+| **Frontend** | React 18, React Router 6, Vite |
+| **Backend** | Node.js, Express |
+| **Database** | PostgreSQL via [Neon](https://neon.tech) serverless |
+| **Real-time** | WebSocket (`ws`) for session streaming and notifications |
+| **Process Management** | Claude Code CLI spawned as child processes, tmux for persistence |
+| **Notifications** | Web Push API with auto-generated VAPID keys |
+| **Network** | Tailscale (private, no public internet exposure) |
 
-## Configuration
+## API
 
-Copy `.env.example` to `.env` and adjust as needed:
-
-```bash
-cp .env.example .env
-```
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT`   | `3000`  | Server port |
-
-### App Settings (via UI)
-
-Settings are stored in SQLite and managed through the Settings page:
-
-- **Projects Directory** — Root path where projects are stored
-- **GitHub Username** — Used for project creation with `gh`
-
-### MCP Servers
-
-MCP server configurations are managed in Settings > MCP Servers. Servers flagged for auto-connect will be attached to every new session via `--mcp-config`.
-
-### Quality Rules
-
-The Quality Rules Engine is configured in Settings > Quality Rules. It supports 21+ lifecycle hooks (SessionStart, Stop, PostToolUse, etc.) with three rule types:
-
-- **Prompt** — LLM evaluates against custom instructions
-- **Agent** — Claude Code runs additional validation
-- **Command** — Shell script execution
-
-Toggle rules on/off, customize prompts, and install hooks to `~/.claude/settings.json` with one click.
-
-## API Routes
-
-All routes are under `/api/`:
+All routes are under `/api/`. WebSocket endpoint: `/ws`.
 
 | Route | Description |
 |-------|-------------|
 | `GET /api/health` | Health check |
 | `/api/sessions` | Session CRUD, status, messaging |
-| `/api/files` | File tree, content, git status/diffs/branches |
+| `/api/files` | File tree, content, git status/diffs |
 | `/api/projects` | Project listing and creation |
-| `/api/mcp` | MCP server configuration CRUD |
-| `/api/quality` | Quality rules, results, hooks management |
-| `/api/history` | Session history, search, daily digests |
-| `/api/notifications` | Push subscriptions, settings, test |
-| `/api/settings` | App settings (projects dir, GitHub username) |
-
-WebSocket endpoint: `/ws`
-
-## Project Structure
-
-```
-├── server/
-│   ├── index.js                      # Express server entry point
-│   ├── database.js                   # SQLite schema, migrations, seed data
-│   ├── websocket.js                  # WebSocket server (streaming, subscriptions, heartbeat)
-│   ├── routes/
-│   │   ├── sessions.js               # Session CRUD + messaging
-│   │   ├── files.js                  # File tree, content, git ops
-│   │   ├── projects.js               # Project listing + creation (gh CLI)
-│   │   ├── notifications.js          # Push notification management
-│   │   ├── mcp.js                    # MCP server configs
-│   │   ├── history.js                # Session history + digests
-│   │   ├── quality.js                # Quality rules + results
-│   │   └── settings.js               # App settings
-│   └── services/
-│       ├── sessionManager.js         # Claude Code CLI process manager (direct + tmux)
-│       ├── fileWatcher.js            # Filesystem watcher + git integration
-│       ├── notificationService.js    # Web Push API
-│       └── hooksGenerator.js         # Quality hooks config generator
-├── client/
-│   ├── src/
-│   │   ├── App.jsx                   # Route definitions, responsive layout switching
-│   │   ├── main.jsx                  # Entry point, service worker registration
-│   │   ├── components/
-│   │   │   ├── Dashboard/            # Session cards, project cards, new session modal, project creation
-│   │   │   ├── Chat/                 # Chat interface, message list, permission prompts, context indicator
-│   │   │   ├── FileBrowser/          # File tree, code/markdown preview, diffs, mobile file browser
-│   │   │   ├── Quality/              # Rules config, scorecard, analytics history
-│   │   │   ├── Layout/              # Desktop 3-panel layout + mobile tab layout
-│   │   │   ├── PreviewPanel/         # Right-side preview panel (files/quality)
-│   │   │   ├── Settings/             # General settings page
-│   │   │   ├── Notifications/        # Push notification settings
-│   │   │   ├── History/              # Session history + digests
-│   │   │   ├── MCP/                  # MCP server management
-│   │   │   ├── common/               # Reusable UI components (PillSelector)
-│   │   │   ├── shared/               # Shared components (FolderPicker)
-│   │   │   └── ErrorBoundary.jsx     # React error boundary
-│   │   ├── context/
-│   │   │   └── AppContext.jsx        # Global state (useReducer)
-│   │   ├── hooks/
-│   │   │   ├── useWebSocket.js       # WebSocket connection + session streaming
-│   │   │   └── useMediaQuery.js      # Responsive breakpoint hook
-│   │   └── utils/
-│   │       ├── api.js                # HTTP client wrapper
-│   │       └── format.js             # Text formatters
-│   └── public/                       # PWA manifest, service worker, icons
-├── docs/                             # Design specs and documentation
-└── package.json
-```
-
-## Database
-
-SQLite database (`mission-control.db`) is created automatically on first run. Tables:
-
-- `sessions` — Session metadata (status, working dir, model, tmux session name, context usage)
-- `messages` — Conversation history (role, content, tool calls/results)
-- `session_summaries` — AI-generated summaries and key actions
-- `mcp_servers` — MCP server configurations
-- `notification_subscriptions` — Web Push endpoints and keys
-- `notification_settings` — Notification preferences per event type
-- `app_settings` — General settings
-- `daily_digests` — Daily session summary digests
-- `quality_rules` — Quality rule definitions and configurations
-- `quality_results` — Quality rule execution results
-
-## Requirements
-
-- **Node.js 18+**
-
-- **Claude Code CLI** — required to run Claude Code sessions
-
-  ```bash
-  npm install -g @anthropic-ai/claude-code
-  ```
-
-  Authenticate on first run:
-  ```bash
-  claude
-  ```
-
-- **tmux** — recommended for session persistence across server restarts (sessions fall back to direct child processes without it)
-
-- **GitHub CLI (`gh`)** — required for the "Create New Project" feature (not needed for other features)
-
-  ```bash
-  # macOS
-  brew install gh
-  ```
-
-  Authenticate:
-  ```bash
-  gh auth login
-  ```
-
-- **Tailscale** — for remote access from other devices (optional for local use)
+| `/api/mcp` | MCP server configuration |
+| `/api/quality` | Quality rules, results, hooks |
+| `/api/history` | Session history, search, digests |
+| `/api/notifications` | Push subscriptions and settings |
+| `/api/settings` | App settings |
