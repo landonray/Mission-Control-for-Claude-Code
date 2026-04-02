@@ -21,9 +21,15 @@ export function useWebSocket(sessionId) {
   // Track optimistic user messages that haven't been confirmed by DB yet
   const optimisticMessagesRef = useRef([]);
 
-  // Reset stream events when session changes so stale CLI output doesn't bleed across sessions
+  // Reset all session state when switching sessions so stale data doesn't bleed across
   useEffect(() => {
     setStreamEvents([]);
+    setMessages([]);
+    setStatus('idle');
+    setErrorMessage(null);
+    setPendingPermission(null);
+    setSendError(null);
+    clearEvents();
   }, [sessionId]);
 
   useEffect(() => {
@@ -146,8 +152,8 @@ export function useWebSocket(sessionId) {
               setStatus('ended');
               resumingRef.current = false;
               setResuming(false);
-              // Blank chat and CLI panels
-              setMessages([]);
+              // Keep messages visible so user can still read the conversation
+              // Only clear stream events (CLI panel) since the process is gone
               setStreamEvents([]);
               clearEvents();
               break;
