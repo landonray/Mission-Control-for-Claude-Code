@@ -1,7 +1,7 @@
 const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs');
-const { execSync, exec } = require('child_process');
+const { execFileSync, exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
@@ -170,39 +170,30 @@ function getFileContent(filePath) {
 
 function getGitDiff(directory, options = {}) {
   try {
-    let cmd;
+    const args = ['diff'];
     if (options.staged) {
-      cmd = 'git diff --cached';
+      args.push('--cached');
     } else if (options.branch && options.file) {
-      cmd = `git diff ${options.branch} -- "${options.file}"`;
+      args.push(options.branch, '--', options.file);
     } else if (options.branch) {
-      cmd = `git diff ${options.branch}`;
+      args.push(options.branch);
     } else if (options.file) {
-      cmd = `git diff -- "${options.file}"`;
-    } else {
-      cmd = 'git diff';
+      args.push('--', options.file);
     }
-
-    const result = execSync(cmd, {
-      cwd: directory,
-      encoding: 'utf-8',
-      maxBuffer: 10 * 1024 * 1024
+    return execFileSync('git', args, {
+      cwd: directory, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024
     });
-
-    return result;
-  } catch (e) {
-    return '';
-  }
+  } catch (e) { return ''; }
 }
 
 function getGitStatus(directory) {
   try {
-    const status = execSync('git status --porcelain', {
+    const status = execFileSync('git', ['status', '--porcelain'], {
       cwd: directory,
       encoding: 'utf-8'
     });
 
-    const branch = execSync('git branch --show-current', {
+    const branch = execFileSync('git', ['branch', '--show-current'], {
       cwd: directory,
       encoding: 'utf-8'
     }).trim();
@@ -220,7 +211,7 @@ function getGitStatus(directory) {
 
 function getGitBranches(directory) {
   try {
-    const result = execSync('git branch -a', {
+    const result = execFileSync('git', ['branch', '-a'], {
       cwd: directory,
       encoding: 'utf-8'
     });
@@ -234,18 +225,18 @@ function getGitBranches(directory) {
 
 function getBranchDiff(directory, baseBranch = 'main') {
   try {
-    const currentBranch = execSync('git branch --show-current', {
+    const currentBranch = execFileSync('git', ['branch', '--show-current'], {
       cwd: directory,
       encoding: 'utf-8'
     }).trim();
 
-    const diff = execSync(`git diff ${baseBranch}...${currentBranch}`, {
+    const diff = execFileSync('git', ['diff', `${baseBranch}...${currentBranch}`], {
       cwd: directory,
       encoding: 'utf-8',
       maxBuffer: 10 * 1024 * 1024
     });
 
-    const diffStat = execSync(`git diff --stat ${baseBranch}...${currentBranch}`, {
+    const diffStat = execFileSync('git', ['diff', '--stat', `${baseBranch}...${currentBranch}`], {
       cwd: directory,
       encoding: 'utf-8'
     });
