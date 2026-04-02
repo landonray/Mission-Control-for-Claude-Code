@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef, useState } from 'react';
 import { api } from '../utils/api';
 
 const AppContext = createContext();
@@ -93,6 +93,7 @@ function reducer(state, action) {
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const [toast, setToast] = useState(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const fileTreePathRef = useRef(null);
@@ -258,7 +259,9 @@ export function AppProvider({ children }) {
     loadNotificationSettings,
     loadGeneralSettings,
     loadFileTree,
-    ws: wsRef
+    ws: wsRef,
+    toast,
+    setToast
   };
 
   return (

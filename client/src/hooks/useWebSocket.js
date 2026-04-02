@@ -127,11 +127,18 @@ export function useWebSocket(sessionId) {
             optimisticMessagesRef.current = optimisticMessagesRef.current.filter(
               m => m.content !== data.content
             );
-            // Deduplicate — the message may already exist from optimistic add
             setMessages(prev => {
-              const last = prev[prev.length - 1];
-              if (last && last.role === 'user' && last.content === data.content) {
-                return prev;
+              // Try to find and replace the optimistic message by id
+              const idx = prev.findIndex(m => m.optimisticId && m.content === data.content);
+              if (idx >= 0) {
+                const updated = [...prev];
+                updated[idx] = {
+                  role: 'user',
+                  content: data.content,
+                  timestamp: data.timestamp,
+                  attachments: data.attachments || null
+                };
+                return updated;
               }
               return [...prev, {
                 role: 'user',
@@ -286,6 +293,7 @@ export function useWebSocket(sessionId) {
       role: 'user',
       content,
       timestamp: new Date().toISOString(),
+      optimisticId: messageId,
       attachments: attachments || null
     };
     optimisticMessagesRef.current.push(optimisticMsg);

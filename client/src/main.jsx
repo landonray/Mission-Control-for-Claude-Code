@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { AppProvider } from './context/AppContext';
+import { Toast } from './components/Toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
@@ -14,11 +15,14 @@ if ('serviceWorker' in navigator) {
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <ErrorBoundary>
-    <BrowserRouter>
-      <AppProvider>
-        <App />
-      </AppProvider>
-    </BrowserRouter>
-  </ErrorBoundary>
+  <React.StrictMode>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AppProvider>
+          <App />
+          <Toast />
+        </AppProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
+  </React.StrictMode>
 );

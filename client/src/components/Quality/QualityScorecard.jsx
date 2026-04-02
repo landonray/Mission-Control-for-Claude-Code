@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../utils/api';
+import { useApp } from '../../context/AppContext';
 import { Shield, CheckCircle, XCircle, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './QualityScorecard.module.css';
 
@@ -12,6 +13,7 @@ const severityColors = {
 export default function QualityScorecard({ sessionId }) {
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  const { setToast } = useApp();
 
   useEffect(() => {
     if (!sessionId) return;
@@ -24,7 +26,10 @@ export default function QualityScorecard({ sessionId }) {
     try {
       const result = await api.get(`/api/quality/results/scorecard/${sessionId}`);
       setData(result);
-    } catch (e) {}
+    } catch (e) {
+      console.error('[QualityScorecard] Failed to load scorecard:', e.message);
+      setToast({ type: 'error', message: 'Failed to load quality scorecard.' });
+    }
   };
 
   if (!data || data.rules.length === 0) return null;
