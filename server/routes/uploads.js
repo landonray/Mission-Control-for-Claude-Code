@@ -45,7 +45,7 @@ const fileFilter = (req, file, cb) => {
   if (allowedTypes.includes(file.mimetype) || file.mimetype.startsWith('text/')) {
     cb(null, true);
   } else {
-    cb(null, true); // Accept all for now — Claude can handle many formats
+    cb(new Error(`File type ${file.mimetype} not allowed`), false);
   }
 };
 
