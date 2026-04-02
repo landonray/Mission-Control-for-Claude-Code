@@ -292,65 +292,98 @@ async function getGitPipeline(directory) {
     ]);
 
     result.branch = branchOut;
+    const hasUncommitted = porcelainOut !== null && porcelainOut.length > 0;
+    const dirtyFiles = hasUncommitted ? porcelainOut.split('\n') : [];
+    result.uncommittedCount = dirtyFiles.length;
+
+    // Stage 1: Committed to a feature branch?
+    // On main, this is always 'pending' — work skipped the branch workflow.
+    const isMain = branchOut === 'main' || branchOut === 'master';
     if (porcelainOut !== null) {
-      const dirtyFiles = porcelainOut.length === 0 ? [] : porcelainOut.split('\n');
-      result.committed = dirtyFiles.length === 0 ? 'done' : 'pending';
-      result.uncommittedCount = dirtyFiles.length;
+      result.committed = isMain ? 'pending' : (hasUncommitted ? 'pending' : 'done');
     }
 
-    // Stage 2: Merged to main?
-    const isMain = branchOut === 'main' || branchOut === 'master';
-    let hasOwnCommits = false; // tracks whether this branch has commits beyond main
-    if (isMain) {
-      result.merged = 'done';
-      hasOwnCommits = true; // main always has "work"
-    } else {
+    // Resolve the main/master branch names (local and remote)
+    let hasOwnCommits = false;
+    let localBase = null;   // e.g. "main"
+    let remoteBase = null;  // e.g. "origin/main"
+
+    // Determine local and remote base branch names
+    try {
+      const baseOut = await execAsync(
+        'git rev-parse --verify main 2>/dev/null && echo main || (git rev-parse --verify master 2>/dev/null && echo master || echo "")',
+        shellOpts
+      );
+      localBase = baseOut.stdout.trim().split('\n').pop() || null;
+    } catch { /* no local main/master */ }
+
+    try {
+      await execAsync('git rev-parse --verify origin/main 2>/dev/null', shellOpts);
+      remoteBase = 'origin/main';
+    } catch {
       try {
-        const baseOut = await execAsync(
-          'git rev-parse --verify main 2>/dev/null && echo main || echo master',
-          shellOpts
-        );
-        const baseName = baseOut.stdout.trim().split('\n').pop();
-        const unmergedOut = await execAsync(`git log ${baseName}..HEAD --oneline`, opts);
+        await execAsync('git rev-parse --verify origin/master 2>/dev/null', shellOpts);
+        remoteBase = 'origin/master';
+      } catch { /* no remote main */ }
+    }
+
+    // Stage 2: Are changes in local main?
+    if (isMain) {
+      result.merged = hasUncommitted ? 'pending' : 'done';
+    } else if (localBase) {
+      try {
+        const unmergedOut = await execAsync(`git log ${localBase}..HEAD --oneline`, opts);
         hasOwnCommits = unmergedOut.stdout.trim().length > 0;
-        result.merged = hasOwnCommits ? 'pending' : 'done';
+        result.merged = (hasOwnCommits || hasUncommitted) ? 'pending' : 'done';
       } catch {
         result.merged = 'unknown';
       }
+    } else {
+      result.merged = 'unknown';
     }
 
-    // Stage 3: Pushed to remote?
-    try {
-      const trackingBranch = isMain ? 'origin/main' : `origin/${branchOut}`;
-      await execAsync(`git rev-parse --verify ${trackingBranch} 2>/dev/null`, shellOpts);
-      const unpushedOut = await execAsync(`git log ${trackingBranch}..HEAD --oneline`, opts);
-      result.pushed = unpushedOut.stdout.trim().length === 0 && result.committed === 'done' ? 'done' : 'pending';
-    } catch {
-      if (isMain) {
+    // Stage 3: Are changes on the remote?
+    const hasWork = hasUncommitted || hasOwnCommits;
+    let commitsOnRemote = false;
+
+    // Check if the branch itself is pushed
+    if (!isMain) {
+      try {
+        const remoteBranch = `origin/${branchOut}`;
+        await execAsync(`git rev-parse --verify ${remoteBranch} 2>/dev/null`, shellOpts);
+        const unpushedOut = await execAsync(`git log ${remoteBranch}..HEAD --oneline`, opts);
+        commitsOnRemote = unpushedOut.stdout.trim().length === 0;
+      } catch { /* branch not pushed */ }
+    }
+
+    // Also check if commits are in origin/main (merged via PR)
+    if (!commitsOnRemote && remoteBase) {
+      try {
+        const remoteUnmerged = await execAsync(`git log ${remoteBase}..HEAD --oneline`, opts);
+        commitsOnRemote = remoteUnmerged.stdout.trim().length === 0;
+      } catch { /* can't check */ }
+    }
+
+    if (isMain) {
+      // On main, just check origin/main directly
+      if (remoteBase) {
         try {
-          await execAsync('git rev-parse --verify origin/master 2>/dev/null', shellOpts);
-          const unpushedOut = await execAsync('git log origin/master..HEAD --oneline', opts);
-          result.pushed = unpushedOut.stdout.trim().length === 0 && result.committed === 'done' ? 'done' : 'pending';
+          const unpushedOut = await execAsync(`git log ${remoteBase}..HEAD --oneline`, opts);
+          const allPushed = unpushedOut.stdout.trim().length === 0;
+          result.pushed = (allPushed && !hasUncommitted) ? 'done' : 'pending';
         } catch {
-          result.pushed = 'unknown';
+          result.pushed = 'pending';
         }
       } else {
         result.pushed = 'pending';
       }
+    } else {
+      result.pushed = (commitsOnRemote && !hasUncommitted) ? 'done'
+        : hasWork ? 'pending' : 'unknown';
     }
 
-    // Cascade: uncommitted changes mean downstream stages can't be "done"
-    if (result.committed === 'pending') {
-      if (result.merged === 'done') result.merged = 'pending';
-      if (result.pushed === 'done') result.pushed = 'pending';
-    }
-    if (result.merged === 'pending') {
-      if (result.pushed === 'done') result.pushed = 'pending';
-    }
-
-    // A non-main branch with no commits, clean working tree, and no remote branch
-    // has done no work — don't show all-green as if the lifecycle is complete.
-    if (!isMain && !hasOwnCommits && result.committed === 'done' && result.pushed !== 'done') {
+    // Feature branch with no work at all → all gray
+    if (!isMain && !hasWork) {
       result.committed = 'unknown';
       result.merged = 'unknown';
       result.pushed = 'unknown';

@@ -664,12 +664,29 @@ class SessionProcess {
               .map(block => block.text)
               .join('\n');
 
-            // Run quality checks for tool_use blocks (PostToolUse hooks don't fire in --print mode)
+            // Process tool_use blocks for diff stats and quality checks
+            let totalAdded = 0, totalRemoved = 0;
             for (const block of event.message.content) {
               if (block.type === 'tool_use') {
+                const toolName = block.name || 'unknown';
+                const input = block.input || {};
+
+                if ((toolName === 'Edit' || toolName === 'edit') && input.old_string != null && input.new_string != null) {
+                  totalRemoved += input.old_string.split('\n').length;
+                  totalAdded += input.new_string.split('\n').length;
+                } else if ((toolName === 'Write' || toolName === 'write') && input.content != null) {
+                  totalAdded += input.content.split('\n').length;
+                }
+
                 qualityRunner.onToolUse(this.id, block.name, block.input, this.broadcast.bind(this)).catch(e =>
                   console.error('[QualityRunner] onToolUse error:', e.message));
               }
+            }
+            if (totalAdded > 0 || totalRemoved > 0) {
+              await query(
+                `UPDATE sessions SET lines_added = lines_added + $1, lines_removed = lines_removed + $2 WHERE id = $3`,
+                [totalAdded, totalRemoved, this.id]
+              );
             }
           } else {
             content = JSON.stringify(event.message);
@@ -686,34 +703,6 @@ class SessionProcess {
           }
         }
         break;
-
-      case 'tool_use': {
-        this.status = 'working';
-        this.updateDbStatus('working');
-        const toolName = event.tool || event.name || 'unknown';
-        const input = event.input || {};
-        let added = 0, removed = 0;
-
-        if ((toolName === 'Edit' || toolName === 'edit') && input.old_string != null && input.new_string != null) {
-          removed = input.old_string.split('\n').length;
-          added = input.new_string.split('\n').length;
-        } else if ((toolName === 'Write' || toolName === 'write') && input.content != null) {
-          added = input.content.split('\n').length;
-        }
-
-        if (added > 0 || removed > 0) {
-          await query(
-            `UPDATE sessions SET tool_call_count = tool_call_count + 1, lines_added = lines_added + $1, lines_removed = lines_removed + $2, last_action_summary = $3, last_activity_at = NOW() WHERE id = $4`,
-            [added, removed, `Tool: ${toolName}`, this.id]
-          );
-        } else {
-          await query(
-            `UPDATE sessions SET tool_call_count = tool_call_count + 1, last_action_summary = $1, last_activity_at = NOW() WHERE id = $2`,
-            [`Tool: ${toolName}`, this.id]
-          );
-        }
-        break;
-      }
 
       case 'tool_result':
         if (event.content) {
