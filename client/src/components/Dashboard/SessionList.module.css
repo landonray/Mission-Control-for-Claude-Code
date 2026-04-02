@@ -169,6 +169,16 @@
   background: rgba(212, 120, 48, 0.1) !important;
 }
 
+.pipelineWrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+}
+
 .uncommittedPill {
   display: flex;
   align-items: center;
@@ -179,8 +189,8 @@
   background: color-mix(in srgb, var(--warning) 12%, transparent);
   padding: 2px 7px;
   border-radius: 10px;
-  margin-right: 6px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Git pipeline */
@@ -188,10 +198,8 @@
   display: flex;
   align-items: center;
   gap: 0;
-  margin-bottom: 10px;
-  padding: 6px 8px;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .pipelineStage {

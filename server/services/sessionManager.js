@@ -695,10 +695,8 @@ class SessionProcess {
         let added = 0, removed = 0;
 
         if ((toolName === 'Edit' || toolName === 'edit') && input.old_string != null && input.new_string != null) {
-          const oldLines = input.old_string.split('\n').length;
-          const newLines = input.new_string.split('\n').length;
-          if (newLines > oldLines) added = newLines - oldLines;
-          if (oldLines > newLines) removed = oldLines - newLines;
+          removed = input.old_string.split('\n').length;
+          added = input.new_string.split('\n').length;
         } else if ((toolName === 'Write' || toolName === 'write') && input.content != null) {
           added = input.content.split('\n').length;
         }

@@ -176,26 +176,28 @@ export default function SessionList() {
                   )}
 
                   {session.pipeline && (
-                    <div className={styles.pipeline}>
+                    <div className={styles.pipelineWrapper}>
                       {session.pipeline.uncommittedCount > 0 && (
                         <div className={styles.uncommittedPill} title={`${session.pipeline.uncommittedCount} uncommitted file${session.pipeline.uncommittedCount === 1 ? '' : 's'}`}>
                           <FileEdit size={9} />
                           <span>{session.pipeline.uncommittedCount} uncommitted</span>
                         </div>
                       )}
-                      <div className={styles.pipelineStage} data-status={session.pipeline.committed} title={`Committed: ${session.pipeline.committed}`}>
-                        <GitCommitHorizontal size={10} />
-                        <span>Branch</span>
-                      </div>
-                      <div className={styles.pipelineConnector} data-status={session.pipeline.merged} />
-                      <div className={styles.pipelineStage} data-status={session.pipeline.merged} title={`Merged: ${session.pipeline.merged}`}>
-                        <GitMerge size={10} />
-                        <span>Main</span>
-                      </div>
-                      <div className={styles.pipelineConnector} data-status={session.pipeline.pushed} />
-                      <div className={styles.pipelineStage} data-status={session.pipeline.pushed} title={`Pushed: ${session.pipeline.pushed}`}>
-                        <Cloud size={10} />
-                        <span>Remote</span>
+                      <div className={styles.pipeline}>
+                        <div className={styles.pipelineStage} data-status={session.pipeline.committed} title={`Committed: ${session.pipeline.committed}`}>
+                          <GitCommitHorizontal size={10} />
+                          <span>Branch</span>
+                        </div>
+                        <div className={styles.pipelineConnector} data-status={session.pipeline.merged} />
+                        <div className={styles.pipelineStage} data-status={session.pipeline.merged} title={`Merged: ${session.pipeline.merged}`}>
+                          <GitMerge size={10} />
+                          <span>Main</span>
+                        </div>
+                        <div className={styles.pipelineConnector} data-status={session.pipeline.pushed} />
+                        <div className={styles.pipelineStage} data-status={session.pipeline.pushed} title={`Pushed: ${session.pipeline.pushed}`}>
+                          <Cloud size={10} />
+                          <span>Remote</span>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -213,10 +215,16 @@ export default function SessionList() {
                       </span>
                     </div>
 
-                    <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Tool calls</span>
-                      <span className={styles.statValue}>{session.tool_call_count || 0}</span>
-                    </div>
+                    {(session.lines_added > 0 || session.lines_removed > 0) && (
+                      <div className={styles.statRow}>
+                        <span className={styles.statLabel}>Diff</span>
+                        <span className={styles.statValue}>
+                          <span style={{ color: 'var(--success)', fontWeight: 600 }}>+{session.lines_added || 0}</span>
+                          {' '}
+                          <span style={{ color: 'var(--error)', fontWeight: 600 }}>-{session.lines_removed || 0}</span>
+                        </span>
+                      </div>
+                    )}
 
                     <div className={styles.statRow}>
                       <span className={styles.statLabel}>Context</span>
