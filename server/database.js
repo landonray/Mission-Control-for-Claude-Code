@@ -22,9 +22,9 @@ async function initializeDb() {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'idle',
       working_directory TEXT, branch TEXT, context_window_usage REAL DEFAULT 0,
       user_message_count INTEGER DEFAULT 0, assistant_message_count INTEGER DEFAULT 0,
-      tool_call_count INTEGER DEFAULT 0, last_action_summary TEXT, last_activity_at TEXT,
-      permission_mode TEXT DEFAULT 'acceptEdits', created_at TEXT DEFAULT NOW(),
-      ended_at TEXT, preview_url TEXT, archived INTEGER DEFAULT 0,
+      tool_call_count INTEGER DEFAULT 0, last_action_summary TEXT, last_activity_at TIMESTAMPTZ,
+      permission_mode TEXT DEFAULT 'acceptEdits', created_at TIMESTAMPTZ DEFAULT NOW(),
+      ended_at TIMESTAMPTZ, preview_url TEXT, archived INTEGER DEFAULT 0,
       tmux_session_name TEXT, model TEXT DEFAULT 'claude-opus-4-6',
       use_worktree INTEGER DEFAULT 0, worktree_name TEXT
     )`,
@@ -32,20 +32,20 @@ async function initializeDb() {
       id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
       role TEXT NOT NULL, content TEXT NOT NULL, tool_calls TEXT, tool_results TEXT,
       attachments TEXT,
-      timestamp TEXT DEFAULT NOW()
+      timestamp TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS session_summaries (
       id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
-      summary TEXT NOT NULL, key_actions TEXT, files_modified TEXT, created_at TEXT DEFAULT NOW()
+      summary TEXT NOT NULL, key_actions TEXT, files_modified TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS mcp_servers (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, command TEXT NOT NULL,
       args TEXT, env TEXT, auto_connect INTEGER DEFAULT 0,
-      status TEXT DEFAULT 'disconnected', created_at TEXT DEFAULT NOW()
+      status TEXT DEFAULT 'disconnected', created_at TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS notification_subscriptions (
       id SERIAL PRIMARY KEY, endpoint TEXT NOT NULL UNIQUE,
-      keys_p256dh TEXT NOT NULL, keys_auth TEXT NOT NULL, created_at TEXT DEFAULT NOW()
+      keys_p256dh TEXT NOT NULL, keys_auth TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS notification_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1), waiting_for_input INTEGER DEFAULT 1,
@@ -61,7 +61,7 @@ async function initializeDb() {
     `INSERT INTO app_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
     `CREATE TABLE IF NOT EXISTS daily_digests (
       id SERIAL PRIMARY KEY, date TEXT NOT NULL UNIQUE,
-      content TEXT NOT NULL, session_count INTEGER, created_at TEXT DEFAULT NOW()
+      content TEXT NOT NULL, session_count INTEGER, created_at TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS quality_rules (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
@@ -69,13 +69,13 @@ async function initializeDb() {
       enabled INTEGER DEFAULT 1, prompt TEXT, script TEXT, config TEXT, category TEXT,
       send_fail_to_agent INTEGER DEFAULT 0, send_fail_requires_spec INTEGER DEFAULT 0,
       execution_mode TEXT DEFAULT 'cli',
-      sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), updated_at TEXT DEFAULT NOW()
+      sort_order INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS quality_results (
       id SERIAL PRIMARY KEY, session_id TEXT REFERENCES sessions(id),
       rule_id TEXT NOT NULL REFERENCES quality_rules(id), rule_name TEXT NOT NULL,
       result TEXT NOT NULL, severity TEXT NOT NULL, details TEXT, file_path TEXT,
-      timestamp TEXT DEFAULT NOW()
+      timestamp TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE INDEX IF NOT EXISTS idx_quality_results_session ON quality_results(session_id)`,
     `CREATE INDEX IF NOT EXISTS idx_quality_results_rule ON quality_results(rule_id)`,
@@ -83,7 +83,7 @@ async function initializeDb() {
     `CREATE TABLE IF NOT EXISTS stream_events (
       id SERIAL PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id),
       event_type TEXT NOT NULL, event_data TEXT NOT NULL,
-      timestamp TEXT DEFAULT NOW()
+      timestamp TIMESTAMPTZ DEFAULT NOW()
     )`,
     `CREATE INDEX IF NOT EXISTS idx_stream_events_session ON stream_events(session_id)`,
     `CREATE INDEX IF NOT EXISTS idx_stream_events_timestamp ON stream_events(session_id, timestamp)`
@@ -106,6 +106,30 @@ async function initializeDb() {
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
+  }
+
+  // Migrate TEXT timestamp columns to TIMESTAMPTZ for existing databases
+  const timestampMigrations = [
+    `ALTER TABLE sessions ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::timestamptz`,
+    `ALTER TABLE sessions ALTER COLUMN last_activity_at TYPE TIMESTAMPTZ USING last_activity_at::timestamptz`,
+    `ALTER TABLE sessions ALTER COLUMN ended_at TYPE TIMESTAMPTZ USING ended_at::timestamptz`,
+    `ALTER TABLE messages ALTER COLUMN timestamp TYPE TIMESTAMPTZ USING timestamp::timestamptz`,
+    `ALTER TABLE session_summaries ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::timestamptz`,
+    `ALTER TABLE mcp_servers ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::timestamptz`,
+    `ALTER TABLE notification_subscriptions ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::timestamptz`,
+    `ALTER TABLE daily_digests ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::timestamptz`,
+    `ALTER TABLE quality_rules ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at::timestamptz`,
+    `ALTER TABLE quality_rules ALTER COLUMN updated_at TYPE TIMESTAMPTZ USING updated_at::timestamptz`,
+    `ALTER TABLE quality_results ALTER COLUMN timestamp TYPE TIMESTAMPTZ USING timestamp::timestamptz`,
+    `ALTER TABLE stream_events ALTER COLUMN timestamp TYPE TIMESTAMPTZ USING timestamp::timestamptz`,
+  ];
+
+  for (const sql of timestampMigrations) {
+    try {
+      await query(sql);
+    } catch (e) {
+      // Column may already be TIMESTAMPTZ — safe to ignore
+    }
   }
 
   await seedQualityRules();
