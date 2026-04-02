@@ -91,7 +91,7 @@ export default function GeneralSettings() {
             if (!confirm('Restart the server? The page will briefly disconnect.')) return;
             setRestarting(true);
             try {
-              await api.post('/api/settings/restart');
+              await api.post('/api/settings/restart', { confirm: true });
             } catch {
               // Expected — server shuts down before response sometimes
             }
