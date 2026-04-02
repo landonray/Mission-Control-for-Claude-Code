@@ -169,6 +169,20 @@
   background: rgba(212, 120, 48, 0.1) !important;
 }
 
+.uncommittedPill {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  padding: 2px 7px;
+  border-radius: 10px;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
 /* Git pipeline */
 .pipeline {
   display: flex;

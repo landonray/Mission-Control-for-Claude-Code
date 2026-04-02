@@ -268,7 +268,7 @@ const PIPELINE_CACHE_TTL = 10_000; // 10 seconds
  * Returns { branch, committed, merged, pushed } where each stage is 'done', 'pending', or 'unknown'.
  */
 async function getGitPipeline(directory) {
-  const result = { branch: '', committed: 'unknown', merged: 'unknown', pushed: 'unknown' };
+  const result = { branch: '', committed: 'unknown', merged: 'unknown', pushed: 'unknown', uncommittedCount: 0 };
   if (!directory) return result;
 
   // Check cache
@@ -292,12 +292,18 @@ async function getGitPipeline(directory) {
     ]);
 
     result.branch = branchOut;
-    result.committed = porcelainOut !== null ? (porcelainOut.length === 0 ? 'done' : 'pending') : 'unknown';
+    if (porcelainOut !== null) {
+      const dirtyFiles = porcelainOut.length === 0 ? [] : porcelainOut.split('\n');
+      result.committed = dirtyFiles.length === 0 ? 'done' : 'pending';
+      result.uncommittedCount = dirtyFiles.length;
+    }
 
     // Stage 2: Merged to main?
     const isMain = branchOut === 'main' || branchOut === 'master';
+    let hasOwnCommits = false; // tracks whether this branch has commits beyond main
     if (isMain) {
       result.merged = 'done';
+      hasOwnCommits = true; // main always has "work"
     } else {
       try {
         const baseOut = await execAsync(
@@ -306,7 +312,8 @@ async function getGitPipeline(directory) {
         );
         const baseName = baseOut.stdout.trim().split('\n').pop();
         const unmergedOut = await execAsync(`git log ${baseName}..HEAD --oneline`, opts);
-        result.merged = unmergedOut.stdout.trim().length === 0 ? 'done' : 'pending';
+        hasOwnCommits = unmergedOut.stdout.trim().length > 0;
+        result.merged = hasOwnCommits ? 'pending' : 'done';
       } catch {
         result.merged = 'unknown';
       }
@@ -330,6 +337,23 @@ async function getGitPipeline(directory) {
       } else {
         result.pushed = 'pending';
       }
+    }
+
+    // Cascade: uncommitted changes mean downstream stages can't be "done"
+    if (result.committed === 'pending') {
+      if (result.merged === 'done') result.merged = 'pending';
+      if (result.pushed === 'done') result.pushed = 'pending';
+    }
+    if (result.merged === 'pending') {
+      if (result.pushed === 'done') result.pushed = 'pending';
+    }
+
+    // A non-main branch with no commits, clean working tree, and no remote branch
+    // has done no work — don't show all-green as if the lifecycle is complete.
+    if (!isMain && !hasOwnCommits && result.committed === 'done' && result.pushed !== 'done') {
+      result.committed = 'unknown';
+      result.merged = 'unknown';
+      result.pushed = 'unknown';
     }
 
     pipelineCache.set(directory, { result, timestamp: Date.now() });

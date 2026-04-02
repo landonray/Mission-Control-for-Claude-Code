@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
 import NewSessionModal from './NewSessionModal';
-import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud } from 'lucide-react';
+import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit } from 'lucide-react';
 import styles from './SessionList.module.css';
 
 function renderLastAction(summary) {
@@ -177,6 +177,12 @@ export default function SessionList() {
 
                   {session.pipeline && (
                     <div className={styles.pipeline}>
+                      {session.pipeline.uncommittedCount > 0 && (
+                        <div className={styles.uncommittedPill} title={`${session.pipeline.uncommittedCount} uncommitted file${session.pipeline.uncommittedCount === 1 ? '' : 's'}`}>
+                          <FileEdit size={9} />
+                          <span>{session.pipeline.uncommittedCount} uncommitted</span>
+                        </div>
+                      )}
                       <div className={styles.pipelineStage} data-status={session.pipeline.committed} title={`Committed: ${session.pipeline.committed}`}>
                         <GitCommitHorizontal size={10} />
                         <span>Branch</span>
