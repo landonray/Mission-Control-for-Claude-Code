@@ -82,21 +82,20 @@ function autoNameLog(...args) {
   console.log('[AutoName]', ...args);
 }
 
-// Use Anthropic SDK directly for auto-naming (avoids Claude CLI stdin/stdout issues)
-const Anthropic = require('@anthropic-ai/sdk');
-const anthropic = new Anthropic();
+// Use LLM Gateway for auto-naming (avoids Claude CLI stdin/stdout issues)
+const { chatCompletion } = require('./llmGateway');
 
 // Generate a short AI-powered session name from the first user message
 async function generateSessionName(messageText) {
   try {
     autoNameLog('Generating name for:', messageText.slice(0, 80));
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const text = await chatCompletion({
+      model: 'claude-haiku-4-5',
       max_tokens: 30,
       system: 'You are a session naming tool. Output ONLY a concise 3-6 word title. No explanation, no quotes, no punctuation except spaces. If the message is vague, output "General Chat".',
       messages: [{ role: 'user', content: messageText }],
     });
-    const name = response.content[0]?.text?.trim() || '';
+    const name = text?.trim() || '';
     autoNameLog('Generated name:', name || '(empty)');
     if (!name) return null;
     const wordCount = name.split(/\s+/).length;

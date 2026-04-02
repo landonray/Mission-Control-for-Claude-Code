@@ -2,17 +2,15 @@
  * Server-side quality check runner.
  *
  * Claude Code's --print mode doesn't fire PostToolUse or Stop hooks,
- * so Mission Control runs quality checks itself using the Anthropic SDK.
+ * so Mission Control runs quality checks itself using the LLM Gateway.
  * It watches stream events for tool_use and result events, then runs
  * the matching quality rule prompts against the API.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
+const { chatCompletion } = require('./llmGateway');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
-
-const anthropic = new Anthropic();
 
 // Cache rules to avoid DB queries on every tool use
 let rulesCache = null;
@@ -109,14 +107,12 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:PASS
 or
 QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[brief reason]`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+    const fullText = await chatCompletion({
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 500,
       system: 'You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested.',
       messages: [{ role: 'user', content: prompt }],
-    });
-
-    const fullText = response.content[0]?.text || '';
+    }) || '';
     // Strip the QUALITY_RESULT marker line from the analysis text
     const analysis = fullText.replace(/QUALITY_RESULT:\S+:\w+:(?:PASS|FAIL)(?::.*)?/g, '').trim();
     const match = fullText.match(/QUALITY_RESULT:(\S+):(\w+):(PASS|FAIL)(?::(.*))?/);
@@ -162,14 +158,12 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:PASS
 If ANY requirements are missing or incomplete, respond with a detailed list of what's unfinished, then:
 QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[count] requirements incomplete`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+    const fullText = await chatCompletion({
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 1500,
       system: 'You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Do not give the benefit of the doubt. If you cannot confirm a requirement was implemented from the conversation context, mark it incomplete.',
       messages: [{ role: 'user', content: prompt }],
-    });
-
-    const fullText = response.content[0]?.text || '';
+    }) || '';
     const analysis = fullText.replace(/QUALITY_RESULT:\S+:\w+:(?:PASS|FAIL)(?::.*)?/g, '').trim();
     const match = fullText.match(/QUALITY_RESULT:(\S+):(\w+):(PASS|FAIL)(?::(.*))?/);
     if (match) {
