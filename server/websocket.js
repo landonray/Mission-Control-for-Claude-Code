@@ -118,19 +118,24 @@ function setupWebSocket(server) {
 
   wss.on('close', () => clearInterval(heartbeat));
 
-  // Broadcast session status updates periodically
+  // Broadcast session status updates only when state changes
+  let lastBroadcastState = '';
   setInterval(() => {
-    const statusUpdate = {
-      type: 'sessions_status',
-      sessions: Array.from(activeSessions.entries()).map(([id, session]) => ({
-        id,
-        status: session.status,
-        pendingPermission: !!session.pendingPermission
-      })),
-      timestamp: new Date().toISOString()
-    };
+    const sessions = Array.from(activeSessions.entries()).map(([id, session]) => ({
+      id,
+      status: session.status,
+      pendingPermission: !!session.pendingPermission
+    }));
 
-    broadcast(wss, statusUpdate);
+    const stateKey = JSON.stringify(sessions);
+    if (stateKey !== lastBroadcastState) {
+      lastBroadcastState = stateKey;
+      broadcast(wss, {
+        type: 'sessions_status',
+        sessions,
+        timestamp: new Date().toISOString()
+      });
+    }
   }, 5000);
 
   return wss;
