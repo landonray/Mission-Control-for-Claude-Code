@@ -324,28 +324,19 @@ async function getGitPipeline(directory) {
       const trackingBranch = isMain ? 'origin/main' : `origin/${branchOut}`;
       await execAsync(`git rev-parse --verify ${trackingBranch} 2>/dev/null`, shellOpts);
       const unpushedOut = await execAsync(`git log ${trackingBranch}..HEAD --oneline`, opts);
-      result.pushed = unpushedOut.stdout.trim().length === 0 && result.committed === 'done' ? 'done' : 'pending';
+      result.pushed = unpushedOut.stdout.trim().length === 0 ? 'done' : 'pending';
     } catch {
       if (isMain) {
         try {
           await execAsync('git rev-parse --verify origin/master 2>/dev/null', shellOpts);
           const unpushedOut = await execAsync('git log origin/master..HEAD --oneline', opts);
-          result.pushed = unpushedOut.stdout.trim().length === 0 && result.committed === 'done' ? 'done' : 'pending';
+          result.pushed = unpushedOut.stdout.trim().length === 0 ? 'done' : 'pending';
         } catch {
           result.pushed = 'unknown';
         }
       } else {
         result.pushed = 'pending';
       }
-    }
-
-    // Cascade: uncommitted changes mean downstream stages can't be "done"
-    if (result.committed === 'pending') {
-      if (result.merged === 'done') result.merged = 'pending';
-      if (result.pushed === 'done') result.pushed = 'pending';
-    }
-    if (result.merged === 'pending') {
-      if (result.pushed === 'done') result.pushed = 'pending';
     }
 
     // A non-main branch with no commits, clean working tree, and no remote branch
