@@ -104,6 +104,13 @@ export default function RulesConfig() {
     } catch (e) {}
   };
 
+  const updateExecutionMode = async (ruleId, mode) => {
+    try {
+      await api.put(`/api/quality/rules/${ruleId}/execution-mode`, { mode });
+      await loadRules();
+    } catch (e) {}
+  };
+
   const startEditing = (rule) => {
     setEditingRule(rule.id);
     setEditForm({
@@ -263,6 +270,24 @@ export default function RulesConfig() {
                 {isExpanded && (
                   <div className={styles.ruleBody}>
                     <p className={styles.ruleDescription}>{rule.description}</p>
+
+                    <div className={styles.executionModeRow}>
+                      <span className={styles.executionModeLabel}>Execution</span>
+                      <div className={styles.executionModePicker}>
+                        <button
+                          className={`${styles.modeBtn} ${rule.execution_mode !== 'api' ? styles.modeActive : ''}`}
+                          onClick={() => updateExecutionMode(rule.id, 'cli')}
+                        >
+                          <Terminal size={12} /> CLI
+                        </button>
+                        <button
+                          className={`${styles.modeBtn} ${rule.execution_mode === 'api' ? styles.modeActive : ''}`}
+                          onClick={() => updateExecutionMode(rule.id, 'api')}
+                        >
+                          <Zap size={12} /> API
+                        </button>
+                      </div>
+                    </div>
 
                     <div className={styles.sendFailRow}>
                       <button

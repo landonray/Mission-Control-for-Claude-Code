@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { generateHooksConfig, removeHooksConfig, getHooksStatus } = require('../services/hooksGenerator');
+const { invalidateRulesCache } = require('../services/qualityRunner');
 
 // ==========================================
 // RULES MANAGEMENT
@@ -78,6 +79,24 @@ router.put('/rules/:id/severity', async (req, res) => {
   if (!rule) return res.status(404).json({ error: 'Rule not found' });
 
   await generateHooksConfig();
+  res.json(rule);
+});
+
+// Update rule execution mode (cli or api)
+router.put('/rules/:id/execution-mode', async (req, res) => {
+  const { mode } = req.body;
+  if (!['cli', 'api'].includes(mode)) {
+    return res.status(400).json({ error: 'Mode must be cli or api' });
+  }
+
+  await query('UPDATE quality_rules SET execution_mode = $1, updated_at = NOW() WHERE id = $2',
+    [mode, req.params.id]);
+
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+
+  invalidateRulesCache();
   res.json(rule);
 });
 

@@ -8,6 +8,7 @@
  */
 
 const { chatCompletion } = require('./llmGateway');
+const { run: cliRun } = require('./cliAgent');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
@@ -107,13 +108,21 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:PASS
 or
 QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[brief reason]`;
 
-    const fullText = await chatCompletion({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 500,
-      system: 'You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested.',
-      messages: [{ role: 'user', content: prompt }],
-    }) || '';
-    // Strip the QUALITY_RESULT marker line from the analysis text
+    let fullText;
+
+    if (rule.execution_mode === 'cli') {
+      fullText = await cliRun(
+        `You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested.\n\n${prompt}`
+      ) || '';
+    } else {
+      fullText = await chatCompletion({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        system: 'You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested.',
+        messages: [{ role: 'user', content: prompt }],
+      }) || '';
+    }
+
     const analysis = fullText.replace(/QUALITY_RESULT:\S+:\w+:(?:PASS|FAIL)(?::.*)?/g, '').trim();
     const match = fullText.match(/QUALITY_RESULT:(\S+):(\w+):(PASS|FAIL)(?::(.*))?/);
     if (match) {
@@ -123,7 +132,7 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[brief reason]`;
     return { result: 'pass', details: 'Quality check completed (no explicit marker)', analysis };
   } catch (e) {
     console.error(`[QualityRunner] Error running check ${rule.id}:`, e.message);
-    return null; // Skip on error
+    return null;
   }
 }
 
@@ -158,12 +167,20 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:PASS
 If ANY requirements are missing or incomplete, respond with a detailed list of what's unfinished, then:
 QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[count] requirements incomplete`;
 
-    const fullText = await chatCompletion({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1500,
-      system: 'You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Do not give the benefit of the doubt. If you cannot confirm a requirement was implemented from the conversation context, mark it incomplete.',
-      messages: [{ role: 'user', content: prompt }],
-    }) || '';
+    let fullText;
+
+    if (rule.execution_mode === 'cli') {
+      fullText = await cliRun(
+        `You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Do not give the benefit of the doubt. If you cannot confirm a requirement was implemented from the conversation context, mark it incomplete.\n\n${prompt}`
+      ) || '';
+    } else {
+      fullText = await chatCompletion({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: 'You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Do not give the benefit of the doubt. If you cannot confirm a requirement was implemented from the conversation context, mark it incomplete.',
+        messages: [{ role: 'user', content: prompt }],
+      }) || '';
+    }
     const analysis = fullText.replace(/QUALITY_RESULT:\S+:\w+:(?:PASS|FAIL)(?::.*)?/g, '').trim();
     const match = fullText.match(/QUALITY_RESULT:(\S+):(\w+):(PASS|FAIL)(?::(.*))?/);
     if (match) {
