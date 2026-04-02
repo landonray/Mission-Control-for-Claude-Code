@@ -633,6 +633,9 @@ class SessionProcess {
       timestamp: new Date().toISOString()
     };
     this.streamEventHistory.push(event);
+    if (this.streamEventHistory.length > 500) {
+      this.streamEventHistory.splice(0, this.streamEventHistory.length - 500);
+    }
     this.broadcast(streamMsg);
 
     // Persist stream event to DB for CLI history on reload

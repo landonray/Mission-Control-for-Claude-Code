@@ -48,7 +48,8 @@ async function chatCompletion({ model, max_tokens, system, messages }) {
   }
 
   const data = await response.json();
-  return data.content || '';
+  // Support both OpenAI-compatible format and direct content format
+  return data.choices?.[0]?.message?.content || data.content || '';
 }
 
 module.exports = { chatCompletion };
