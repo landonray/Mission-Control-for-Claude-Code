@@ -209,22 +209,13 @@ export default function SessionList() {
                     </div>
 
                     <div className={styles.statRow}>
-                      <span className={styles.statLabel}>Messages</span>
+                      <span className={styles.statLabel}>Diff</span>
                       <span className={styles.statValue}>
-                        {session.user_message_count || 0} user / {session.assistant_message_count || 0} assistant
+                        <span style={{ color: 'var(--success)', fontWeight: 600 }}>+{session.lines_added || 0}</span>
+                        {' '}
+                        <span style={{ color: 'var(--error)', fontWeight: 600 }}>-{session.lines_removed || 0}</span>
                       </span>
                     </div>
-
-                    {(session.lines_added > 0 || session.lines_removed > 0) && (
-                      <div className={styles.statRow}>
-                        <span className={styles.statLabel}>Diff</span>
-                        <span className={styles.statValue}>
-                          <span style={{ color: 'var(--success)', fontWeight: 600 }}>+{session.lines_added || 0}</span>
-                          {' '}
-                          <span style={{ color: 'var(--error)', fontWeight: 600 }}>-{session.lines_removed || 0}</span>
-                        </span>
-                      </div>
-                    )}
 
                     <div className={styles.statRow}>
                       <span className={styles.statLabel}>Context</span>

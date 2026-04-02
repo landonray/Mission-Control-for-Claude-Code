@@ -1,6 +1,6 @@
 import React from 'react';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
-import { MessageSquare, GitBranch, Clock, Activity, Cpu, Archive, ArchiveRestore, Plus, Minus } from 'lucide-react';
+import { GitBranch, Clock, Activity, Cpu, Archive, ArchiveRestore, Plus, Minus } from 'lucide-react';
 import QualityScorecard from '../Quality/QualityScorecard';
 import styles from './SessionCard.module.css';
 
@@ -53,15 +53,9 @@ export default function SessionCard({ session, onClick, onArchive }) {
 
       <div className={styles.stats}>
         <div className={styles.stat}>
-          <MessageSquare size={12} />
-          <span>{session.user_message_count || 0}u / {session.assistant_message_count || 0}a</span>
+          <span className={styles.diffAdded}>+{session.lines_added || 0}</span>
+          <span className={styles.diffRemoved}>-{session.lines_removed || 0}</span>
         </div>
-        {(session.lines_added > 0 || session.lines_removed > 0) && (
-          <div className={styles.stat}>
-            <span className={styles.diffAdded}>+{session.lines_added || 0}</span>
-            <span className={styles.diffRemoved}>-{session.lines_removed || 0}</span>
-          </div>
-        )}
         {session.worktree_name && (
           <div className={styles.stat} title="Worktree">
             <GitBranch size={12} />
