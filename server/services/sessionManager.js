@@ -76,9 +76,19 @@ if (tmuxAvailable) {
 
 // File-based logging for AutoName debugging
 const AUTONAME_LOG = path.join(__dirname, '..', '..', 'autoname.log');
+const MAX_LOG_SIZE = 1024 * 1024; // 1MB
 function autoNameLog(...args) {
   const line = `[${new Date().toISOString()}] ${args.join(' ')}\n`;
-  fs.appendFileSync(AUTONAME_LOG, line);
+  try {
+    const size = fs.statSync(AUTONAME_LOG).size;
+    if (size > MAX_LOG_SIZE) {
+      fs.writeFileSync(AUTONAME_LOG, line); // Truncate and start fresh
+    } else {
+      fs.appendFileSync(AUTONAME_LOG, line);
+    }
+  } catch {
+    fs.appendFileSync(AUTONAME_LOG, line); // File doesn't exist yet
+  }
   console.log('[AutoName]', ...args);
 }
 
@@ -1270,13 +1280,15 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
     return null;
   }
 
+  // Mark as in-progress BEFORE any async operations to close the race window
+  resumeInProgress.add(sessionId);
+
   const alreadyActive = activeSessions.get(sessionId);
   if (alreadyActive) {
+    resumeInProgress.delete(sessionId);
     await alreadyActive.sendMessage(newMessage);
     return alreadyActive;
   }
-
-  resumeInProgress.add(sessionId);
 
   const sessionResult = await query('SELECT * FROM sessions WHERE id = $1', [sessionId]);
   const sessionRow = sessionResult.rows[0];
