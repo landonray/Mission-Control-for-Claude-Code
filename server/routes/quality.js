@@ -37,6 +37,32 @@ router.post('/rules/:id/toggle', async (req, res) => {
   res.json({ ...rule, enabled: newEnabled, hooksUpdated: hookResult.success });
 });
 
+// Toggle send_fail_to_agent
+router.post('/rules/:id/send-fail-to-agent', async (req, res) => {
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+
+  const newValue = rule.send_fail_to_agent ? 0 : 1;
+  await query('UPDATE quality_rules SET send_fail_to_agent = $1, updated_at = NOW() WHERE id = $2',
+    [newValue, req.params.id]);
+
+  res.json({ ...rule, send_fail_to_agent: newValue });
+});
+
+// Toggle send_fail_requires_spec
+router.post('/rules/:id/send-fail-requires-spec', async (req, res) => {
+  const { rows } = await query('SELECT * FROM quality_rules WHERE id = $1', [req.params.id]);
+  const rule = rows[0];
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+
+  const newValue = rule.send_fail_requires_spec ? 0 : 1;
+  await query('UPDATE quality_rules SET send_fail_requires_spec = $1, updated_at = NOW() WHERE id = $2',
+    [newValue, req.params.id]);
+
+  res.json({ ...rule, send_fail_requires_spec: newValue });
+});
+
 // Update rule severity
 router.put('/rules/:id/severity', async (req, res) => {
   const { severity } = req.body;

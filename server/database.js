@@ -67,6 +67,7 @@ async function initializeDb() {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL,
       hook_type TEXT NOT NULL, fires_on TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'medium',
       enabled INTEGER DEFAULT 1, prompt TEXT, script TEXT, config TEXT, category TEXT,
+      send_fail_to_agent INTEGER DEFAULT 0, send_fail_requires_spec INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), updated_at TEXT DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS quality_results (
@@ -89,6 +90,8 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS use_worktree INTEGER DEFAULT 0`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS worktree_name TEXT`,
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments TEXT`,
+    `ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS send_fail_to_agent INTEGER DEFAULT 0`,
+    `ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS send_fail_requires_spec INTEGER DEFAULT 0`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
@@ -99,8 +102,8 @@ async function initializeDb() {
 
 async function seedQualityRules() {
   const insertSql = `
-    INSERT INTO quality_rules (id, name, description, hook_type, fires_on, severity, enabled, prompt, script, config, category, sort_order)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    INSERT INTO quality_rules (id, name, description, hook_type, fires_on, severity, enabled, prompt, script, config, category, sort_order, send_fail_to_agent, send_fail_requires_spec)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     ON CONFLICT (id) DO NOTHING
   `;
 
@@ -182,7 +185,7 @@ PASS: Code review passed. No issues found.`,
     {
       id: 'spec-compliance',
       name: 'Spec Compliance Verification',
-      description: 'Re-injects the spec, enumerates every requirement, and blocks if any are incomplete.',
+      description: 'Re-injects the spec, enumerates every requirement, and blocks completion if any are incomplete when a spec document is present.',
       hook_type: 'prompt',
       fires_on: 'Stop',
       severity: 'high',
@@ -197,14 +200,16 @@ Create a checklist:
 - [ ] Requirement (missing or incomplete)
 
 If any requirements are missing or incomplete, respond with:
-FAIL: The following requirements are not met: [list]
+FAIL: The following requirements are not met: [list each incomplete requirement with a brief explanation of what's missing]
 
 If all requirements are met, respond with:
 PASS: All spec requirements verified.`,
       script: null,
       config: null,
       category: 'completeness',
-      sort_order: 4
+      sort_order: 4,
+      send_fail_to_agent: 1,
+      send_fail_requires_spec: 1
     },
     {
       id: 'error-handling',
@@ -220,7 +225,8 @@ PASS: All spec requirements verified.`,
 3. Network/API calls without timeout or error handling
 4. User input used without validation
 5. Empty catch blocks that swallow errors
-6. Missing finally blocks for cleanup
+
+IMPORTANT: Look carefully at the FULL promise chain before reporting a missing .catch(). A .then().catch() split across multiple lines IS valid error handling. Only flag truly unhandled promises — ones with no .catch() anywhere in the chain and no surrounding try/catch.
 
 If error handling is incomplete, respond with:
 FAIL: [description of missing error handling]
@@ -1182,8 +1188,11 @@ exit 0`,
   ];
 
   for (const r of rules) {
-    await sql.query(insertSql, [r.id, r.name, r.description, r.hook_type, r.fires_on, r.severity, r.enabled, r.prompt, r.script, r.config, r.category, r.sort_order]);
+    await sql.query(insertSql, [r.id, r.name, r.description, r.hook_type, r.fires_on, r.severity, r.enabled, r.prompt, r.script, r.config, r.category, r.sort_order, r.send_fail_to_agent || 0, r.send_fail_requires_spec || 0]);
   }
+
+  // Ensure spec-compliance has send_fail_to_agent and send_fail_requires_spec enabled by default
+  await sql.query(`UPDATE quality_rules SET send_fail_to_agent = 1, send_fail_requires_spec = 1 WHERE id = 'spec-compliance' AND send_fail_to_agent = 0`);
 }
 
 module.exports = { query, initializeDb };

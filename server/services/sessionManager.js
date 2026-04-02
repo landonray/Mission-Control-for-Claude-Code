@@ -12,6 +12,22 @@ const qualityRunner = require('./qualityRunner');
 
 const activeSessions = new Map();
 
+/**
+ * Build a message to send back to the agent when quality rules with
+ * send_fail_to_agent fail. Combines all failures into a single directive.
+ */
+function buildQualityFailureMessage(failures) {
+  const sections = failures.map(f => {
+    let header = `**${f.ruleName}** failed`;
+    if (f.specPath) {
+      header += ` (spec: \`${f.specPath}\`)`;
+    }
+    return `### ${header}\n\n${f.analysis || f.details || 'No details available.'}`;
+  });
+
+  return `Quality check failed — you are not done.\n\n${sections.join('\n\n---\n\n')}\n\nContinue working on the issues listed above. Do not ask for permission — address every item, then stop when complete. The checks will run again automatically.`;
+}
+
 // Global event bus for broadcasting events that need to reach ALL WebSocket clients
 // (not just those subscribed to a specific session)
 const globalEvents = new EventEmitter();
@@ -420,7 +436,13 @@ class SessionProcess {
         timestamp: new Date().toISOString()
       });
       // Run Stop quality checks (--print mode doesn't fire Stop hooks)
-      qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).catch(e =>
+      qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).then(failures => {
+        if (failures && failures.length > 0) {
+          const message = buildQualityFailureMessage(failures);
+          console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent for session ${this.id.slice(0, 8)} — sending agent back to work`);
+          setTimeout(() => this.sendMessage(message), 500);
+        }
+      }).catch(e =>
         console.error('[QualityRunner] onSessionStop error:', e.message));
     }
 
@@ -514,7 +536,13 @@ class SessionProcess {
           timestamp: new Date().toISOString()
         });
         // Run Stop quality checks (--print mode doesn't fire Stop hooks)
-        qualityRunner.onSessionStop(this.id).catch(e =>
+        qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).then(failures => {
+          if (failures && failures.length > 0) {
+            const message = buildQualityFailureMessage(failures);
+            console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent for session ${this.id.slice(0, 8)} — sending agent back to work`);
+            setTimeout(() => this.sendMessage(message), 500);
+          }
+        }).catch(e =>
           console.error('[QualityRunner] onSessionStop error:', e.message));
       }
 

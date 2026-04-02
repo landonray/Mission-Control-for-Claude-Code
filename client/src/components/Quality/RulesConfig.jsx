@@ -4,7 +4,7 @@ import {
   Shield, ShieldCheck, ShieldAlert, ShieldX,
   ChevronDown, ChevronRight, Edit2, Save, X,
   Terminal, MessageSquare, Bot, Zap, Download, Trash2,
-  ToggleLeft, ToggleRight
+  ToggleLeft, ToggleRight, SendHorizontal, FileText
 } from 'lucide-react';
 import styles from './RulesConfig.module.css';
 
@@ -86,6 +86,20 @@ export default function RulesConfig() {
   const updateSeverity = async (ruleId, severity) => {
     try {
       await api.put(`/api/quality/rules/${ruleId}/severity`, { severity });
+      await loadRules();
+    } catch (e) {}
+  };
+
+  const toggleSendFailToAgent = async (ruleId) => {
+    try {
+      await api.post(`/api/quality/rules/${ruleId}/send-fail-to-agent`);
+      await loadRules();
+    } catch (e) {}
+  };
+
+  const toggleSendFailRequiresSpec = async (ruleId) => {
+    try {
+      await api.post(`/api/quality/rules/${ruleId}/send-fail-requires-spec`);
       await loadRules();
     } catch (e) {}
   };
@@ -249,6 +263,40 @@ export default function RulesConfig() {
                 {isExpanded && (
                   <div className={styles.ruleBody}>
                     <p className={styles.ruleDescription}>{rule.description}</p>
+
+                    <div className={styles.sendFailRow}>
+                      <button
+                        className={`${styles.sendFailToggle} ${rule.send_fail_to_agent ? styles.on : styles.off}`}
+                        onClick={() => toggleSendFailToAgent(rule.id)}
+                        title="When enabled, failed results are sent back to the agent as a message, telling it to keep working"
+                      >
+                        <span className={styles.toggleTrack}>
+                          <span className={styles.toggleThumb} />
+                        </span>
+                      </button>
+                      <span className={styles.sendFailLabel}>
+                        <SendHorizontal size={12} />
+                        Send failed result as message to agent
+                      </span>
+                    </div>
+
+                    {rule.send_fail_to_agent ? (
+                      <div className={`${styles.sendFailRow} ${styles.subOption}`}>
+                        <button
+                          className={`${styles.sendFailToggle} ${rule.send_fail_requires_spec ? styles.on : styles.off}`}
+                          onClick={() => toggleSendFailRequiresSpec(rule.id)}
+                          title="Only send failures to the agent when a spec document (spec.md, SPEC.md, etc.) is found in the project"
+                        >
+                          <span className={styles.toggleTrack}>
+                            <span className={styles.toggleThumb} />
+                          </span>
+                        </button>
+                        <span className={styles.sendFailLabel}>
+                          <FileText size={12} />
+                          Only when spec document is attached
+                        </span>
+                      </div>
+                    ) : null}
 
                     {!isEditing ? (
                       <div className={styles.ruleContent}>
