@@ -21,7 +21,7 @@ export function useWebSocket(sessionId) {
   const optimisticMessagesRef = useRef([]);
 
   // Get shared WebSocket from AppContext
-  const { ws: appWsRef } = useApp();
+  const { ws: appWsRef, state: { connected } } = useApp();
 
   // Reset all session state when switching sessions so stale data doesn't bleed across
   useEffect(() => {
@@ -40,7 +40,7 @@ export function useWebSocket(sessionId) {
 
     const ws = appWsRef?.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
-      // WS not ready yet — the ws-reconnected handler will pick it up
+      // WS not ready yet — effect will re-run when `connected` changes
       return;
     }
 
@@ -224,7 +224,7 @@ export function useWebSocket(sessionId) {
         ws.send(JSON.stringify({ type: 'unsubscribe_session', sessionId }));
       }
     };
-  }, [sessionId, appWsRef]);
+  }, [sessionId, appWsRef, connected]);
 
   // Re-subscribe on WebSocket reconnect and reload messages from DB
   useEffect(() => {
