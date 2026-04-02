@@ -21,7 +21,7 @@ export function useWebSocket(sessionId) {
   const optimisticMessagesRef = useRef([]);
 
   // Get shared WebSocket from AppContext
-  const { ws: appWsRef, state: { connected } } = useApp();
+  const { ws: appWsRef, connected } = useApp();
 
   // Reset all session state when switching sessions so stale data doesn't bleed across
   useEffect(() => {
@@ -230,10 +230,7 @@ export function useWebSocket(sessionId) {
   useEffect(() => {
     if (!sessionId) return;
     const onReconnect = () => {
-      const ws = appWsRef?.current;
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'subscribe_session', sessionId }));
-      }
+      // subscribe_session is handled by the main effect re-running on `connected` change
 
       // Clear any pending message ack timeouts on reconnect
       if (pendingMessagesRef.current.size > 0) {
