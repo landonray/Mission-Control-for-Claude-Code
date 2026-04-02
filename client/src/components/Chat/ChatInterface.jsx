@@ -342,7 +342,7 @@ export default function ChatInterface({ sessionId }) {
       )}
 
       {/* Messages */}
-      <MessageList messages={messages} loading={loading} streamEvents={streamEvents} status={status} />
+      <MessageList messages={messages} loading={loading} streamEvents={streamEvents} status={status} sendMessage={sendMessage} />
 
       {/* Permission Prompt */}
       {pendingPermission && (

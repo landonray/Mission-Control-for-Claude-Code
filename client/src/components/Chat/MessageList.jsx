@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
+import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
@@ -80,10 +80,20 @@ function WorkingIndicator({ streamEvents }) {
   );
 }
 
-function QualityResultItem({ msg }) {
+function QualityResultItem({ msg, sendMessage }) {
   const [expanded, setExpanded] = useState(false);
   const isFail = msg.result === 'fail';
   const hasAnalysis = msg.analysis && msg.analysis.length > 0;
+
+  const handleSendAsMessage = (e) => {
+    e.stopPropagation();
+    const parts = [
+      `**Quality Review: ${msg.ruleName}** — ${msg.result.toUpperCase()}`,
+    ];
+    if (msg.details) parts.push(msg.details);
+    if (msg.analysis) parts.push(`**Analysis:**\n${msg.analysis}`);
+    sendMessage(parts.join('\n\n'));
+  };
 
   return (
     <div
@@ -103,6 +113,12 @@ function QualityResultItem({ msg }) {
         {expanded && hasAnalysis && (
           <div className={styles.qualityAnalysis}>
             <MarkdownPreview content={msg.analysis} />
+            {sendMessage && (
+              <button className={styles.qualitySendBtn} onClick={handleSendAsMessage}>
+                <Send size={12} />
+                Send as message
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -111,7 +127,7 @@ function QualityResultItem({ msg }) {
   );
 }
 
-export default function MessageList({ messages, loading, streamEvents, status }) {
+export default function MessageList({ messages, loading, streamEvents, status, sendMessage }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
@@ -169,7 +185,7 @@ export default function MessageList({ messages, loading, streamEvents, status })
 
       {messages.map((msg, i) => {
         if (msg.role === 'quality') {
-          return <QualityResultItem key={i} msg={msg} />;
+          return <QualityResultItem key={i} msg={msg} sendMessage={sendMessage} />;
         }
 
         return (
