@@ -240,8 +240,13 @@ async function handleMessage(ws, msg, state) {
               };
               const resumed = await resumeSession(msg.sessionId, msg.content, { listener: onEvent });
               if (resumed) {
-                // resumeSession already calls addListener internally and stores the unsubscribe
-                state.sessionUnsubscribe = resumed._listenerUnsubscribe || (() => {});
+                // Use the stored unsubscribe if resumeSession attached it (fresh resume path),
+                // otherwise attach the listener ourselves (already-active early-return paths)
+                if (resumed._listenerUnsubscribe) {
+                  state.sessionUnsubscribe = resumed._listenerUnsubscribe;
+                } else {
+                  state.sessionUnsubscribe = resumed.addListener(onEvent);
+                }
                 if (messageId) {
                   safeSend(ws, {
                     type: 'message_ack',
