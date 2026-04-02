@@ -68,6 +68,7 @@ async function initializeDb() {
       hook_type TEXT NOT NULL, fires_on TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'medium',
       enabled INTEGER DEFAULT 1, prompt TEXT, script TEXT, config TEXT, category TEXT,
       send_fail_to_agent INTEGER DEFAULT 0, send_fail_requires_spec INTEGER DEFAULT 0,
+      execution_mode TEXT DEFAULT 'cli',
       sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW(), updated_at TEXT DEFAULT NOW()
     )`,
     `CREATE TABLE IF NOT EXISTS quality_results (
@@ -99,6 +100,7 @@ async function initializeDb() {
     `ALTER TABLE messages ADD COLUMN IF NOT EXISTS attachments TEXT`,
     `ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS send_fail_to_agent INTEGER DEFAULT 0`,
     `ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS send_fail_requires_spec INTEGER DEFAULT 0`,
+    `ALTER TABLE quality_rules ADD COLUMN IF NOT EXISTS execution_mode TEXT DEFAULT 'cli'`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
@@ -109,8 +111,8 @@ async function initializeDb() {
 
 async function seedQualityRules() {
   const insertSql = `
-    INSERT INTO quality_rules (id, name, description, hook_type, fires_on, severity, enabled, prompt, script, config, category, sort_order, send_fail_to_agent, send_fail_requires_spec)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    INSERT INTO quality_rules (id, name, description, hook_type, fires_on, severity, enabled, prompt, script, config, category, sort_order, send_fail_to_agent, send_fail_requires_spec, execution_mode)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
     ON CONFLICT (id) DO NOTHING
   `;
 
@@ -1195,7 +1197,7 @@ exit 0`,
   ];
 
   for (const r of rules) {
-    await sql.query(insertSql, [r.id, r.name, r.description, r.hook_type, r.fires_on, r.severity, r.enabled, r.prompt, r.script, r.config, r.category, r.sort_order, r.send_fail_to_agent || 0, r.send_fail_requires_spec || 0]);
+    await sql.query(insertSql, [r.id, r.name, r.description, r.hook_type, r.fires_on, r.severity, r.enabled, r.prompt, r.script, r.config, r.category, r.sort_order, r.send_fail_to_agent || 0, r.send_fail_requires_spec || 0, r.execution_mode || 'cli']);
   }
 
   // Ensure spec-compliance has send_fail_to_agent and send_fail_requires_spec enabled by default
