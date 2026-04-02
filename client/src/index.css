@@ -182,7 +182,9 @@ a:hover {
 
 .btn-ghost {
   background: transparent;
+  border: none;
   color: var(--text-secondary);
+  cursor: pointer;
 }
 .btn-ghost:hover {
   background: var(--bg-tertiary);
