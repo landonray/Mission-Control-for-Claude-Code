@@ -9,6 +9,7 @@
 
 const { chatCompletion } = require('./llmGateway');
 const { run: cliRun } = require('./cliAgent');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
@@ -93,12 +94,68 @@ function findSpecFile(cwd) {
 }
 
 /**
- * Run a quality check prompt via the Anthropic SDK.
+ * Gather git context from the session's working directory.
+ * Returns recent commits and the diff of the last commit.
+ */
+function getGitContext(cwd) {
+  if (!cwd) return '';
+
+  return new Promise((resolve) => {
+    const parts = [];
+
+    // Get recent commits
+    execFile('git', ['log', '--oneline', '-10'], { cwd, timeout: 5000 }, (err, stdout) => {
+      if (!err && stdout) parts.push(`## Recent Commits\n${stdout.trim()}`);
+
+      // Get diff of the most recent commit
+      execFile('git', ['diff', 'HEAD~1..HEAD', '--stat'], { cwd, timeout: 5000 }, (err2, stdout2) => {
+        if (!err2 && stdout2) parts.push(`## Last Commit Diff (stat)\n${stdout2.trim()}`);
+
+        // Get the actual last commit message + hash for verification
+        execFile('git', ['log', '-1', '--format=%H %s'], { cwd, timeout: 5000 }, (err3, stdout3) => {
+          if (!err3 && stdout3) parts.push(`## Last Commit\n${stdout3.trim()}`);
+
+          resolve(parts.length > 0 ? `\n\n## Git State\n${parts.join('\n\n')}` : '');
+        });
+      });
+    });
+  });
+}
+
+/**
+ * Parse allowed tools from a rule's config JSON.
+ * Returns an array of tool names, or empty array if none specified.
+ */
+function getAllowedTools(rule) {
+  if (!rule.config) return [];
+  try {
+    const config = JSON.parse(rule.config);
+    return Array.isArray(config.tools) ? config.tools : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Run a quality check prompt via the Anthropic SDK or CLI agent.
+ * Agent-type rules get tool access (Read, Glob, Grep) so they can inspect actual files.
+ *
+ * @param {object} rule - The quality rule
+ * @param {string} context - Conversation + git context
+ * @param {object} [options] - Additional options
+ * @param {string} [options.cwd] - Working directory for agent-type checks
  * Returns { result: 'pass'|'fail', details: string|null, analysis: string|null }
  */
-async function runQualityCheck(rule, context) {
+async function runQualityCheck(rule, context, options = {}) {
   try {
-    const prompt = `${rule.prompt}
+    const isAgent = rule.hook_type === 'agent';
+    const tools = isAgent ? getAllowedTools(rule) : [];
+
+    const agentInstructions = isAgent && tools.length > 0
+      ? `\n\nYou have access to these tools: ${tools.join(', ')}. Use them to read and inspect the actual code files — do not rely solely on the conversation context. Check the real files to verify changes were made correctly.`
+      : '';
+
+    const prompt = `${rule.prompt}${agentInstructions}
 
 Context about what just happened:
 ${context}
@@ -110,15 +167,19 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[brief reason]`;
 
     let fullText;
 
+    const systemPrompt = 'You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested. Use the git state provided in the context to verify what actually happened — do not claim commits do not exist unless you have checked the git log. Focus your review on the actual code changes shown in the context.';
+
     if (rule.execution_mode === 'cli') {
-      fullText = await cliRun(
-        `You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested.\n\n${prompt}`
-      ) || '';
+      fullText = await cliRun(`${systemPrompt}\n\n${prompt}`, {
+        allowedTools: tools.length > 0 ? tools : undefined,
+        cwd: options.cwd || undefined,
+        timeout: isAgent ? 180000 : 120000, // agents get more time since they use tools
+      }) || '';
     } else {
       fullText = await chatCompletion({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        system: 'You are a code quality reviewer. Be concise. Evaluate the code change and report PASS or FAIL with the exact QUALITY_RESULT marker format requested.',
+        max_tokens: isAgent ? 1000 : 500,
+        system: systemPrompt,
         messages: [{ role: 'user', content: prompt }],
       }) || '';
     }
@@ -141,7 +202,7 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[brief reason]`;
  * Uses a more thorough prompt that includes the spec text.
  * Returns { result: 'pass'|'fail', details: string|null, analysis: string|null }
  */
-async function runSpecComplianceCheck(rule, specContent, specPath, conversationContext) {
+async function runSpecComplianceCheck(rule, specContent, specPath, conversationContext, options = {}) {
   try {
     const prompt = `You are a strict spec compliance reviewer. A spec document is attached below.
 
@@ -169,15 +230,19 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[count] requirements incomplete`
 
     let fullText;
 
+    const specSystemPrompt = 'You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Use the git state provided in the context to verify what was actually committed. Do not claim commits do not exist unless you have checked the git log. If you cannot confirm a requirement was implemented from the conversation context or git history, mark it incomplete.';
+
     if (rule.execution_mode === 'cli') {
-      fullText = await cliRun(
-        `You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Do not give the benefit of the doubt. If you cannot confirm a requirement was implemented from the conversation context, mark it incomplete.\n\n${prompt}`
-      ) || '';
+      const tools = getAllowedTools(rule);
+      fullText = await cliRun(`${specSystemPrompt}\n\n${prompt}`, {
+        allowedTools: tools.length > 0 ? tools : undefined,
+        cwd: options.cwd || undefined,
+      }) || '';
     } else {
       fullText = await chatCompletion({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,
-        system: 'You are a strict spec compliance reviewer. Be thorough — enumerate every requirement from the spec and check each one. Do not give the benefit of the doubt. If you cannot confirm a requirement was implemented from the conversation context, mark it incomplete.',
+        system: specSystemPrompt,
         messages: [{ role: 'user', content: prompt }],
       }) || '';
     }
@@ -243,7 +308,9 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
   for (const rule of postToolRules) {
     if (rule.hook_type === 'command') continue;
 
-    const result = await runQualityCheck(rule, context);
+    // PostToolUse checks: get cwd from toolInput if available
+    const toolCwd = toolInput?.file_path ? path.dirname(toolInput.file_path) : undefined;
+    const result = await runQualityCheck(rule, context, { cwd: toolCwd });
     if (result) {
       await saveAndBroadcast(sessionId, rule, result, broadcast);
     }
@@ -276,14 +343,17 @@ async function onSessionStop(sessionId, broadcast) {
   // Check for spec file (used by spec-compliance for enhanced checking)
   const spec = findSpecFile(cwd);
 
+  // Gather git context (recent commits, diff) so reviewers can verify actual changes
+  const gitContext = await getGitContext(cwd);
+
   // Get recent session messages for context
   const { rows: messages } = await query(
     'SELECT role, content FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 20',
     [sessionId]
   );
   const context = messages.reverse()
-    .map(m => `${m.role}: ${m.content?.slice(0, 300) || ''}`)
-    .join('\n\n');
+    .map(m => `${m.role}: ${m.content?.slice(0, 1000) || ''}`)
+    .join('\n\n') + gitContext;
 
   const failuresToSend = [];
 
@@ -295,9 +365,9 @@ async function onSessionStop(sessionId, broadcast) {
     // For spec-compliance with a real spec file, use the enhanced check
     if (rule.id === 'spec-compliance' && spec.found) {
       console.log(`[QualityRunner] Spec file found at ${spec.path} — running enforcement-mode check`);
-      result = await runSpecComplianceCheck(rule, spec.content, spec.path, context);
+      result = await runSpecComplianceCheck(rule, spec.content, spec.path, context, { cwd });
     } else {
-      result = await runQualityCheck(rule, context);
+      result = await runQualityCheck(rule, context, { cwd });
     }
 
     if (result) {
