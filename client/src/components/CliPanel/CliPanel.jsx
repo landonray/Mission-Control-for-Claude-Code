@@ -131,7 +131,8 @@ export default function CliPanel({ sessionId }) {
       if (historicLines.length > 0) {
         setLines(historicLines);
       }
-      dbEventCountRef.current = result.events.length;
+      // Don't set dbEventCountRef here — it blocks live events on resumed sessions
+      // where stream_events_history replay doesn't arrive
     }).catch(e => console.error('Failed to load CLI history:', e.message));
 
     return () => { cancelled = true; };
