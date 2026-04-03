@@ -12,7 +12,6 @@ const severityColors = {
 export default function QualityScorecard({ sessionId }) {
   const [data, setData] = useState(null);
   const [expanded, setExpanded] = useState(false);
-
   useEffect(() => {
     if (!sessionId) return;
     loadScorecard();
@@ -24,7 +23,9 @@ export default function QualityScorecard({ sessionId }) {
     try {
       const result = await api.get(`/api/quality/results/scorecard/${sessionId}`);
       setData(result);
-    } catch (e) {}
+    } catch (e) {
+      console.error('[QualityScorecard] Failed to load scorecard:', e.message);
+    }
   };
 
   if (!data || data.rules.length === 0) return null;

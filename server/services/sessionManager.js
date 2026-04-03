@@ -1296,8 +1296,9 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
   activeSessions.set(sessionId, session);
 
   // Attach listener before any broadcasts so the client doesn't miss events
+  // Store unsubscribe on the session so callers can clean up without reaching into internals
   if (listener) {
-    session.addListener(listener);
+    session._listenerUnsubscribe = session.addListener(listener);
   }
 
   await query("UPDATE sessions SET status = 'working', ended_at = NULL, last_activity_at = NOW() WHERE id = $1", [sessionId]);
