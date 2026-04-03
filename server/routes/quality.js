@@ -89,8 +89,14 @@ router.put('/rules/:id/trigger', async (req, res) => {
     'Stop', 'PostToolUse', 'PreToolUse', 'PostToolUseFailure',
     'SessionStart', 'SessionEnd', 'SubagentStop', 'Notification'
   ];
-  if (!fires_on || !validTriggers.includes(fires_on)) {
-    return res.status(400).json({ error: `fires_on must be one of: ${validTriggers.join(', ')}` });
+  // Support composite triggers like "PostToolUse:Write,PostToolUse:Edit"
+  const parts = fires_on ? fires_on.split(',').map(s => s.trim()) : [];
+  if (parts.length === 0) {
+    return res.status(400).json({ error: 'fires_on is required' });
+  }
+  const allValid = parts.every(part => validTriggers.includes(part.split(':')[0]));
+  if (!allValid) {
+    return res.status(400).json({ error: `Each trigger must start with one of: ${validTriggers.join(', ')}` });
   }
 
   await query('UPDATE quality_rules SET fires_on = $1, updated_at = NOW() WHERE id = $2',

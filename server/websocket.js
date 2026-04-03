@@ -2,11 +2,22 @@ const WebSocket = require('ws');
 const { getSession, activeSessions, resumeSession, globalEvents } = require('./services/sessionManager');
 const { watchDirectory, unwatchDirectory } = require('./services/fileWatcher');
 const { sendNotification } = require('./services/notificationService');
+const { tokensMatch } = require('./middleware/auth');
 
 function setupWebSocket(server) {
   const wss = new WebSocket.Server({ server, path: '/ws' });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    const AUTH_TOKEN = process.env.MC_AUTH_TOKEN;
+    if (AUTH_TOKEN) {
+      const url = new URL(req.url, 'http://localhost');
+      const token = url.searchParams.get('token');
+      if (!token || !tokensMatch(token, AUTH_TOKEN)) {
+        ws.close(4001, 'Unauthorized');
+        return;
+      }
+    }
+
     // Mutable state object shared between all handlers for this connection.
     // Using an object (not bare variables) so handleMessage can mutate it
     // and the changes are visible to the close handler and future messages.
@@ -107,19 +118,24 @@ function setupWebSocket(server) {
 
   wss.on('close', () => clearInterval(heartbeat));
 
-  // Broadcast session status updates periodically
+  // Broadcast session status updates only when state changes
+  let lastBroadcastState = '';
   setInterval(() => {
-    const statusUpdate = {
-      type: 'sessions_status',
-      sessions: Array.from(activeSessions.entries()).map(([id, session]) => ({
-        id,
-        status: session.status,
-        pendingPermission: !!session.pendingPermission
-      })),
-      timestamp: new Date().toISOString()
-    };
+    const sessions = Array.from(activeSessions.entries()).map(([id, session]) => ({
+      id,
+      status: session.status,
+      pendingPermission: !!session.pendingPermission
+    }));
 
-    broadcast(wss, statusUpdate);
+    const stateKey = JSON.stringify(sessions);
+    if (stateKey !== lastBroadcastState) {
+      lastBroadcastState = stateKey;
+      broadcast(wss, {
+        type: 'sessions_status',
+        sessions,
+        timestamp: new Date().toISOString()
+      });
+    }
   }, 5000);
 
   return wss;
@@ -224,7 +240,8 @@ async function handleMessage(ws, msg, state) {
               };
               const resumed = await resumeSession(msg.sessionId, msg.content, { listener: onEvent });
               if (resumed) {
-                state.sessionUnsubscribe = resumed.addListener(onEvent);
+                // resumeSession already calls addListener internally — just store the unsubscribe
+                state.sessionUnsubscribe = () => resumed.listeners.delete(onEvent);
                 if (messageId) {
                   safeSend(ws, {
                     type: 'message_ack',

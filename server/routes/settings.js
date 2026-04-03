@@ -29,6 +29,11 @@ router.put('/general', async (req, res) => {
 
 // POST /api/settings/restart — gracefully restart the server process
 router.post('/restart', (req, res) => {
+  const { confirm } = req.body;
+  if (confirm !== true) {
+    return res.status(400).json({ error: 'Must send { confirm: true } to restart server' });
+  }
+
   const { spawn } = require('child_process');
   const path = require('path');
 

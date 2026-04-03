@@ -1,9 +1,15 @@
 const BASE_URL = '';
+const AUTH_TOKEN = import.meta.env.VITE_MC_AUTH_TOKEN;
 
 async function request(method, url, body = null) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (AUTH_TOKEN) {
+    headers['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+  }
+
   const options = {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     cache: 'no-store',
   };
 
@@ -31,8 +37,13 @@ export const api = {
     for (const file of files) {
       formData.append('files', file);
     }
+    const uploadHeaders = {};
+    if (AUTH_TOKEN) {
+      uploadHeaders['Authorization'] = `Bearer ${AUTH_TOKEN}`;
+    }
     const response = await fetch(`${BASE_URL}/api/uploads`, {
       method: 'POST',
+      headers: uploadHeaders,
       body: formData,
     });
     if (!response.ok) {

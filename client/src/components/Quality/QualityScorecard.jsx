@@ -16,7 +16,7 @@ export default function QualityScorecard({ sessionId }) {
   useEffect(() => {
     if (!sessionId) return;
     loadScorecard();
-    const interval = setInterval(loadScorecard, 15000);
+    const interval = setInterval(loadScorecard, 60000);
     return () => clearInterval(interval);
   }, [sessionId]);
 

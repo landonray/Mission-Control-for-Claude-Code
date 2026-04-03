@@ -32,8 +32,11 @@ export default function SessionList() {
 
   useEffect(() => {
     loadSessions();
-    const interval = setInterval(loadSessions, 30000);
-    return () => clearInterval(interval);
+    // No polling interval — WS broadcasts sessions_status every 5 seconds
+    // Full reload only on initial mount and reconnect
+    const onReconnect = () => loadSessions();
+    window.addEventListener('ws-reconnected', onReconnect);
+    return () => window.removeEventListener('ws-reconnected', onReconnect);
   }, [loadSessions]);
 
   const handleSelect = (sessionId) => {

@@ -33,7 +33,11 @@ export function useWebSocket(sessionId) {
     function connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsHost = window.location.hostname + ':3000';
-      const ws = new WebSocket(`${protocol}//${wsHost}/ws`);
+      const authToken = import.meta.env.VITE_MC_AUTH_TOKEN;
+      const wsUrl = authToken
+        ? `${protocol}//${wsHost}/ws?token=${authToken}`
+        : `${protocol}//${wsHost}/ws`;
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

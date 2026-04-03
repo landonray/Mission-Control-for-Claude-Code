@@ -15,6 +15,14 @@ const PORT = process.env.SERVER_PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Health check (exempt from auth — used by client to poll server status during restarts)
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
+const { requireAuth } = require('./middleware/auth');
+app.use('/api', requireAuth);
+
 // API Routes
 app.use('/api/sessions', require('./routes/sessions'));
 app.use('/api/files', require('./routes/files'));
@@ -25,11 +33,6 @@ app.use('/api/quality', require('./routes/quality'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/uploads', require('./routes/uploads'));
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime() });
-});
 
 // Serve React frontend in production
 const clientDist = path.join(__dirname, '..', 'client', 'dist');
