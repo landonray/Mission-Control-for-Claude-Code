@@ -32,7 +32,8 @@ export function useWebSocket(sessionId) {
 
     function connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      const wsHost = window.location.hostname + ':3000';
+      const ws = new WebSocket(`${protocol}//${wsHost}/ws`);
       wsRef.current = ws;
 
       ws.onopen = () => {

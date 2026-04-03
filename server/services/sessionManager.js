@@ -770,7 +770,7 @@ class SessionProcess {
   }
 
   async sendMessage(text, attachments = null) {
-    if (this.process) {
+    if (this.process && this.status === 'working') {
       // A process is already running — queue the message but still show it in the UI
       this.messageQueue.push(text);
 
