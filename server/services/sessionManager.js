@@ -603,10 +603,20 @@ class SessionProcess {
   }
 
   detectDevServerUrl(text) {
-    const match = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+/i);
-    if (!match) return;
+    // First try matching a full URL (http://localhost:PORT)
+    let match = text.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):\d+/i);
+    let url;
 
-    const url = match[0].replace('0.0.0.0', 'localhost');
+    if (match) {
+      url = match[0].replace('0.0.0.0', 'localhost');
+    } else {
+      // Fallback: match port-only patterns from common dev server output
+      // e.g. "localhost:5211", "port 5211", "Port: 5211", "on port 3000"
+      const portMatch = text.match(/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{4,5})/i)
+        || text.match(/(?:on |listening on |started on |running on |port[: ]+)(\d{4,5})\b/i);
+      if (!portMatch) return;
+      url = `http://localhost:${portMatch[1]}`;
+    }
 
     if (this._lastDetectedUrl === url) return;
     this._lastDetectedUrl = url;
@@ -692,6 +702,7 @@ class SessionProcess {
             content = JSON.stringify(event.message);
           }
           if (content) {
+            this.detectDevServerUrl(content);
             await query(
               `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
               [this.id, content]

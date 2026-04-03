@@ -83,7 +83,7 @@ export default function PreviewPanel({ sessionId }) {
     setStarting(true);
     try {
       await api.post(`/api/sessions/${sessionId}/message`, {
-        content: 'Start the dev server for this project. Look at the project files to determine the correct command (e.g. npm run dev, npm start, python manage.py runserver, etc). Run it in the background so it stays running.'
+        content: 'Start the dev server for this project. Look at the project files to determine the correct command (e.g. npm run dev, npm start, python manage.py runserver, etc). Run it in the background so it stays running. After starting, confirm the full URL it is running on (e.g. http://localhost:3000).'
       });
     } catch (e) {
       setStarting(false);
