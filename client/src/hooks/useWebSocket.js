@@ -116,11 +116,14 @@ export function useWebSocket(sessionId) {
               optimisticMessagesRef.current = optimisticMessagesRef.current.filter(
                 m => m.content !== data.content
               );
-              // Deduplicate — the message may already exist from optimistic add
+              // Deduplicate — the message may already exist from optimistic add.
+              // Check all recent messages (not just last) since other events can
+              // arrive between the optimistic add and the server broadcast.
               setMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last && last.role === 'user' && last.content === data.content) {
-                  return prev;
+                for (let i = prev.length - 1; i >= 0 && i >= prev.length - 10; i--) {
+                  if (prev[i].role === 'user' && prev[i].content === data.content) {
+                    return prev;
+                  }
                 }
                 return [...prev, {
                   role: 'user',

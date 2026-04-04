@@ -1310,6 +1310,7 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
   if (resumeInProgress.has(sessionId)) {
     const existing = activeSessions.get(sessionId);
     if (existing) {
+      if (listener) existing.addListener(listener);
       await existing.sendMessage(newMessage);
       return existing;
     }
@@ -1318,6 +1319,7 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
 
   const alreadyActive = activeSessions.get(sessionId);
   if (alreadyActive) {
+    if (listener) alreadyActive.addListener(listener);
     await alreadyActive.sendMessage(newMessage);
     return alreadyActive;
   }
