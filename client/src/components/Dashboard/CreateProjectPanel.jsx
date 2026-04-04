@@ -23,7 +23,7 @@ export default function CreateProjectPanel({ onBack, onCreated, model }) {
 
   const hasSetupRepo = !!generalSettings?.setup_repo;
 
-  const normalizeName = (raw) => raw.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '');
+  const normalizeName = (raw) => raw.trim().replace(/\s+/g, '-').replace(/[^a-zA-Z0-9_-]/g, '').replace(/^-+|-+$/g, '');
 
   const handleSubmit = async (e) => {
     e.preventDefault();

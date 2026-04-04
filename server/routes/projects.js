@@ -85,9 +85,9 @@ router.get('/setup-readme', async (req, res) => {
 router.post('/create', async (req, res) => {
   const { name, visibility = 'private', model, autoSetup = true } = req.body;
 
-  // Validate name
-  if (!name || !/^[a-zA-Z0-9_-]+$/.test(name) || name.length > 100) {
-    return res.status(400).json({ error: 'Project name must be alphanumeric with hyphens/underscores, max 100 chars.' });
+  // Validate name (reject leading/trailing hyphens — GitHub strips them, causing push failures)
+  if (!name || !/^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$/.test(name) || name.length > 100) {
+    return res.status(400).json({ error: 'Project name must be alphanumeric with hyphens/underscores, cannot start or end with a hyphen, max 100 chars.' });
   }
 
   const settings = await getSettings();
