@@ -94,6 +94,47 @@ function findSpecFile(cwd) {
 }
 
 /**
+ * Search for a spec/document in session message attachments.
+ * Checks for non-image file attachments uploaded through the chat UI.
+ * Returns { found: boolean, path: string|null, content: string|null }
+ */
+async function findSpecFromAttachments(sessionId) {
+  const { rows } = await query(
+    'SELECT attachments FROM messages WHERE session_id = $1 AND attachments IS NOT NULL ORDER BY timestamp ASC',
+    [sessionId]
+  );
+
+  const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+
+  for (const row of rows) {
+    let attachments;
+    try {
+      attachments = JSON.parse(row.attachments);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(attachments)) continue;
+
+    for (const att of attachments) {
+      // Skip images — we're looking for document attachments
+      if (att.isImage) continue;
+
+      const filePath = path.join(uploadsDir, att.filename);
+      try {
+        if (fs.existsSync(filePath)) {
+          const content = fs.readFileSync(filePath, 'utf-8');
+          return { found: true, path: att.originalName || att.filename, content };
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  return { found: false, path: null, content: null };
+}
+
+/**
  * Gather git context from the session's working directory.
  * Returns recent commits and the diff of the last commit.
  */
@@ -340,8 +381,11 @@ async function onSessionStop(sessionId, broadcast) {
   );
   const cwd = sessionRows[0]?.working_directory || null;
 
-  // Check for spec file (used by spec-compliance for enhanced checking)
-  const spec = findSpecFile(cwd);
+  // Check for spec file on disk, then fall back to message attachments
+  let spec = findSpecFile(cwd);
+  if (!spec.found) {
+    spec = await findSpecFromAttachments(sessionId);
+  }
 
   // Gather git context (recent commits, diff) so reviewers can verify actual changes
   const gitContext = await getGitContext(cwd);
@@ -359,6 +403,12 @@ async function onSessionStop(sessionId, broadcast) {
 
   for (const rule of stopRules) {
     if (rule.hook_type === 'command') continue;
+
+    // If rule requires a spec document to run, skip it entirely when none is found
+    if (rule.send_fail_requires_spec && !spec.found) {
+      console.log(`[QualityRunner] Rule "${rule.name}" requires spec document but none found — skipping`);
+      continue;
+    }
 
     let result;
 
