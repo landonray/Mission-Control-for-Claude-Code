@@ -67,6 +67,10 @@
     max-width: 100%;
   }
 
+  .nameDisplay {
+    display: none;
+  }
+
   .scorecardWrapper {
     padding: 0 8px;
   }

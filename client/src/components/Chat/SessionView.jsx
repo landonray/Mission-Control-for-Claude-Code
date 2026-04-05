@@ -3,11 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import ChatInterface from './ChatInterface';
 import { ArrowLeft } from 'lucide-react';
+import styles from './SessionView.module.css';
 
 export default function SessionView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { dispatch } = useApp();
+  const { state, dispatch } = useApp();
+  const session = state.sessions.find(s => s.id === id);
 
   useEffect(() => {
     if (id && id !== 'active') {
@@ -28,10 +30,13 @@ export default function SessionView() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+      <div className={styles.backBar}>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate('/')}>
           <ArrowLeft size={14} /> Back
         </button>
+        {session?.name && (
+          <span className={styles.mobileTitle}>{session.name}</span>
+        )}
       </div>
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <ChatInterface sessionId={id} />

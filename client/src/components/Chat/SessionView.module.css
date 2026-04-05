@@ -1,0 +1,24 @@
+.backBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mobileTitle {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobileTitle {
+    display: block;
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+  }
+}

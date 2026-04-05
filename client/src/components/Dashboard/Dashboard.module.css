@@ -130,6 +130,16 @@
   }
 
   .grid {
-    grid-template-columns: 1fr;
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
+  }
+
+  .grid > * {
+    flex: 0 0 85vw;
+    max-width: 85vw;
+    scroll-snap-align: start;
   }
 }
