@@ -122,3 +122,15 @@
   text-transform: uppercase;
   flex-shrink: 0;
 }
+
+@media (max-width: 768px) {
+  .header {
+    padding: 8px 10px;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .ruleResult {
+    padding: 6px 10px;
+  }
+}

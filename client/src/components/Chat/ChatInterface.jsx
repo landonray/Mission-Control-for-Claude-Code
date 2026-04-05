@@ -333,12 +333,12 @@ export default function ChatInterface({ sessionId }) {
             </div>
           )}
           {session?.worktree_name && (
-            <span className="badge" title="Worktree" style={{ gap: 4, display: 'inline-flex', alignItems: 'center' }}>
+            <span className="badge" title="Worktree" style={{ gap: 4, display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
               <GitBranch size={10} />
               {session.worktree_name}
             </span>
           )}
-          <span className={`badge badge-${status}`}>{status}</span>
+          <span className={`badge badge-${status}`} style={{ flexShrink: 0 }}>{status}</span>
         </div>
         <div className={styles.headerRight}>
           <ContextIndicator usage={session?.context_window_usage || 0} />
@@ -347,7 +347,7 @@ export default function ChatInterface({ sessionId }) {
       </div>
 
       {/* Quality Scorecard */}
-      <div style={{ padding: '0 16px', flexShrink: 0 }}>
+      <div className={styles.scorecardWrapper}>
         <QualityScorecard sessionId={sessionId} />
       </div>
 
