@@ -133,6 +133,7 @@ class SessionProcess {
     this.resuming = false; // true when restoring context for a resumed session
     this.streamEventHistory = []; // buffered stream events for replay on reconnect
     this.stderrBuffer = ''; // accumulates stderr for error reporting
+    this._qualityStopDispatched = false; // guard against duplicate onSessionStop calls
   }
 
   addListener(callback) {
@@ -440,14 +441,17 @@ class SessionProcess {
         timestamp: new Date().toISOString()
       });
       // Run Stop quality checks (--print mode doesn't fire Stop hooks)
-      qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).then(failures => {
-        if (failures && failures.length > 0) {
-          const message = buildQualityFailureMessage(failures);
-          console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent for session ${this.id.slice(0, 8)} — sending agent back to work`);
-          setTimeout(() => this.sendMessage(message), 500);
-        }
-      }).catch(e =>
-        console.error('[QualityRunner] onSessionStop error:', e.message));
+      if (!this._qualityStopDispatched) {
+        this._qualityStopDispatched = true;
+        qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).then(failures => {
+          if (failures && failures.length > 0) {
+            const message = buildQualityFailureMessage(failures);
+            console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent for session ${this.id.slice(0, 8)} — sending agent back to work`);
+            setTimeout(() => this.sendMessage(message), 500);
+          }
+        }).catch(e =>
+          console.error('[QualityRunner] onSessionStop error:', e.message));
+      }
     }
 
     // Process queued messages
@@ -545,14 +549,17 @@ class SessionProcess {
           timestamp: new Date().toISOString()
         });
         // Run Stop quality checks (--print mode doesn't fire Stop hooks)
-        qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).then(failures => {
-          if (failures && failures.length > 0) {
-            const message = buildQualityFailureMessage(failures);
-            console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent for session ${this.id.slice(0, 8)} — sending agent back to work`);
-            setTimeout(() => this.sendMessage(message), 500);
-          }
-        }).catch(e =>
-          console.error('[QualityRunner] onSessionStop error:', e.message));
+        if (!this._qualityStopDispatched) {
+          this._qualityStopDispatched = true;
+          qualityRunner.onSessionStop(this.id, this.broadcast.bind(this)).then(failures => {
+            if (failures && failures.length > 0) {
+              const message = buildQualityFailureMessage(failures);
+              console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent for session ${this.id.slice(0, 8)} — sending agent back to work`);
+              setTimeout(() => this.sendMessage(message), 500);
+            }
+          }).catch(e =>
+            console.error('[QualityRunner] onSessionStop error:', e.message));
+        }
       }
 
       // Drain message queue (matches tmux behavior)
@@ -926,6 +933,7 @@ class SessionProcess {
     // Clear stale error/permission state from previous process failures
     this.errorMessage = null;
     this.pendingPermission = null;
+    this._qualityStopDispatched = false; // reset for the new work cycle
 
     this.status = 'working';
     this.updateDbStatus('working');
