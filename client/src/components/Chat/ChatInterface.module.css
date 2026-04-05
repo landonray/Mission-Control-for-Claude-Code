@@ -93,6 +93,12 @@
   background: var(--bg-tertiary);
 }
 
+@media (max-width: 768px) {
+  .nameDisplay {
+    display: none;
+  }
+}
+
 .editIcon {
   color: var(--text-muted);
   opacity: 0;
