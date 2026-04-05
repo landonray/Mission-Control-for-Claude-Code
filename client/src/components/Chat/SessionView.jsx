@@ -8,8 +8,8 @@ import styles from './SessionView.module.css';
 export default function SessionView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { state, dispatch } = useApp();
-  const session = state.sessions.find(s => s.id === id);
+  const { sessions, dispatch } = useApp();
+  const session = sessions.find(s => s.id === id);
 
   useEffect(() => {
     if (id && id !== 'active') {
