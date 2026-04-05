@@ -91,11 +91,20 @@ export function useWebSocket(sessionId) {
                   content = JSON.stringify(msg);
                 }
                 if (content) {
-                  setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content,
-                    timestamp: data.timestamp
-                  }]);
+                  setMessages(prev => {
+                    // Deduplicate — the message may already exist from loadMessages DB fetch
+                    // (same race that affects user messages). Check recent messages for match.
+                    for (let i = prev.length - 1; i >= 0 && i >= prev.length - 10; i--) {
+                      if (prev[i].role === 'assistant' && prev[i].content === content) {
+                        return prev;
+                      }
+                    }
+                    return [...prev, {
+                      role: 'assistant',
+                      content,
+                      timestamp: data.timestamp
+                    }];
+                  });
                 }
               }
 
