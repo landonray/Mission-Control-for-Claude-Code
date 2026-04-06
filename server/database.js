@@ -104,6 +104,7 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lines_added INTEGER DEFAULT 0`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lines_removed INTEGER DEFAULT 0`,
     `ALTER TABLE quality_results ADD COLUMN IF NOT EXISTS analysis TEXT`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS has_spec INTEGER DEFAULT 0`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

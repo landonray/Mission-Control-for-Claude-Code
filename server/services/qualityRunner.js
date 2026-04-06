@@ -374,12 +374,13 @@ async function onSessionStop(sessionId, broadcast) {
 
   if (stopRules.length === 0) return [];
 
-  // Get session working directory
+  // Get session working directory and has_spec flag
   const { rows: sessionRows } = await query(
-    'SELECT working_directory FROM sessions WHERE id = $1',
+    'SELECT working_directory, has_spec FROM sessions WHERE id = $1',
     [sessionId]
   );
   const cwd = sessionRows[0]?.working_directory || null;
+  const hasSpecFlag = !!sessionRows[0]?.has_spec;
 
   // Check for spec file on disk, then fall back to message attachments
   let spec = findSpecFile(cwd);
@@ -404,8 +405,8 @@ async function onSessionStop(sessionId, broadcast) {
   for (const rule of stopRules) {
     if (rule.hook_type === 'command') continue;
 
-    // If rule requires a spec document to run, skip it entirely when none is found
-    if (rule.send_fail_requires_spec && !spec.found) {
+    // If rule requires a spec document to run, skip it when no spec is found AND no spec was attached to this session
+    if (rule.send_fail_requires_spec && !spec.found && !hasSpecFlag) {
       console.log(`[QualityRunner] Rule "${rule.name}" requires spec document but none found — skipping`);
       continue;
     }
@@ -425,8 +426,8 @@ async function onSessionStop(sessionId, broadcast) {
 
       // Collect failures for rules with send_fail_to_agent enabled
       if (result.result === 'fail' && rule.send_fail_to_agent) {
-        // If requires_spec is set, only send when a spec file is present
-        if (rule.send_fail_requires_spec && !spec.found) {
+        // If requires_spec is set, only send when a spec file is present or was attached to this session
+        if (rule.send_fail_requires_spec && !spec.found && !hasSpecFlag) {
           console.log(`[QualityRunner] Rule "${rule.name}" failed but no spec found — skipping send to agent`);
         } else {
           console.log(`[QualityRunner] Rule "${rule.name}" failed with send_fail_to_agent — will message agent`);

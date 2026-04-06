@@ -876,6 +876,12 @@ class SessionProcess {
     const msgCountResult = await query('SELECT user_message_count FROM sessions WHERE id = $1', [this.id]);
     const msgCount = msgCountResult.rows[0];
     if (msgCount && msgCount.user_message_count === 0) {
+      // Set has_spec flag if the initial prompt includes a non-image attachment
+      if (attachments && Array.isArray(attachments) && attachments.some(a => !a.isImage)) {
+        this.hasSpec = true;
+        query('UPDATE sessions SET has_spec = 1 WHERE id = $1', [this.id])
+          .catch(e => console.error(`[SessionManager] Failed to set has_spec for ${this.id.slice(0,8)}:`, e.message));
+      }
       generateSessionName(text).then(async (name) => {
         if (!name) {
           autoNameLog(`No name generated for session ${this.id.slice(0,8)}`);
