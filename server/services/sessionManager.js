@@ -214,6 +214,7 @@ class SessionProcess {
 
     // --permission-mode is ignored on --resume, so use --dangerously-skip-permissions
     // for bypassPermissions/auto modes to ensure writes work on resumed sessions.
+    // For plan mode on resumed sessions, we inject a prompt prefix instead.
     const mode = this.permissionMode || 'auto';
     if (mode === 'bypassPermissions') {
       args.push('--dangerously-skip-permissions');
@@ -235,7 +236,14 @@ class SessionProcess {
       args.push('--mcp-config', JSON.stringify(mcpConfig));
     }
 
-    args.push(resolveUploadPaths(prompt, this.workingDirectory));
+    // On resumed sessions, --permission-mode plan is ignored by the CLI.
+    // Enforce plan mode via prompt prefix so Claude won't make changes.
+    let finalPrompt = prompt;
+    if (mode === 'plan' && this.cliSessionId) {
+      finalPrompt = `IMPORTANT: You are in plan/read-only mode. Do NOT edit, write, or create any files. Do not use the Edit, Write, or NotebookEdit tools. Only read, search, analyze, and discuss.\n\n${prompt}`;
+    }
+
+    args.push(resolveUploadPaths(finalPrompt, this.workingDirectory));
 
     return args;
   }
