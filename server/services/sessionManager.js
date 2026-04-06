@@ -323,9 +323,15 @@ class SessionProcess {
       // Kill existing tmux session if it exists (stale)
       try { execSync(`tmux kill-session -t ${tmuxName} 2>/dev/null`, { stdio: 'ignore' }); } catch (e) {}
 
-      // Create tmux session running the script via bash to handle spaces in path.
+      // Create tmux session with a clean environment — strip DATABASE_URL and other
+      // server-specific vars so child projects don't inherit Command Center's database.
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.DATABASE_URL;
+      delete cleanEnv.LLM_GATEWAY_KEY;
+
       execSync(`tmux new-session -d -s ${tmuxName} "bash '${scriptPath}'"`, {
-        stdio: 'ignore'
+        stdio: 'ignore',
+        env: cleanEnv
       });
 
       // Verify the tmux session is actually running (it can exit immediately on failure

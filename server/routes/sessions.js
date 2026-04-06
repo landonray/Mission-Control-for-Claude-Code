@@ -32,7 +32,7 @@ router.get('/', async (req, res) => {
     const isStale = s.status !== 'ended' && !activeIds.has(s.id) && !s.tmux_session_name;
     if (isStale) {
       await query(
-        "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, NOW()::text) WHERE id = $1",
+        "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, NOW()) WHERE id = $1",
         [s.id]
       );
       s.status = 'ended';
@@ -92,7 +92,7 @@ router.get('/:id', async (req, res) => {
   // Reconcile stale status — skip tmux sessions
   if (session.status !== 'ended' && !activeSession && !session.tmux_session_name) {
     await query(
-      "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, NOW()::text) WHERE id = $1",
+      "UPDATE sessions SET status = 'ended', ended_at = COALESCE(ended_at, NOW()) WHERE id = $1",
       [req.params.id]
     );
     session.status = 'ended';
