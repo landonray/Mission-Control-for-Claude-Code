@@ -30,7 +30,7 @@ const triggerOptions = [
   { value: 'SessionEnd', label: 'SessionEnd' },
   { value: 'SubagentStop', label: 'SubagentStop' },
   { value: 'Notification', label: 'Notification' },
-  { value: 'PRCreated', label: 'PR Created' },
+  { value: 'PRCreated', label: 'PR Created or Updated' },
 ];
 
 const severityColors = {
