@@ -384,7 +384,7 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
   }) : [];
 
   const matchingRules = [...postToolRules, ...prCreatedRules];
-  if (matchingRules.length === 0) return;
+  if (matchingRules.length === 0) return [];
 
   // Build context from tool use
   const context = `Tool used: ${toolName}\nInput: ${JSON.stringify(toolInput).slice(0, 1000)}`;
@@ -402,6 +402,8 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
     toolCwd = sessionRows[0]?.working_directory || undefined;
   }
 
+  const failuresToSend = [];
+
   await Promise.all(matchingRules.map(async (rule) => {
     if (rule.hook_type === 'command') return;
 
@@ -417,6 +419,17 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
     const result = await runQualityCheck(rule, context, { cwd: toolCwd });
     if (result) {
       await saveAndBroadcast(sessionId, rule, result, broadcast);
+
+      // Collect failures for rules with send_fail_to_agent enabled
+      if (result.result === 'fail' && rule.send_fail_to_agent) {
+        console.log(`[QualityRunner] Rule "${rule.name}" failed with send_fail_to_agent (onToolUse) — will message agent`);
+        failuresToSend.push({
+          ruleId: rule.id,
+          ruleName: rule.name,
+          analysis: result.analysis,
+          details: result.details,
+        });
+      }
     } else {
       // Error case — clean up running tracker so it doesn't stick forever
       const sr = runningChecks.get(sessionId);
@@ -426,6 +439,8 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
       }
     }
   }));
+
+  return failuresToSend;
 }
 
 /**

@@ -758,7 +758,13 @@ class SessionProcess {
                   totalAdded += input.content.split('\n').length;
                 }
 
-                qualityRunner.onToolUse(this.id, block.name, block.input, this.broadcast.bind(this)).catch(e =>
+                qualityRunner.onToolUse(this.id, block.name, block.input, this.broadcast.bind(this)).then(failures => {
+                  if (failures && failures.length > 0) {
+                    const message = buildQualityFailureMessage(failures);
+                    console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent (onToolUse) for session ${this.id.slice(0, 8)} — sending message to agent`);
+                    setTimeout(() => this.sendMessage(message, null, { isQualityReview: true }), 500);
+                  }
+                }).catch(e =>
                   console.error('[QualityRunner] onToolUse error:', e.message));
               }
             }
