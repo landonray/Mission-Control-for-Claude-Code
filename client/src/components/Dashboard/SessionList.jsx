@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
 import NewSessionModal from './NewSessionModal';
-import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit } from 'lucide-react';
+import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './SessionList.module.css';
 
 function renderLastAction(summary) {
@@ -27,6 +27,8 @@ export default function SessionList() {
   const [showEnded, setShowEnded] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedProjects, setCollapsedProjects] = useState(new Set());
   const navigate = useNavigate();
   const { id: activeId } = useParams();
 
@@ -48,12 +50,27 @@ export default function SessionList() {
   };
 
   const filteredSessions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
     return sessions.filter(session => {
       if (session.archived && !showArchived) return false;
       if (session.status === 'ended' && !session.archived && !showEnded) return false;
+      if (query) {
+        const name = (session.name || '').toLowerCase();
+        const lastAction = (session.last_action_summary || '').toLowerCase();
+        if (!name.includes(query) && !lastAction.includes(query)) return false;
+      }
       return true;
     });
-  }, [sessions, showEnded, showArchived]);
+  }, [sessions, showEnded, showArchived, searchQuery]);
+
+  const toggleProject = (projectName) => {
+    setCollapsedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectName)) next.delete(projectName);
+      else next.add(projectName);
+      return next;
+    });
+  };
 
   const groupedSessions = useMemo(() => {
     const groups = new Map();
@@ -127,10 +144,33 @@ export default function SessionList() {
         </div>
       )}
 
+      <div className={styles.searchBar}>
+        <Search size={14} className={styles.searchIcon} />
+        <input
+          type="text"
+          className={styles.searchInput}
+          placeholder="Search sessions..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button className={styles.searchClear} onClick={() => setSearchQuery('')}>&times;</button>
+        )}
+      </div>
+
       <div className="panel-body" style={{ padding: 0 }}>
-        {groupedSessions.map(([projectName, projectSessions]) => (
+        {groupedSessions.map(([projectName, projectSessions]) => {
+          const isCollapsed = collapsedProjects.has(projectName);
+          return (
           <div key={projectName} className={styles.projectGroup}>
-            <div className={styles.projectHeader}>{projectName}</div>
+            <div className={styles.projectHeader} onClick={() => toggleProject(projectName)}>
+              <span className={styles.collapseIcon}>
+                {isCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+              </span>
+              {projectName}
+              <span className={styles.sessionCount}>{projectSessions.length}</span>
+            </div>
+            {!isCollapsed && (
             <div className={styles.projectSessions}>
             {projectSessions.map(session => {
               const contextLevel = getContextHealthLevel(session.context_window_usage || 0);
@@ -251,8 +291,10 @@ export default function SessionList() {
               );
             })}
             </div>
+            )}
           </div>
-        ))}
+          );
+        })}
 
         {filteredSessions.length === 0 && (
           <div className="empty-state" style={{ padding: '24px 16px' }}>

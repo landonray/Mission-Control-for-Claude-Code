@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import SessionCard from './SessionCard';
 import NewSessionModal from './NewSessionModal';
-import { Plus, RefreshCw, Filter, Rocket, Terminal } from 'lucide-react';
+import { Plus, RefreshCw, Filter, Rocket, Terminal, Search, ChevronDown, ChevronRight } from 'lucide-react';
 import styles from './Dashboard.module.css';
 
 export default function Dashboard() {
@@ -13,6 +13,8 @@ export default function Dashboard() {
   const [showEnded, setShowEnded] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedProjects, setCollapsedProjects] = useState(new Set());
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -20,12 +22,27 @@ export default function Dashboard() {
   }, [loadSessions]);
 
   const filteredSessions = useMemo(() => {
+    const query = searchQuery.toLowerCase().trim();
     return sessions.filter(session => {
       if (session.archived && !showArchived) return false;
       if (session.status === 'ended' && !session.archived && !showEnded) return false;
+      if (query) {
+        const name = (session.name || '').toLowerCase();
+        const lastAction = (session.last_action_summary || '').toLowerCase();
+        if (!name.includes(query) && !lastAction.includes(query)) return false;
+      }
       return true;
     });
-  }, [sessions, showEnded, showArchived]);
+  }, [sessions, showEnded, showArchived, searchQuery]);
+
+  const toggleProject = (projectName) => {
+    setCollapsedProjects(prev => {
+      const next = new Set(prev);
+      if (next.has(projectName)) next.delete(projectName);
+      else next.add(projectName);
+      return next;
+    });
+  };
 
   const groupedSessions = useMemo(() => {
     const groups = new Map();
@@ -70,6 +87,20 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div className={styles.searchBar}>
+        <Search size={16} className={styles.searchIcon} />
+        <input
+          type="text"
+          className={styles.searchInput}
+          placeholder="Search sessions..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        {searchQuery && (
+          <button className={styles.searchClear} onClick={() => setSearchQuery('')}>&times;</button>
+        )}
+      </div>
+
       {showFilters && (
         <div className={styles.filterBar}>
           <label className={styles.filterToggle}>
@@ -97,21 +128,35 @@ export default function Dashboard() {
         </div>
       )}
 
-      {groupedSessions.map(([projectName, projectSessions]) => (
-        <section key={projectName} className={styles.section}>
-          <h2>{projectName}</h2>
-          <div className={styles.grid}>
-            {projectSessions.map(session => (
-              <SessionCard
-                key={session.id}
-                session={session}
-                onClick={() => navigate(`/session/${session.id}`)}
-                onArchive={handleArchive}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {groupedSessions.map(([projectName, projectSessions]) => {
+        const isCollapsed = collapsedProjects.has(projectName);
+        return (
+          <section key={projectName} className={styles.section}>
+            <h2
+              className={styles.sectionHeader}
+              onClick={() => toggleProject(projectName)}
+            >
+              <span className={styles.collapseIcon}>
+                {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+              </span>
+              {projectName}
+              <span className={styles.sessionCount}>{projectSessions.length}</span>
+            </h2>
+            {!isCollapsed && (
+              <div className={styles.grid}>
+                {projectSessions.map(session => (
+                  <SessionCard
+                    key={session.id}
+                    session={session}
+                    onClick={() => navigate(`/session/${session.id}`)}
+                    onArchive={handleArchive}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
 
       {filteredSessions.length === 0 && (
         <div className="empty-state">
