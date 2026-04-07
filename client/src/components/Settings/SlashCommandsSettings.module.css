@@ -1,0 +1,170 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 640px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.hint {
+  font-size: 12px;
+  opacity: 0.6;
+  margin: 4px 0 0;
+}
+
+.error {
+  padding: 8px 12px;
+  background: rgba(196, 64, 64, 0.08);
+  border: 1px solid rgba(196, 64, 64, 0.2);
+  border-radius: var(--radius);
+  color: var(--error);
+  font-size: 13px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.formRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field label {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.fieldWide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.fieldWide label {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.nameInputWrapper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.nameInputWrapper .slash {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  padding-right: 2px;
+}
+
+.nameInputWrapper input {
+  flex: 1;
+}
+
+.messageInput {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  gap: 12px;
+}
+
+.cmdInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cmdName {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent);
+}
+
+.cmdMessage {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cmdActions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.editRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.editActions {
+  display: flex;
+  gap: 4px;
+}
+
+.empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}

@@ -7,6 +7,7 @@ import PermissionPrompt from './PermissionPrompt';
 import SessionControls from './SessionControls';
 import ContextIndicator from './ContextIndicator';
 import QualityScorecard from '../Quality/QualityScorecard';
+import SlashCommandMenu from './SlashCommandMenu';
 import { Send, Loader, RotateCcw, Pencil, Check, X, GitBranch, Paperclip, Upload, FileIcon, Image as ImageIcon, X as XIcon } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
@@ -32,6 +33,8 @@ export default function ChatInterface({ sessionId }) {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
+  const [slashMenuVisible, setSlashMenuVisible] = useState(false);
+  const slashMenuRef = useRef(null);
 
   // Restore draft when switching sessions
   useEffect(() => {
@@ -221,7 +224,28 @@ export default function ChatInterface({ sessionId }) {
     }
   };
 
+  const handleSlashSelect = useCallback((cmd) => {
+    if (!cmd) {
+      // Escape pressed — close menu, keep input
+      setSlashMenuVisible(false);
+      return;
+    }
+    // Send the command's configured message
+    const sent = sendMessage(cmd.message);
+    if (sent === false) return;
+    setInput('');
+    setSlashMenuVisible(false);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [sendMessage]);
+
   const handleKeyDown = (e) => {
+    // Let the slash menu handle keys first when visible
+    if (slashMenuVisible && slashMenuRef.current) {
+      const handled = slashMenuRef.current.handleKeyDown(e);
+      if (handled) return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -229,7 +253,11 @@ export default function ChatInterface({ sessionId }) {
   };
 
   const handleTextareaChange = (e) => {
-    setInput(e.target.value);
+    const value = e.target.value;
+    setInput(value);
+    // Show slash menu when typing starts with / and has no spaces or newlines
+    const shouldShow = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
+    setSlashMenuVisible(shouldShow);
     const ta = e.target;
     ta.style.height = 'auto';
     ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
@@ -421,7 +449,13 @@ export default function ChatInterface({ sessionId }) {
 
       {/* Input — always active for ended sessions (triggers resume) */}
       <div className={styles.inputArea}>
-        <div className={styles.inputWrapper}>
+        <div className={styles.inputWrapper} style={{ position: 'relative' }}>
+          <SlashCommandMenu
+            ref={slashMenuRef}
+            input={input}
+            onSelect={handleSlashSelect}
+            visible={slashMenuVisible}
+          />
           <input
             ref={fileInputRef}
             type="file"

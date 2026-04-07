@@ -86,7 +86,11 @@ async function initializeDb() {
       timestamp TEXT DEFAULT NOW()
     )`,
     `CREATE INDEX IF NOT EXISTS idx_stream_events_session ON stream_events(session_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_stream_events_timestamp ON stream_events(session_id, timestamp)`
+    `CREATE INDEX IF NOT EXISTS idx_stream_events_timestamp ON stream_events(session_id, timestamp)`,
+    `CREATE TABLE IF NOT EXISTS slash_commands (
+      id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, message TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW()
+    )`
   ];
 
   for (const stmt of statements) {

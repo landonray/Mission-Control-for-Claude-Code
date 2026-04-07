@@ -25,6 +25,7 @@ app.use('/api/quality', require('./routes/quality'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/uploads', require('./routes/uploads'));
+app.use('/api/slash-commands', require('./routes/slashCommands'));
 
 // Health check
 app.get('/api/health', (req, res) => {

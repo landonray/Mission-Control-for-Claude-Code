@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import NotificationSettings from '../Notifications/NotificationSettings';
 import McpManager from '../MCP/McpManager';
 import RulesConfig from '../Quality/RulesConfig';
-import { ArrowLeft, Sliders, Bell, Server, Shield, BarChart3, Settings } from 'lucide-react';
+import { ArrowLeft, Sliders, Bell, Server, Shield, BarChart3, Settings, Zap } from 'lucide-react';
 import GeneralSettings from './GeneralSettings';
+import SlashCommandsSettings from './SlashCommandsSettings';
 import styles from './SettingsView.module.css';
 
 const sections = [
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'slash-commands', label: 'Slash Commands', icon: Zap },
   { id: 'quality', label: 'Quality Rules', icon: Shield },
   { id: 'quality-analytics', label: 'Quality Analytics', icon: BarChart3, route: '/quality-analytics' },
   { id: 'notifications', label: 'Notifications', icon: Bell },
@@ -47,6 +49,7 @@ export default function SettingsView() {
 
         <div className={styles.content}>
           {activeSection === 'general' && <GeneralSettings />}
+          {activeSection === 'slash-commands' && <SlashCommandsSettings />}
           {activeSection === 'quality' && <RulesConfig />}
           {activeSection === 'notifications' && <NotificationSettings />}
           {activeSection === 'mcp' && <McpManager />}
