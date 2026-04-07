@@ -375,10 +375,10 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
     });
   });
 
-  // Match PRCreated rules: fires when Bash runs a command containing "gh pr create"
+  // Match PRCreated rules: fires when Bash runs "gh pr create" or "git push" (PR update)
   const inputStr = typeof toolInput === 'string' ? toolInput : JSON.stringify(toolInput || '');
-  const isPRCreate = toolName === 'Bash' && inputStr.includes('gh pr create');
-  const prCreatedRules = isPRCreate ? rules.filter(r => {
+  const isPRActivity = toolName === 'Bash' && (inputStr.includes('gh pr create') || inputStr.includes('git push'));
+  const prCreatedRules = isPRActivity ? rules.filter(r => {
     const triggers = r.fires_on.split(',').map(s => s.trim());
     return triggers.includes('PRCreated');
   }) : [];
