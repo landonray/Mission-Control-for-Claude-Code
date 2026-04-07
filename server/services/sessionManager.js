@@ -762,7 +762,15 @@ class SessionProcess {
                   if (failures && failures.length > 0) {
                     const message = buildQualityFailureMessage(failures);
                     console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent (onToolUse) for session ${this.id.slice(0, 8)} — sending message to agent`);
-                    setTimeout(() => this.sendMessage(message, null, { isQualityReview: true }), 500);
+                    setTimeout(() => {
+                      // Only send if session is still actively working — if Claude already
+                      // finished, onSessionStop will handle remaining quality failures
+                      if (this.status === 'working') {
+                        this.sendMessage(message, null, { isQualityReview: true });
+                      } else {
+                        console.log(`[QualityRunner] Skipping onToolUse failure message for session ${this.id.slice(0, 8)} — session status is '${this.status}', not 'working'`);
+                      }
+                    }, 500);
                   }
                 }).catch(e =>
                   console.error('[QualityRunner] onToolUse error:', e.message));
@@ -1415,79 +1423,80 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
 
   resumeInProgress.add(sessionId);
 
-  const sessionResult = await query('SELECT * FROM sessions WHERE id = $1', [sessionId]);
-  const sessionRow = sessionResult.rows[0];
-  if (!sessionRow) {
-    resumeInProgress.delete(sessionId);
-    return null;
-  }
+  try {
+    const sessionResult = await query('SELECT * FROM sessions WHERE id = $1', [sessionId]);
+    const sessionRow = sessionResult.rows[0];
+    if (!sessionRow) {
+      return null;
+    }
 
-  const preamble = await buildContextPreamble(sessionId);
+    const preamble = await buildContextPreamble(sessionId);
 
-  const session = new SessionProcess(sessionId, {
-    workingDirectory: sessionRow.working_directory,
-    permissionMode: sessionRow.permission_mode || 'auto',
-    model: sessionRow.model || DEFAULT_MODEL,
-    mcpConnections: [],
-    tmuxSessionName: null
-  });
+    const session = new SessionProcess(sessionId, {
+      workingDirectory: sessionRow.working_directory,
+      permissionMode: sessionRow.permission_mode || 'auto',
+      model: sessionRow.model || DEFAULT_MODEL,
+      mcpConnections: [],
+      tmuxSessionName: sessionRow.tmux_session_name || null
+    });
 
-  session.resuming = true;
-  activeSessions.set(sessionId, session);
+    session.resuming = true;
+    activeSessions.set(sessionId, session);
 
-  // Attach listener before any broadcasts so the client doesn't miss events
-  if (listener) {
-    session.addListener(listener);
-  }
+    // Attach listener before any broadcasts so the client doesn't miss events
+    if (listener) {
+      session.addListener(listener);
+    }
 
-  await query("UPDATE sessions SET status = 'working', ended_at = NULL, last_activity_at = NOW() WHERE id = $1", [sessionId]);
+    await query("UPDATE sessions SET status = 'working', ended_at = NULL, last_activity_at = NOW() WHERE id = $1", [sessionId]);
 
-  // Replay stream event history from DB so the CLI panel's dedup mechanism works.
-  // Without this, the client never receives stream_events_history (because the session
-  // wasn't in memory when subscribe_session ran), and dbEventCountRef blocks live events.
-  const dbStreamEvents = await query(
-    'SELECT event_data FROM stream_events WHERE session_id = $1 ORDER BY timestamp ASC',
-    [sessionId]
-  );
-  if (dbStreamEvents.rows.length > 0) {
-    const events = dbStreamEvents.rows.map(r => JSON.parse(r.event_data));
-    session.streamEventHistory = events;
+    // Replay stream event history from DB so the CLI panel's dedup mechanism works.
+    // Without this, the client never receives stream_events_history (because the session
+    // wasn't in memory when subscribe_session ran), and dbEventCountRef blocks live events.
+    const dbStreamEvents = await query(
+      'SELECT event_data FROM stream_events WHERE session_id = $1 ORDER BY timestamp ASC',
+      [sessionId]
+    );
+    if (dbStreamEvents.rows.length > 0) {
+      const events = dbStreamEvents.rows.map(r => JSON.parse(r.event_data));
+      session.streamEventHistory = events;
+      session.broadcast({
+        type: 'stream_events_history',
+        sessionId: sessionId,
+        events: events,
+        timestamp: new Date().toISOString()
+      });
+    }
+
     session.broadcast({
-      type: 'stream_events_history',
+      type: 'session_resuming',
       sessionId: sessionId,
-      events: events,
       timestamp: new Date().toISOString()
     });
+
+    const combinedPrompt = preamble
+      ? `${preamble}\n\nUser's new message: ${newMessage}`
+      : newMessage;
+
+    await query("INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())", [sessionId, newMessage]);
+    await query("UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1", [sessionId]);
+
+    session.status = 'working';
+    session.updateDbStatus('working');
+
+    session.broadcast({
+      type: 'user_message',
+      sessionId: sessionId,
+      content: newMessage,
+      timestamp: new Date().toISOString()
+    });
+
+    await session.spawnProcess(combinedPrompt);
+
+    return session;
+  } finally {
+    resumeInProgress.delete(sessionId);
   }
-
-  session.broadcast({
-    type: 'session_resuming',
-    sessionId: sessionId,
-    timestamp: new Date().toISOString()
-  });
-
-  const combinedPrompt = preamble
-    ? `${preamble}\n\nUser's new message: ${newMessage}`
-    : newMessage;
-
-  await query("INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())", [sessionId, newMessage]);
-  await query("UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1", [sessionId]);
-
-  session.status = 'working';
-  session.updateDbStatus('working');
-
-  session.broadcast({
-    type: 'user_message',
-    sessionId: sessionId,
-    content: newMessage,
-    timestamp: new Date().toISOString()
-  });
-
-  await session.spawnProcess(combinedPrompt);
-
-  resumeInProgress.delete(sessionId);
-
-  return session;
 }
 
 // --- Tmux Session Recovery ---
