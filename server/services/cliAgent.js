@@ -20,10 +20,11 @@ const { execFile } = require('child_process');
  * @param {string[]} [options.allowedTools] - Tools to grant (e.g. ['Read', 'Glob', 'Grep'])
  * @param {string} [options.cwd] - Working directory for the subprocess
  * @param {number} [options.timeout] - Timeout in ms (default 120000)
+ * @param {AbortSignal} [options.signal] - AbortSignal to cancel the subprocess
  * @returns {Promise<string>} The CLI's text output
  */
 function run(prompt, options = {}) {
-  const { allowedTools, cwd, timeout = 120000 } = options;
+  const { allowedTools, cwd, timeout = 120000, signal } = options;
 
   const args = ['--print', '-p', prompt];
 
@@ -32,17 +33,36 @@ function run(prompt, options = {}) {
   }
 
   return new Promise((resolve, reject) => {
-    execFile('claude', args, {
+    if (signal?.aborted) {
+      reject(new Error('Aborted'));
+      return;
+    }
+
+    const child = execFile('claude', args, {
       maxBuffer: 1024 * 1024, // 1MB
       timeout,
       cwd: cwd || undefined,
     }, (error, stdout, stderr) => {
+      if (signal?.aborted) {
+        reject(new Error('Aborted'));
+        return;
+      }
       if (error) {
         reject(new Error(`CLI agent failed: ${error.message}`));
         return;
       }
       resolve(stdout || '');
     });
+
+    if (signal) {
+      const onAbort = () => {
+        child.kill('SIGTERM');
+        signal.removeEventListener('abort', onAbort);
+      };
+      signal.addEventListener('abort', onAbort);
+      // Clean up listener if process exits normally
+      child.on('exit', () => signal.removeEventListener('abort', onAbort));
+    }
   });
 }
 
