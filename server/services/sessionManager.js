@@ -1035,21 +1035,23 @@ class SessionProcess {
 
     // If compaction was detected (context usage dropped significantly), prepend
     // the full conversation history so Claude regains context that was lost.
+    // This takes priority over the resume preamble since it's more complete.
     let prompt = text;
     if (this._compactionDetected) {
       this._compactionDetected = false;
       console.log(`[Compaction] Injecting conversation history for session ${this.id.slice(0,8)}`);
-      const compactionPreamble = await buildCompactionPreamble(this.id);
-      if (compactionPreamble) {
-        prompt = `${compactionPreamble}\n\nUser's new message: ${text}`;
+      try {
+        const compactionPreamble = await buildCompactionPreamble(this.id);
+        if (compactionPreamble) {
+          prompt = `${compactionPreamble}\n\nUser's new message: ${text}`;
+        }
+      } catch (e) {
+        console.error(`[Compaction] Failed to build preamble for session ${this.id.slice(0,8)}:`, e.message);
       }
-    }
-
-    // If we have no cliSessionId and there are prior messages, this is a fresh
-    // Claude CLI invocation with no conversation history (e.g. after server
-    // restart / tmux recovery). Build a context preamble so Claude knows what
-    // happened in the previous session.
-    if (!this.cliSessionId && msgCount && msgCount.user_message_count > 0) {
+    } else if (!this.cliSessionId && msgCount && msgCount.user_message_count > 0) {
+      // No cliSessionId and prior messages means this is a fresh Claude CLI
+      // invocation with no conversation history (e.g. after server restart /
+      // tmux recovery). Build a context preamble so Claude knows what happened.
       this.broadcast({
         type: 'session_resuming',
         sessionId: this.id,
@@ -1424,11 +1426,27 @@ async function buildCompactionPreamble(sessionId) {
   );
   if (result.rows.length === 0) return null;
 
-  const conversation = result.rows
-    .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-    .join('\n\n');
+  const ROLE_LABELS = { user: 'User', assistant: 'Assistant', system: 'System' };
+  // Cap at ~50k chars to avoid re-filling the context window.
+  // Prioritize recent messages — build from the end and stop when we hit the limit.
+  const MAX_CHARS = 50000;
+  const lines = [];
+  let totalChars = 0;
+  for (let i = result.rows.length - 1; i >= 0; i--) {
+    const m = result.rows[i];
+    const label = ROLE_LABELS[m.role] || m.role;
+    const line = `${label}: ${m.content}`;
+    if (totalChars + line.length > MAX_CHARS && lines.length > 0) break;
+    lines.unshift(line);
+    totalChars += line.length;
+  }
 
-  return `CONTEXT RECOVERY — COMPACTION DETECTED: Your context was just compacted and you may have lost conversation history. Here is the full conversation so far:\n\n${conversation}\n\nThe user's new message follows. Continue naturally — do not acknowledge this recovery unless the user asks about it.`;
+  const conversation = lines.join('\n\n');
+  const truncated = lines.length < result.rows.length
+    ? ` (showing ${lines.length} of ${result.rows.length} messages — oldest messages trimmed to fit)`
+    : '';
+
+  return `CONTEXT RECOVERY — COMPACTION DETECTED: Your context was just compacted and you may have lost conversation history. Here is the conversation so far${truncated}:\n\n${conversation}\n\nThe user's new message follows. Continue naturally — do not acknowledge this recovery unless the user asks about it.`;
 }
 
 // --- Resume a closed session ---
