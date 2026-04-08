@@ -135,6 +135,8 @@ class SessionProcess {
     this.stderrBuffer = ''; // accumulates stderr for error reporting
     this._qualityStopDispatched = false; // guard against duplicate onSessionStop calls
     this.qualityReviewIteration = 0; // tracks quality review loop iterations (max 3)
+    this._lastContextRatio = 0; // previous context window usage ratio
+    this._compactionDetected = false; // set when context drops significantly (compaction happened)
   }
 
   addListener(callback) {
@@ -870,6 +872,13 @@ class SessionProcess {
     const maxTokens = 200000;
     const usageRatio = Math.min(promptTokens / maxTokens, 1.0);
 
+    // Detect compaction: context usage drops significantly (e.g. 0.7 → 0.2)
+    if (this._lastContextRatio >= 0.4 && usageRatio < this._lastContextRatio * 0.6) {
+      console.log(`[Compaction] Detected for session ${this.id.slice(0,8)}: ${Math.round(this._lastContextRatio * 100)}% → ${Math.round(usageRatio * 100)}%`);
+      this._compactionDetected = true;
+    }
+    this._lastContextRatio = usageRatio;
+
     await query('UPDATE sessions SET context_window_usage = $1 WHERE id = $2', [usageRatio, this.id]);
 
     const { sendNotification } = require('./notificationService');
@@ -1024,11 +1033,22 @@ class SessionProcess {
       timestamp: new Date().toISOString()
     });
 
+    // If compaction was detected (context usage dropped significantly), prepend
+    // the full conversation history so Claude regains context that was lost.
+    let prompt = text;
+    if (this._compactionDetected) {
+      this._compactionDetected = false;
+      console.log(`[Compaction] Injecting conversation history for session ${this.id.slice(0,8)}`);
+      const compactionPreamble = await buildCompactionPreamble(this.id);
+      if (compactionPreamble) {
+        prompt = `${compactionPreamble}\n\nUser's new message: ${text}`;
+      }
+    }
+
     // If we have no cliSessionId and there are prior messages, this is a fresh
     // Claude CLI invocation with no conversation history (e.g. after server
     // restart / tmux recovery). Build a context preamble so Claude knows what
     // happened in the previous session.
-    let prompt = text;
     if (!this.cliSessionId && msgCount && msgCount.user_message_count > 0) {
       this.broadcast({
         type: 'session_resuming',
@@ -1388,6 +1408,27 @@ async function buildContextPreamble(sessionId) {
   const preamble = `CONTEXT RECOVERY: You are resuming a previous session. Here is the context from that session:\n\n${parts.join('\n\n')}\n\nThe user's new message follows.`;
 
   return preamble;
+}
+
+/**
+ * Build a preamble that re-injects the full conversation history after
+ * compaction is detected. Unlike buildContextPreamble (which is for server
+ * restarts and uses summaries + truncated messages), this pulls the complete
+ * user/assistant dialogue so Claude regains all context that was lost to
+ * compaction.
+ */
+async function buildCompactionPreamble(sessionId) {
+  const result = await query(
+    `SELECT role, content, timestamp FROM messages WHERE session_id = $1 ORDER BY timestamp ASC`,
+    [sessionId]
+  );
+  if (result.rows.length === 0) return null;
+
+  const conversation = result.rows
+    .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n\n');
+
+  return `CONTEXT RECOVERY — COMPACTION DETECTED: Your context was just compacted and you may have lost conversation history. Here is the full conversation so far:\n\n${conversation}\n\nThe user's new message follows. Continue naturally — do not acknowledge this recovery unless the user asks about it.`;
 }
 
 // --- Resume a closed session ---
