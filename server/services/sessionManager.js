@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const qualityRunner = require('./qualityRunner');
 
 const activeSessions = new Map();
+let queueIdCounter = 0;
 
 /**
  * Build a message to send back to the agent when quality rules with
@@ -497,7 +498,7 @@ class SessionProcess {
     // Process queued messages
     if (this.messageQueue.length > 0) {
       const nextMsg = this.messageQueue.shift();
-      setTimeout(() => this.sendMessage(nextMsg), 100);
+      setTimeout(() => this.sendMessage(nextMsg.content), 100);
     }
   }
 
@@ -618,7 +619,7 @@ class SessionProcess {
       // Drain message queue (matches tmux behavior)
       if (this.messageQueue.length > 0) {
         const nextMsg = this.messageQueue.shift();
-        setTimeout(() => this.sendMessage(nextMsg), 100);
+        setTimeout(() => this.sendMessage(nextMsg.content), 100);
       }
     });
 
@@ -645,7 +646,7 @@ class SessionProcess {
       // Drain message queue so queued messages aren't silently lost
       if (this.messageQueue.length > 0) {
         const nextMsg = this.messageQueue.shift();
-        setTimeout(() => this.sendMessage(nextMsg), 100);
+        setTimeout(() => this.sendMessage(nextMsg.content), 100);
       }
     });
   }
@@ -852,7 +853,7 @@ class SessionProcess {
               });
               if (this.messageQueue.length > 0) {
                 const nextMsg = this.messageQueue.shift();
-                setTimeout(() => this.sendMessage(nextMsg), 100);
+                setTimeout(() => this.sendMessage(nextMsg.content), 100);
               }
             }
           }
@@ -892,7 +893,15 @@ class SessionProcess {
 
     if (this.process && this.status === 'working') {
       // A process is already running — queue the message but still show it in the UI
-      this.messageQueue.push(text);
+      const queueId = `q_${++queueIdCounter}_${Date.now()}`;
+      this.messageQueue.push({ id: queueId, content: text, queuedAt: new Date().toISOString() });
+      this.broadcast({
+        type: 'message_queued',
+        sessionId: this.id,
+        messageId: queueId,
+        content: text,
+        queuedAt: new Date().toISOString()
+      });
 
       // Insert into DB and broadcast so the user sees their message immediately
       if (attachments) {
@@ -1161,6 +1170,24 @@ class SessionProcess {
     }
 
     this.finishEnd();
+  }
+
+  getQueue() {
+    return this.messageQueue.map(({ id, content, queuedAt }) => ({ id, content, queuedAt }));
+  }
+
+  deleteFromQueue(messageId) {
+    const index = this.messageQueue.findIndex(m => m.id === messageId);
+    if (index === -1) return false;
+
+    this.messageQueue.splice(index, 1);
+    this.broadcast({
+      type: 'message_dequeued',
+      sessionId: this.id,
+      messageId,
+      timestamp: new Date().toISOString()
+    });
+    return true;
   }
 
   finishEnd() {
