@@ -465,3 +465,43 @@
   background: color-mix(in srgb, var(--error, #ef4444) 15%, transparent);
   color: var(--error, #ef4444);
 }
+
+/* Queued message styling */
+.queuedMessage {
+  opacity: 0.7;
+  border-left: 2px solid var(--text-muted);
+  padding-left: 8px;
+}
+
+.queuedBadge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.deleteQueuedBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.deleteQueuedBtn:hover {
+  background: color-mix(in srgb, var(--error, #ef4444) 15%, transparent);
+  color: var(--error, #ef4444);
+}

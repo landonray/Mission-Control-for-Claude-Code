@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send, X } from 'lucide-react';
+import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send, X, Trash2 } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
@@ -151,7 +151,7 @@ function QualityResultItem({ msg, sendMessage, onCancel }) {
   );
 }
 
-export default function MessageList({ messages, loading, streamEvents, status, sendMessage, onCancelCheck }) {
+export default function MessageList({ messages, loading, streamEvents, status, sendMessage, onCancelCheck, onDeleteMessage }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
@@ -198,6 +198,19 @@ export default function MessageList({ messages, loading, streamEvents, status, s
     );
   }
 
+  // Determine which user messages are "queued" (waiting to be processed)
+  // Queued messages are user messages after the last non-user message while the agent is working
+  let queuedStartIdx = messages.length;
+  if (status === 'working') {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        queuedStartIdx = i;
+      } else {
+        break;
+      }
+    }
+  }
+
   return (
     <div className={styles.container} ref={containerRef} onScroll={handleScroll}>
       {messages.length === 0 && (
@@ -212,10 +225,12 @@ export default function MessageList({ messages, loading, streamEvents, status, s
           return <QualityResultItem key={i} msg={msg} sendMessage={sendMessage} onCancel={onCancelCheck} />;
         }
 
+        const isQueued = msg.role === 'user' && i >= queuedStartIdx;
+
         return (
           <div
             key={i}
-            className={`${styles.message} ${msg.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
+            className={`${styles.message} ${msg.role === 'user' ? styles.userMessage : styles.assistantMessage} ${isQueued ? styles.queuedMessage : ''}`}
           >
             <div className={styles.avatar}>
               {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
@@ -223,6 +238,9 @@ export default function MessageList({ messages, loading, streamEvents, status, s
             <div className={styles.content}>
               <div className={styles.meta}>
                 <span className={styles.role}>{msg.role === 'user' ? 'You' : 'Claude'}</span>
+                {isQueued && (
+                  <span className={styles.queuedBadge}>queued</span>
+                )}
                 {msg.timestamp && (
                   <span className={styles.time}>{formatDate(msg.timestamp)}</span>
                 )}
@@ -241,6 +259,15 @@ export default function MessageList({ messages, loading, streamEvents, status, s
                 <div className={styles.resultBadge}>Final Result</div>
               )}
             </div>
+            {isQueued && onDeleteMessage && (
+              <button
+                className={styles.deleteQueuedBtn}
+                onClick={() => onDeleteMessage(msg.content)}
+                title="Delete queued message"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         );
       })}
