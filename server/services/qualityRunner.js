@@ -572,7 +572,7 @@ async function onSessionStop(sessionId, broadcast) {
 function getRunningChecks(sessionId) {
   const sessionRunning = runningChecks.get(sessionId);
   if (!sessionRunning) return [];
-  return Array.from(sessionRunning.values());
+  return Array.from(sessionRunning.values()).map(({ abortController, ...rest }) => rest);
 }
 
 /**

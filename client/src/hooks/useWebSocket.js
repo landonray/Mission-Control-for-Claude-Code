@@ -413,12 +413,21 @@ export function useWebSocket(sessionId) {
   const clearSendError = useCallback(() => setSendError(null), []);
 
   const cancelQualityCheck = useCallback((ruleId) => {
+    // Optimistically update UI to show cancelled state
+    setMessages(prev => prev.map(m =>
+      m.role === 'quality' && m.ruleId === ruleId && m.result === 'running'
+        ? { ...m, result: 'cancelled' }
+        : m
+    ));
     return api.post(`/api/quality/cancel/${sessionId}/${ruleId}`).catch(() => {});
   }, [sessionId]);
 
   const deleteQueuedMessage = useCallback((messageId) => {
     setQueuedMessages(prev => prev.filter(m => m.id !== messageId));
-    return api.delete(`/api/sessions/${sessionId}/queue/${messageId}`).catch(() => {});
+    return api.delete(`/api/sessions/${sessionId}/queue/${messageId}`)
+      .catch(() => {
+        setSendError('Message already sent — could not delete.');
+      });
   }, [sessionId]);
 
   return {

@@ -894,13 +894,14 @@ class SessionProcess {
     if (this.process && this.status === 'working') {
       // A process is already running — queue the message but still show it in the UI
       const queueId = `q_${++queueIdCounter}_${Date.now()}`;
-      this.messageQueue.push({ id: queueId, content: text, queuedAt: new Date().toISOString() });
+      const queuedAt = new Date().toISOString();
+      this.messageQueue.push({ id: queueId, content: text, queuedAt });
       this.broadcast({
         type: 'message_queued',
         sessionId: this.id,
         messageId: queueId,
         content: text,
-        queuedAt: new Date().toISOString()
+        queuedAt
       });
 
       // Insert into DB and broadcast so the user sees their message immediately
