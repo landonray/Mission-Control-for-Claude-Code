@@ -762,15 +762,7 @@ class SessionProcess {
                   if (failures && failures.length > 0) {
                     const message = buildQualityFailureMessage(failures);
                     console.log(`[QualityRunner] ${failures.length} rule(s) failed with send_fail_to_agent (onToolUse) for session ${this.id.slice(0, 8)} — sending message to agent`);
-                    setTimeout(() => {
-                      // Only send if session is still actively working — if Claude already
-                      // finished, onSessionStop will handle remaining quality failures
-                      if (this.status === 'working') {
-                        this.sendMessage(message, null, { isQualityReview: true });
-                      } else {
-                        console.log(`[QualityRunner] Skipping onToolUse failure message for session ${this.id.slice(0, 8)} — session status is '${this.status}', not 'working'`);
-                      }
-                    }, 500);
+                    setTimeout(() => this.sendMessage(message, null, { isQualityReview: true }), 500);
                   }
                 }).catch(e =>
                   console.error('[QualityRunner] onToolUse error:', e.message));
