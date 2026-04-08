@@ -17,9 +17,10 @@ const API_KEY = process.env.LLM_GATEWAY_KEY;
  * @param {number} opts.max_tokens - Max tokens in response
  * @param {string} [opts.system] - System prompt
  * @param {Array} opts.messages - Array of {role, content} messages
+ * @param {AbortSignal} [opts.signal] - AbortSignal to cancel the request
  * @returns {Promise<string>} The assistant's text response
  */
-async function chatCompletion({ model, max_tokens, system, messages }) {
+async function chatCompletion({ model, max_tokens, system, messages, signal }) {
   if (!API_KEY) {
     throw new Error('LLM_GATEWAY_KEY environment variable is not set');
   }
@@ -40,6 +41,7 @@ async function chatCompletion({ model, max_tokens, system, messages }) {
       messages: allMessages,
       max_tokens,
     }),
+    signal,
   });
 
   if (!response.ok) {

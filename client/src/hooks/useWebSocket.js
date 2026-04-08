@@ -12,6 +12,7 @@ export function useWebSocket(sessionId) {
   const [streamEvents, setStreamEvents] = useState([]);
   const [resuming, setResuming] = useState(false);
   const [sendError, setSendError] = useState(null);
+  const [queuedMessages, setQueuedMessages] = useState([]);
   const wsRef = useRef(null);
   // Ref to track resuming state inside the WS closure (avoids stale closure)
   const resumingRef = useRef(false);
@@ -162,6 +163,7 @@ export function useWebSocket(sessionId) {
               // Blank chat and CLI panels
               setMessages([]);
               setStreamEvents([]);
+              setQueuedMessages([]);
               clearEvents();
               break;
 
@@ -238,6 +240,23 @@ export function useWebSocket(sessionId) {
               break;
             }
 
+            case 'message_queued': {
+              setQueuedMessages(prev => {
+                if (prev.some(m => m.id === data.messageId)) return prev;
+                return [...prev, {
+                  id: data.messageId,
+                  content: data.content,
+                  queuedAt: data.queuedAt
+                }];
+              });
+              break;
+            }
+
+            case 'message_dequeued': {
+              setQueuedMessages(prev => prev.filter(m => m.id !== data.messageId));
+              break;
+            }
+
             case 'error':
               setStatus('error');
               resumingRef.current = false;
@@ -272,7 +291,8 @@ export function useWebSocket(sessionId) {
                 api.get(`/api/sessions/${sessionId}/messages`),
                 api.get(`/api/quality/results/session/${sessionId}`).catch(() => ({ results: [] })),
                 api.get(`/api/quality/results/running/${sessionId}`).catch(() => ({ running: [] })),
-              ]).then(([msgResult, qualityResult, runningResult]) => {
+                api.get(`/api/sessions/${sessionId}/queue`).catch(() => ({ queue: [] })),
+              ]).then(([msgResult, qualityResult, runningResult, queueResult]) => {
                 if (!cancelled) {
                   const dbMessages = msgResult.messages.map(m => ({
                     role: m.role,
@@ -309,6 +329,7 @@ export function useWebSocket(sessionId) {
                     opt => !dbMessages.some(db => db.role === 'user' && db.content === opt.content)
                   );
                   setMessages([...allMessages, ...pending]);
+                  setQueuedMessages(queueResult.queue || []);
                 }
               }).catch(e => console.error('[WS] Failed to reload messages on reconnect:', e.message));
             }
@@ -324,6 +345,14 @@ export function useWebSocket(sessionId) {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (wsRef.current) wsRef.current.close();
     };
+  }, [sessionId]);
+
+  // Load initial queue state when session changes
+  useEffect(() => {
+    if (!sessionId) return;
+    api.get(`/api/sessions/${sessionId}/queue`)
+      .then(data => setQueuedMessages(data.queue || []))
+      .catch(() => setQueuedMessages([]));
   }, [sessionId]);
 
   const sendMessage = useCallback((content, attachments = null) => {
@@ -383,6 +412,24 @@ export function useWebSocket(sessionId) {
 
   const clearSendError = useCallback(() => setSendError(null), []);
 
+  const cancelQualityCheck = useCallback((ruleId) => {
+    // Optimistically update UI to show cancelled state
+    setMessages(prev => prev.map(m =>
+      m.role === 'quality' && m.ruleId === ruleId && m.result === 'running'
+        ? { ...m, result: 'cancelled' }
+        : m
+    ));
+    return api.post(`/api/quality/cancel/${sessionId}/${ruleId}`).catch(() => {});
+  }, [sessionId]);
+
+  const deleteQueuedMessage = useCallback((messageId) => {
+    setQueuedMessages(prev => prev.filter(m => m.id !== messageId));
+    return api.delete(`/api/sessions/${sessionId}/queue/${messageId}`)
+      .catch(() => {
+        setSendError('Message already sent — could not delete.');
+      });
+  }, [sessionId]);
+
   return {
     messages,
     setMessages,
@@ -395,6 +442,9 @@ export function useWebSocket(sessionId) {
     resuming,
     sendError,
     clearSendError,
-    optimisticMessagesRef
+    optimisticMessagesRef,
+    queuedMessages,
+    cancelQualityCheck,
+    deleteQueuedMessage
   };
 }

@@ -235,6 +235,25 @@ router.get('/results/running/:sessionId', (req, res) => {
   res.json({ running: getRunningChecks(req.params.sessionId) });
 });
 
+// Cancel a running quality check
+router.post('/cancel/:sessionId/:ruleId', (req, res) => {
+  const { sessionId, ruleId } = req.params;
+  const { getSession } = require('../services/sessionManager');
+
+  // Get the session's broadcast function for notifying listeners
+  const session = getSession(sessionId);
+  const broadcast = session ? (event) => session.broadcast(event) : null;
+
+  const { cancelCheck } = require('../services/qualityRunner');
+  const cancelled = cancelCheck(sessionId, ruleId, broadcast);
+
+  if (cancelled) {
+    res.json({ success: true, message: 'Quality check cancelled' });
+  } else {
+    res.status(404).json({ error: 'Check not found or already completed' });
+  }
+});
+
 // Get quality results for a session
 router.get('/results/session/:sessionId', async (req, res) => {
   const limit = parseInt(req.query.limit) || 100;

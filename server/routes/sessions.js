@@ -236,6 +236,30 @@ router.post('/:id/end', async (req, res) => {
   }
 });
 
+// Get queued messages for a session
+router.get('/:id/queue', (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    return res.json({ queue: [] });
+  }
+  res.json({ queue: session.getQueue() });
+});
+
+// Delete a queued message
+router.delete('/:id/queue/:messageId', (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found or not active' });
+  }
+
+  const deleted = session.deleteFromQueue(req.params.messageId);
+  if (deleted) {
+    res.json({ success: true });
+  } else {
+    res.status(404).json({ error: 'Message not found in queue (may have already been sent)' });
+  }
+});
+
 // Get session messages
 router.get('/:id/messages', async (req, res) => {
   try {
