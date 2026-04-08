@@ -159,6 +159,27 @@ router.post('/:id/message', async (req, res) => {
   }
 });
 
+// Delete a queued message that hasn't been processed yet
+router.post('/:id/delete-queued-message', (req, res) => {
+  const { content } = req.body;
+  if (!content) {
+    return res.status(400).json({ error: 'content is required' });
+  }
+
+  const { getSession } = require('../services/sessionManager');
+  const session = getSession(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const deleted = session.deleteQueuedMessage(content);
+  if (deleted) {
+    res.json({ success: true, message: 'Queued message deleted' });
+  } else {
+    res.status(404).json({ error: 'Message not found in queue or already sent' });
+  }
+});
+
 // Respond to permission request
 router.post('/:id/permission', (req, res) => {
   const session = getSession(req.params.id);
