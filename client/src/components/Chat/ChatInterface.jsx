@@ -108,6 +108,9 @@ export default function ChatInterface({ sessionId }) {
           const pending = optimisticMessagesRef.current.filter(
             opt => !dbMessages.some(db => db.role === 'user' && db.content === opt.content)
           );
+          // Replace messages entirely with DB state — the DB is the source of truth.
+          // The previous merge logic kept stale websocket messages from OTHER sessions
+          // when navigating between sessions, causing cross-session message contamination.
           setMessages([...allMessages, ...pending]);
           setLoading(false);
           return;
