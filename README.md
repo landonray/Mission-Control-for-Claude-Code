@@ -9,17 +9,22 @@ Mission Control is as close to "Claude Desktop on the web" as you can get — a 
 
 ## What's Included
 
-- **Session Management** — Create, monitor, resume, and manage multiple Claude Code sessions simultaneously
-- **Real-time Streaming** — WebSocket-based live streaming of AI agent output, messages, and permission requests
-- **File Browser** — Browse project file trees, preview code with syntax highlighting, render Markdown, and view git diffs
+- **Session Management** — Create, monitor, resume, archive, and manage multiple Claude Code sessions simultaneously, organized by project
+- **Real-time Streaming** — WebSocket-based live streaming of AI agent output, messages, tool use, and permission requests
+- **File Browser** — Browse project file trees, preview code with syntax highlighting, render Markdown, view git status, and compare diffs across branches
 - **Live Preview** — Built-in iframe preview panel for web projects (hit the preview tab to see your app running)
-- **Quality Rules Engine** — 21+ lifecycle hooks (SessionStart, Stop, PostToolUse, etc.) with prompt-based, agent-based, and command-based rules, scorecards, and analytics
-- **Project Creation** — Create new GitHub repos with local git init + `gh repo create` in one step
+- **Quality Rules Engine** — 21+ lifecycle hooks (SessionStart, Stop, PostToolUse, PreToolUse, SubagentStop, PRCreated, and more) with prompt-based, agent-based, and CLI-based rules, scorecards, and analytics
+- **File Attachments** — Drag-and-drop or pick files (images, PDFs, code, archives) to send alongside messages — up to 10 files, 20MB each
+- **Interrupt & Send** — Stop Claude mid-task and immediately send a new instruction without killing the session
+- **Message Queue Control** — View, reorder, and delete queued messages before they're processed
+- **Slash Commands** — Create custom quick-prompt shortcuts (/quality-check, /run-tests, etc.) accessible from the chat input
+- **Project Creation** — Create new GitHub repos with local git init + `gh repo create` + auto-scaffolding in one step
 - **Session Persistence** — Tmux-backed sessions survive server restarts; automatic recovery on startup
 - **Push Notifications** — Web Push API alerts for permission requests, task completion, errors, and context window warnings
 - **MCP Integration** — Configure Model Context Protocol servers to auto-attach to new sessions
-- **Session History** — Search previous sessions, view message logs, and daily digests
-- **Mobile Support** — Responsive design with tab-based navigation on mobile, 3-panel layout on desktop
+- **Session History & Search** — Search previous sessions and messages, view full conversation logs, and generate daily digests
+- **Session Summaries** — Auto-generated summaries showing branch, key actions, files changed, and message count
+- **Mobile Support** — Responsive design with tab-based navigation on mobile, 3-panel layout on desktop, installable as a PWA
 
 ## Prerequisites
 
@@ -162,6 +167,7 @@ Since Tailscale creates an encrypted private network, there's no need for an aut
 | **Real-time** | WebSocket (`ws`) for session streaming and notifications |
 | **Process Management** | Claude Code CLI spawned as child processes, tmux for persistence |
 | **Notifications** | Web Push API with auto-generated VAPID keys |
+| **File Uploads** | multer middleware (20MB limit, 10 files max) |
 | **Network** | Tailscale (private, no public internet exposure) |
 
 ## API
@@ -171,11 +177,13 @@ All routes are under `/api/`. WebSocket endpoint: `/ws`.
 | Route | Description |
 |-------|-------------|
 | `GET /api/health` | Health check |
-| `/api/sessions` | Session CRUD, status, messaging |
-| `/api/files` | File tree, content, git status/diffs |
+| `/api/sessions` | Session CRUD, status, messaging, resume, archive |
+| `/api/files` | File tree, content, git status/diffs, branch comparison |
 | `/api/projects` | Project listing and creation |
 | `/api/mcp` | MCP server configuration |
-| `/api/quality` | Quality rules, results, hooks |
-| `/api/history` | Session history, search, digests |
+| `/api/quality` | Quality rules, results, hooks, analytics |
+| `/api/history` | Session history, search, digests, summaries |
 | `/api/notifications` | Push subscriptions and settings |
 | `/api/settings` | App settings |
+| `/api/slash-commands` | Custom slash command management |
+| `/api/upload` | File attachment uploads |
