@@ -137,6 +137,8 @@ class SessionProcess {
     this.qualityReviewIteration = 0; // tracks quality review loop iterations (max 3)
     this._lastContextRatio = 0; // previous context window usage ratio
     this._compactionDetected = false; // set when context drops significantly (compaction happened)
+    this._currentAssistantMsgId = null; // DB row id for the current assistant turn (upsert on updates)
+    this._processedToolUseIds = new Set(); // track which tool_use blocks we've already processed
   }
 
   addListener(callback) {
@@ -749,10 +751,16 @@ class SessionProcess {
               .map(block => block.text)
               .join('\n');
 
-            // Process tool_use blocks for diff stats and quality checks
+            // Process tool_use blocks for diff stats and quality checks.
+            // Only process blocks we haven't seen before (each assistant event
+            // includes ALL content blocks, not just new ones).
             let totalAdded = 0, totalRemoved = 0;
             for (const block of event.message.content) {
               if (block.type === 'tool_use') {
+                // Skip blocks we've already processed in a prior assistant event
+                if (block.id && this._processedToolUseIds.has(block.id)) continue;
+                if (block.id) this._processedToolUseIds.add(block.id);
+
                 const toolName = block.name || 'unknown';
                 const input = block.input || {};
 
@@ -784,19 +792,40 @@ class SessionProcess {
           }
           if (content) {
             this.detectDevServerUrl(content);
-            await query(
-              `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
-              [this.id, content]
-            );
-            await query(
-              `UPDATE sessions SET assistant_message_count = assistant_message_count + 1, last_action_summary = $1, last_activity_at = NOW() WHERE id = $2`,
-              [content.substring(0, 200), this.id]
-            );
+            // Claude CLI emits an 'assistant' event for EVERY content block update
+            // within the same turn (e.g., text → tool_use → tool_use = 3 events).
+            // Each event contains the full message. If we INSERT every time, the DB
+            // ends up with N duplicate rows per turn. Instead, INSERT on the first
+            // event and UPDATE on subsequent events within the same turn.
+            if (this._currentAssistantMsgId) {
+              await query(
+                `UPDATE messages SET content = $1, timestamp = NOW() WHERE id = $2`,
+                [content, this._currentAssistantMsgId]
+              );
+              await query(
+                `UPDATE sessions SET last_action_summary = $1, last_activity_at = NOW() WHERE id = $2`,
+                [content.substring(0, 200), this.id]
+              );
+            } else {
+              const result = await query(
+                `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW()) RETURNING id`,
+                [this.id, content]
+              );
+              this._currentAssistantMsgId = result.rows[0].id;
+              // Only increment the count on the first event of the turn
+              await query(
+                `UPDATE sessions SET assistant_message_count = assistant_message_count + 1, last_action_summary = $1, last_activity_at = NOW() WHERE id = $2`,
+                [content.substring(0, 200), this.id]
+              );
+            }
           }
         }
         break;
 
       case 'tool_result':
+        // After a tool result, the next assistant event is a NEW message (new turn),
+        // not an update to the previous one. Reset the upsert tracker.
+        this._currentAssistantMsgId = null;
         if (event.content) {
           const text = typeof event.content === 'string'
             ? event.content
@@ -902,6 +931,9 @@ class SessionProcess {
     if (!isQualityReview) {
       this.qualityReviewIteration = 0;
     }
+    // New user message means next assistant event starts a fresh turn
+    this._currentAssistantMsgId = null;
+    this._processedToolUseIds = new Set();
 
     if (this.process && this.status === 'working') {
       // A process is already running — queue the message but still show it in the UI

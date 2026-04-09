@@ -114,6 +114,37 @@ async function initializeDb() {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
   }
 
+  // One-time cleanup: remove duplicate assistant messages caused by the bug where
+  // every assistant stream event (one per content block) inserted a new DB row.
+  // Keep only the latest (highest id) copy of each duplicate group.
+  try {
+    const result = await sql.query(`
+      DELETE FROM messages WHERE id IN (
+        SELECT id FROM (
+          SELECT id, ROW_NUMBER() OVER (
+            PARTITION BY session_id, role, content
+            ORDER BY id DESC
+          ) AS rn
+          FROM messages
+          WHERE role = 'assistant'
+        ) dupes
+        WHERE rn > 1
+      )
+    `);
+    if (result.rowCount > 0) {
+      console.log(`[DB] Cleaned up ${result.rowCount} duplicate assistant messages`);
+      // Recalculate assistant_message_count for all sessions to fix inflated counts
+      await sql.query(`
+        UPDATE sessions SET assistant_message_count = (
+          SELECT COUNT(*) FROM messages WHERE messages.session_id = sessions.id AND role = 'assistant'
+        )
+      `);
+      console.log('[DB] Recalculated assistant message counts');
+    }
+  } catch (e) {
+    console.error('[DB] Duplicate cleanup failed:', e.message);
+  }
+
   await seedQualityRules();
 }
 
