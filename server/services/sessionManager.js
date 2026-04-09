@@ -1,4 +1,4 @@
-const { spawn, execSync, execFile } = require('child_process');
+const { spawn, execSync, execFile, execFileSync } = require('child_process');
 const { v4: uuidv4 } = require('uuid');
 const treeKill = require('tree-kill');
 const fs = require('fs');
@@ -36,6 +36,67 @@ const globalEvents = new EventEmitter();
 function resolvePath(p) {
   if (!p) return process.cwd();
   return p.replace(/^~(?=$|\/)/, os.homedir());
+}
+
+/**
+ * When resuming a worktree session whose directory was cleaned up,
+ * attempt to recreate it from the branch. Returns the working directory to use.
+ */
+async function resolveWorktreeOnResume(sessionRow) {
+  let workingDir = sessionRow.working_directory;
+
+  if (!workingDir || fs.existsSync(resolvePath(workingDir))) {
+    return workingDir;
+  }
+
+  const worktreeMatch = workingDir.match(/^(.+?)\/\.claude\/worktrees\/([^/]+)/);
+  if (!worktreeMatch) {
+    return workingDir;
+  }
+
+  const parentDir = worktreeMatch[1];
+  const worktreeName = sessionRow.worktree_name || worktreeMatch[2];
+  const branchName = `worktree-${worktreeName}`;
+
+  // Check if branch exists locally
+  let branchExists = false;
+  try {
+    const localResult = execFileSync('git', ['branch', '--list', branchName], {
+      cwd: resolvePath(parentDir), encoding: 'utf-8', timeout: 5000,
+    });
+    branchExists = localResult.trim().length > 0;
+  } catch { /* ignore */ }
+
+  // If not local, check remote
+  if (!branchExists) {
+    try {
+      const remoteResult = execFileSync('git', ['branch', '-r', '--list', `origin/${branchName}`], {
+        cwd: resolvePath(parentDir), encoding: 'utf-8', timeout: 5000,
+      });
+      branchExists = remoteResult.trim().length > 0;
+    } catch { /* ignore */ }
+  }
+
+  if (branchExists) {
+    try {
+      execFileSync('git', ['worktree', 'add', `.claude/worktrees/${worktreeName}`, branchName], {
+        cwd: resolvePath(parentDir), encoding: 'utf-8', timeout: 15000,
+      });
+      console.log(`[Session ${sessionRow.id.slice(0, 8)}] Recreated worktree at .claude/worktrees/${worktreeName} from branch ${branchName}`);
+      return workingDir;
+    } catch (e) {
+      console.error(`[Session ${sessionRow.id.slice(0, 8)}] Failed to recreate worktree:`, e.message);
+    }
+  }
+
+  // Branch is gone — fall back to parent and update DB
+  if (fs.existsSync(resolvePath(parentDir))) {
+    console.log(`[Session ${sessionRow.id.slice(0, 8)}] Branch ${branchName} not found, falling back to project root: ${parentDir}`);
+    await query('UPDATE sessions SET working_directory = $1 WHERE id = $2', [parentDir, sessionRow.id]);
+    return parentDir;
+  }
+
+  return workingDir;
 }
 
 // Check if tmux is available on the system
@@ -1600,20 +1661,9 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
 
     const preamble = await buildContextPreamble(sessionId);
 
-    // If the working directory no longer exists (e.g. worktree was cleaned up),
-    // fall back to the parent project directory
-    let workingDir = sessionRow.working_directory;
-    if (workingDir && !fs.existsSync(resolvePath(workingDir))) {
-      const worktreeMatch = workingDir.match(/^(.+?)\/\.claude\/worktrees\//);
-      if (worktreeMatch) {
-        const parentDir = worktreeMatch[1];
-        if (fs.existsSync(resolvePath(parentDir))) {
-          console.log(`[Session ${sessionId.slice(0, 8)}] Worktree directory gone, falling back to project root: ${parentDir}`);
-          workingDir = parentDir;
-          await query('UPDATE sessions SET working_directory = $1 WHERE id = $2', [parentDir, sessionId]);
-        }
-      }
-    }
+    // If the worktree directory was cleaned up, try to recreate it from the branch.
+    // Only falls back to parent dir (and updates DB) if the branch is also gone.
+    const workingDir = await resolveWorktreeOnResume(sessionRow);
 
     const session = new SessionProcess(sessionId, {
       workingDirectory: workingDir,
