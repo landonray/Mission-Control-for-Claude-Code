@@ -488,7 +488,6 @@
 }
 
 .deleteQueuedBtn {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -500,11 +499,40 @@
   color: var(--text-muted);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-  align-self: flex-start;
-  margin-top: 8px;
 }
 
 .deleteQueuedBtn:hover {
   background: color-mix(in srgb, var(--error, #ef4444) 15%, transparent);
   color: var(--error, #ef4444);
+}
+
+/* Container for queued message action buttons */
+.queuedActions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+/* Interrupt & send button */
+.interruptSendBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.interruptSendBtn:hover {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-color: var(--accent);
+  color: var(--accent);
 }

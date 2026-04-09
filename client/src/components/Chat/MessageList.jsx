@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send, X, Trash2 } from 'lucide-react';
+import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send, X, Trash2, ArrowUp } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
@@ -152,7 +152,7 @@ function QualityResultItem({ msg, sendMessage, onCancel }) {
   );
 }
 
-export default function MessageList({ messages, loading, streamEvents, status, sendMessage, onCancelCheck, onDeleteMessage }) {
+export default function MessageList({ messages, loading, streamEvents, status, sendMessage, onCancelCheck, onDeleteMessage, onInterruptAndSend }) {
   const bottomRef = useRef(null);
   const containerRef = useRef(null);
   const isNearBottomRef = useRef(true);
@@ -245,14 +245,27 @@ export default function MessageList({ messages, loading, streamEvents, status, s
                 <div className={styles.resultBadge}>Final Result</div>
               )}
             </div>
-            {msg.queued && onDeleteMessage && (
-              <button
-                className={styles.deleteQueuedBtn}
-                onClick={() => onDeleteMessage(msg.content)}
-                title="Delete queued message"
-              >
-                <Trash2 size={14} />
-              </button>
+            {msg.queued && (
+              <div className={styles.queuedActions}>
+                {onInterruptAndSend && (
+                  <button
+                    className={styles.interruptSendBtn}
+                    onClick={() => onInterruptAndSend()}
+                    title="Interrupt Claude and send now"
+                  >
+                    <ArrowUp size={14} />
+                  </button>
+                )}
+                {onDeleteMessage && (
+                  <button
+                    className={styles.deleteQueuedBtn}
+                    onClick={() => onDeleteMessage(msg.content)}
+                    title="Delete queued message"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
             )}
           </div>
         );

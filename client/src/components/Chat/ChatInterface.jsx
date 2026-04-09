@@ -21,7 +21,7 @@ export default function ChatInterface({ sessionId }) {
     messages, setMessages, status, errorMessage, pendingPermission,
     streamEvents, sendMessage, approvePermission, resuming,
     sendError, clearSendError, optimisticMessagesRef,
-    cancelQualityCheck, deleteQueuedMessage
+    cancelQualityCheck, deleteQueuedMessage, interruptAndSend
   } = useWebSocket(sessionId);
   const [input, setInput] = useState(() => sessionDrafts.get(sessionId) || '');
   const [loading, setLoading] = useState(true);
@@ -400,7 +400,7 @@ export default function ChatInterface({ sessionId }) {
       )}
 
       {/* Messages */}
-      <MessageList messages={messages} loading={loading} streamEvents={streamEvents} status={status} sendMessage={sendMessage} onCancelCheck={cancelQualityCheck} onDeleteMessage={deleteQueuedMessage} />
+      <MessageList messages={messages} loading={loading} streamEvents={streamEvents} status={status} sendMessage={sendMessage} onCancelCheck={cancelQualityCheck} onDeleteMessage={deleteQueuedMessage} onInterruptAndSend={interruptAndSend} />
 
       {/* Permission Prompt */}
       {pendingPermission && (

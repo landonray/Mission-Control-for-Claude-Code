@@ -438,6 +438,12 @@ export function useWebSocket(sessionId) {
     });
   }, [sessionId]);
 
+  const interruptAndSend = useCallback(() => {
+    return api.post(`/api/sessions/${sessionId}/interrupt`).catch(() => {
+      setSendError('Could not interrupt session.');
+    });
+  }, [sessionId]);
+
   return {
     messages,
     setMessages,
@@ -452,6 +458,7 @@ export function useWebSocket(sessionId) {
     clearSendError,
     optimisticMessagesRef,
     cancelQualityCheck,
-    deleteQueuedMessage
+    deleteQueuedMessage,
+    interruptAndSend
   };
 }

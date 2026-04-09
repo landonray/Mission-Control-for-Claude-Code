@@ -1105,6 +1105,28 @@ class SessionProcess {
     return true;
   }
 
+  /**
+   * Interrupt the running Claude session by sending Escape via tmux.
+   * The existing queue-drain logic will pick up any queued messages
+   * once the session transitions to idle.
+   * Returns true if Escape was sent, false otherwise.
+   */
+  interrupt() {
+    if (this.status !== 'working') return false;
+    if (!this.process || !this.process.tmux) return false;
+
+    try {
+      execSync(`tmux send-keys -t ${this.process.sessionName} Escape`, {
+        stdio: 'ignore',
+      });
+      console.log(`[Session ${this.id.slice(0, 8)}] Interrupted via Escape`);
+      return true;
+    } catch (e) {
+      console.error(`[Session ${this.id.slice(0, 8)}] Failed to send Escape: ${e.message}`);
+      return false;
+    }
+  }
+
   respondToPermission(approved) {
     if (!this.process || !this.pendingPermission) return;
 
