@@ -307,6 +307,10 @@ class SessionProcess {
       `OUTPUT_FILE=${JSON.stringify(outputFile)}`,
       `PROMPT_FILE=${JSON.stringify(promptFile)}`,
       '',
+      '# Ensure the exit sentinel is written even when interrupted (Ctrl+C / SIGINT)',
+      'on_interrupt() { echo \'{"type":"__process_exited__"}\' >> "$OUTPUT_FILE"; exit 130; }',
+      'trap on_interrupt INT TERM',
+      '',
       `cd ${JSON.stringify(cwd)} 2>/dev/null || {`,
       `  echo '{"type":"__process_error__","error":"Working directory not found"}' >> "$OUTPUT_FILE"`,
       `  echo '{"type":"__process_exited__"}' >> "$OUTPUT_FILE"`,
@@ -460,7 +464,14 @@ class SessionProcess {
     this.process = null;
     this.pendingPermission = null;
 
-    if (this.status !== 'error') {
+    const wasInterrupted = this._interrupted;
+    this._interrupted = false;
+
+    if (wasInterrupted) {
+      // User interrupted — skip quality checks, go straight to idle/queue drain
+      console.log(`[Session ${this.id.slice(0, 8)}] Skipping quality checks (user interrupted)`);
+      this.transitionToIdle();
+    } else if (this.status !== 'error') {
       // Stay in 'reviewing' while quality checks run so the card stays green
       this.status = 'reviewing';
       this.updateDbStatus('reviewing');
@@ -1116,13 +1127,15 @@ class SessionProcess {
     if (!this.process || !this.process.tmux) return false;
 
     try {
-      execSync(`tmux send-keys -t ${this.process.sessionName} Escape`, {
+      this._interrupted = true;
+      execSync(`tmux send-keys -t ${this.process.sessionName} C-c`, {
         stdio: 'ignore',
       });
-      console.log(`[Session ${this.id.slice(0, 8)}] Interrupted via Escape`);
+      console.log(`[Session ${this.id.slice(0, 8)}] Interrupted via SIGINT (Ctrl+C)`);
       return true;
     } catch (e) {
-      console.error(`[Session ${this.id.slice(0, 8)}] Failed to send Escape: ${e.message}`);
+      this._interrupted = false;
+      console.error(`[Session ${this.id.slice(0, 8)}] Failed to send interrupt: ${e.message}`);
       return false;
     }
   }
