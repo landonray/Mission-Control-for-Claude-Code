@@ -143,7 +143,8 @@ function QualityResultItem({ msg, sendMessage, onCancel }) {
       </div>
       {isRunning && onCancel && (
         <button className={styles.qualityCancelBtn} onClick={handleCancel} title="Cancel this check">
-          <X size={12} />
+          <X size={14} />
+          Cancel
         </button>
       )}
       {msg.timestamp && <span className={styles.qualityTime}>{formatDate(msg.timestamp)}</span>}

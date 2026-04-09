@@ -23,7 +23,9 @@ const { execFile } = require('child_process');
  * @returns {Promise<string>} The CLI's text output
  */
 function run(prompt, options = {}) {
-  const { allowedTools, cwd, timeout = 120000 } = options;
+  const { allowedTools, cwd, timeout = 120000, signal } = options;
+
+  if (signal?.aborted) return Promise.reject(new Error('Aborted'));
 
   const args = ['--print', '-p', prompt];
 
@@ -32,17 +34,26 @@ function run(prompt, options = {}) {
   }
 
   return new Promise((resolve, reject) => {
-    execFile('claude', args, {
+    const child = execFile('claude', args, {
       maxBuffer: 1024 * 1024, // 1MB
       timeout,
       cwd: cwd || undefined,
     }, (error, stdout, stderr) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
       if (error) {
-        reject(new Error(`CLI agent failed: ${error.message}`));
+        reject(new Error(error.killed ? 'Aborted' : `CLI agent failed: ${error.message}`));
         return;
       }
       resolve(stdout || '');
     });
+
+    function onAbort() {
+      child.kill('SIGTERM');
+    }
+
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 }
 

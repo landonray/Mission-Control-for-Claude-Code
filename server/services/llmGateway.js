@@ -19,10 +19,12 @@ const API_KEY = process.env.LLM_GATEWAY_KEY;
  * @param {Array} opts.messages - Array of {role, content} messages
  * @returns {Promise<string>} The assistant's text response
  */
-async function chatCompletion({ model, max_tokens, system, messages }) {
+async function chatCompletion({ model, max_tokens, system, messages, signal }) {
   if (!API_KEY) {
     throw new Error('LLM_GATEWAY_KEY environment variable is not set');
   }
+
+  if (signal?.aborted) throw new Error('Aborted');
 
   // Prepend system message if provided (OpenAI-compatible format)
   const allMessages = system
@@ -40,6 +42,7 @@ async function chatCompletion({ model, max_tokens, system, messages }) {
       messages: allMessages,
       max_tokens,
     }),
+    signal,
   });
 
   if (!response.ok) {
