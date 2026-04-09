@@ -4,6 +4,16 @@ const { getDirectoryTree, getFileContent, getGitDiff, getGitStatus, getGitBranch
 const path = require('path');
 const { execSync, exec } = require('child_process');
 
+// Resolve a user-supplied path and validate it stays within the home directory.
+function safeResolvePath(inputPath) {
+  const home = process.env.HOME || '/tmp';
+  const resolved = path.resolve(inputPath.replace(/^~/, home));
+  if (resolved !== home && !resolved.startsWith(home + '/')) {
+    return null;
+  }
+  return resolved;
+}
+
 // Get directory tree
 router.get('/tree', (req, res) => {
   const dir = req.query.path;
@@ -11,7 +21,10 @@ router.get('/tree', (req, res) => {
     return res.status(400).json({ error: 'path query parameter required' });
   }
 
-  const resolvedPath = dir.replace(/^~/, process.env.HOME || '');
+  const resolvedPath = safeResolvePath(dir);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
   const maxDepth = parseInt(req.query.depth) || 5;
 
   try {
@@ -29,7 +42,10 @@ router.get('/content', (req, res) => {
     return res.status(400).json({ error: 'path query parameter required' });
   }
 
-  const resolvedPath = filePath.replace(/^~/, process.env.HOME || '');
+  const resolvedPath = safeResolvePath(filePath);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
 
   try {
     const content = getFileContent(resolvedPath);
@@ -46,7 +62,10 @@ router.get('/git/status', (req, res) => {
     return res.status(400).json({ error: 'path query parameter required' });
   }
 
-  const resolvedPath = dir.replace(/^~/, process.env.HOME || '');
+  const resolvedPath = safeResolvePath(dir);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
 
   try {
     const status = getGitStatus(resolvedPath);
@@ -63,7 +82,10 @@ router.get('/git/diff', (req, res) => {
     return res.status(400).json({ error: 'path query parameter required' });
   }
 
-  const resolvedPath = dir.replace(/^~/, process.env.HOME || '');
+  const resolvedPath = safeResolvePath(dir);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
   const options = {};
   if (req.query.staged === 'true') options.staged = true;
   if (req.query.branch) options.branch = req.query.branch;
@@ -84,7 +106,10 @@ router.get('/git/branches', (req, res) => {
     return res.status(400).json({ error: 'path query parameter required' });
   }
 
-  const resolvedPath = dir.replace(/^~/, process.env.HOME || '');
+  const resolvedPath = safeResolvePath(dir);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
 
   try {
     const branches = getGitBranches(resolvedPath);
@@ -101,7 +126,10 @@ router.get('/git/branch-diff', (req, res) => {
     return res.status(400).json({ error: 'path query parameter required' });
   }
 
-  const resolvedPath = dir.replace(/^~/, process.env.HOME || '');
+  const resolvedPath = safeResolvePath(dir);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
   const baseBranch = req.query.base || 'main';
 
   try {
