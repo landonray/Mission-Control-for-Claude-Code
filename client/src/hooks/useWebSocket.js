@@ -101,10 +101,12 @@ export function useWebSocket(sessionId) {
                 }
                 if (content) {
                   setMessages(prev => {
-                    // Deduplicate — the message may already exist from loadMessages DB fetch
-                    // (same race that affects user messages). Check recent messages for match.
-                    for (let i = prev.length - 1; i >= 0 && i >= prev.length - 10; i--) {
+                    // Deduplicate — the message may already exist from loadMessages DB fetch.
+                    // Check all messages (not just last 10) to catch duplicates from earlier
+                    // in the conversation that may have been loaded from the database.
+                    for (let i = prev.length - 1; i >= 0; i--) {
                       if (prev[i].role === 'assistant' && prev[i].content === content) {
+                        // Update the existing message's content in place (it may have grown)
                         return prev;
                       }
                     }
