@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { getDirectoryTree, getFileContent, getGitDiff, getGitStatus, getGitBranches, getBranchDiff } = require('../services/fileWatcher');
 const path = require('path');
+const fs = require('fs');
 const { execSync, exec } = require('child_process');
 
 // Resolve a user-supplied path and validate it stays within the home directory.
@@ -135,6 +136,35 @@ router.get('/git/branch-diff', (req, res) => {
   try {
     const result = getBranchDiff(resolvedPath, baseBranch);
     res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save file content
+router.put('/content', (req, res) => {
+  const filePath = req.body.path;
+  const content = req.body.content;
+
+  if (!filePath) {
+    return res.status(400).json({ error: 'path is required' });
+  }
+  if (typeof content !== 'string') {
+    return res.status(400).json({ error: 'content must be a string' });
+  }
+
+  const resolvedPath = safeResolvePath(filePath);
+  if (!resolvedPath) {
+    return res.status(403).json({ error: 'Access denied: path outside home directory' });
+  }
+
+  try {
+    // Verify the file already exists (don't create new files via this endpoint)
+    if (!fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    fs.writeFileSync(resolvedPath, content, 'utf-8');
+    res.json({ success: true, path: resolvedPath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

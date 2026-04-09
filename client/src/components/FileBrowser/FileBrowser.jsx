@@ -180,6 +180,9 @@ export default function FileBrowser({ directory, useWorktree = false }) {
             <FilePreview
               content={fileContent}
               filePath={selectedFile}
+              onFileSaved={() => {
+                loadGitStatus(dir);
+              }}
             />
           </div>
         )}

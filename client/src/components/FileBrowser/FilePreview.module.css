@@ -29,12 +29,25 @@
 .modified {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.editButton {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .body {
   overflow: auto;
   max-height: 500px;
+}
+
+.bodyEditing {
+  overflow: hidden;
+  height: 500px;
+  display: flex;
+  flex-direction: column;
 }
 
 .imageContainer {

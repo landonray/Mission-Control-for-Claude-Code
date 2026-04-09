@@ -1,0 +1,78 @@
+.container {
+  position: relative;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.editorWrapper {
+  display: flex;
+  flex: 1;
+  overflow: auto;
+}
+
+.lineNumbers {
+  padding: 8px 12px;
+  text-align: right;
+  color: var(--text-muted);
+  user-select: none;
+  white-space: pre;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.textarea {
+  flex: 1;
+  padding: 8px 12px;
+  margin: 0;
+  border: none;
+  outline: none;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  resize: none;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+}
+
+.toolbar .status {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.saving {
+  color: var(--warning);
+}
+
+.saved {
+  color: var(--success);
+}
+
+.error {
+  color: var(--error);
+}

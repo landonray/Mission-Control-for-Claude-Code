@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getExtensionLanguage, formatFileSize } from '../../utils/format';
 import CodePreview from './CodePreview';
+import CodeEditor from './CodeEditor';
 import MarkdownPreview from './MarkdownPreview';
-import { Image, FileText, File, AlertCircle } from 'lucide-react';
+import { Image, FileText, File, AlertCircle, Pencil } from 'lucide-react';
 import styles from './FilePreview.module.css';
 
-export default function FilePreview({ content, filePath }) {
+export default function FilePreview({ content, filePath, onFileSaved }) {
+  const [editing, setEditing] = useState(false);
+
   if (!content) return null;
 
   const fileName = filePath?.split('/').pop() || 'unknown';
   const ext = filePath ? '.' + filePath.split('.').pop() : '';
+  const isEditable = content.type === 'text' || content.type === 'markdown' || content.type === 'html';
 
   const renderContent = () => {
     switch (content.type) {
@@ -90,9 +94,30 @@ export default function FilePreview({ content, filePath }) {
             Modified: {new Date(content.modified).toLocaleString()}
           </span>
         )}
+        {isEditable && !editing && (
+          <button
+            className={`btn btn-sm btn-ghost ${styles.editButton}`}
+            onClick={() => setEditing(true)}
+          >
+            <Pencil size={12} /> Edit
+          </button>
+        )}
       </div>
-      <div className={styles.body}>
-        {renderContent()}
+      <div className={editing ? styles.bodyEditing : styles.body}>
+        {editing ? (
+          <CodeEditor
+            code={content.content}
+            filePath={filePath}
+            onSave={(newContent) => {
+              content.content = newContent;
+              setEditing(false);
+              if (onFileSaved) onFileSaved();
+            }}
+            onCancel={() => setEditing(false)}
+          />
+        ) : (
+          renderContent()
+        )}
       </div>
     </div>
   );
