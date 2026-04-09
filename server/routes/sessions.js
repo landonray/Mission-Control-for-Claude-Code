@@ -180,6 +180,22 @@ router.post('/:id/delete-queued-message', (req, res) => {
   }
 });
 
+// Interrupt a working session (send Escape via tmux)
+router.post('/:id/interrupt', (req, res) => {
+  const { getSession } = require('../services/sessionManager');
+  const session = getSession(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  const interrupted = session.interrupt();
+  if (interrupted) {
+    res.json({ success: true });
+  } else {
+    res.status(409).json({ error: 'Session is not in a state that can be interrupted' });
+  }
+});
+
 // Respond to permission request
 router.post('/:id/permission', (req, res) => {
   const session = getSession(req.params.id);
