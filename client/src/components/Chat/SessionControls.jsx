@@ -4,6 +4,7 @@ import { api } from '../../utils/api';
 import { useApp } from '../../context/AppContext';
 import { Pause, Play, Square, MoreVertical, Server, Power, PowerOff } from 'lucide-react';
 import PillSelector from '../common/PillSelector';
+import WorktreeCleanupModal from './WorktreeCleanupModal';
 import styles from './SessionControls.module.css';
 
 export default function SessionControls({ sessionId, status, session }) {
@@ -31,8 +32,38 @@ export default function SessionControls({ sessionId, status, session }) {
     loadSessions();
   };
 
+  const [showCleanupModal, setShowCleanupModal] = useState(false);
+
   const handleEnd = async () => {
+    if (session?.use_worktree) {
+      try {
+        const status = await api.get(`/api/sessions/${sessionId}/worktree-status`);
+        if (status.hasUncommittedChanges) {
+          setShowCleanupModal(true);
+          return;
+        }
+        await api.post(`/api/sessions/${sessionId}/end`, { cleanup: true });
+        loadSessions();
+        navigate('/');
+        return;
+      } catch (e) {
+        // If status check fails, just end normally
+      }
+    }
     await api.post(`/api/sessions/${sessionId}/end`);
+    loadSessions();
+    navigate('/');
+  };
+
+  const handleCleanupChoice = async (choice) => {
+    let body = {};
+    if (choice === 'commit') {
+      body = { commit: true, cleanup: true };
+    } else if (choice === 'delete') {
+      body = { cleanup: true };
+    }
+    await api.post(`/api/sessions/${sessionId}/end`, body);
+    setShowCleanupModal(false);
     loadSessions();
     navigate('/');
   };
@@ -114,6 +145,13 @@ export default function SessionControls({ sessionId, status, session }) {
           </>
         )}
       </div>
+
+      {showCleanupModal && (
+        <WorktreeCleanupModal
+          onChoice={handleCleanupChoice}
+          onClose={() => setShowCleanupModal(false)}
+        />
+      )}
     </div>
   );
 }
