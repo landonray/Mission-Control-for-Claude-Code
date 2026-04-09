@@ -44,6 +44,8 @@ When starting a dev server:
 
 How to tell if a process belongs to this project: check the command/path shown by `lsof -i :PORT` — if it's running from this project's directory, it's yours to manage. If it's running from a different directory, leave it alone.
 
+**CRITICAL: Do NOT send false "server exited" alarms after restarting the server.** When you kill an old server process and start a new one, you will receive a delayed background notification that a process exited. That is the OLD process you just killed — not the new server crashing. Do NOT react to this notification by telling the user the server died. If you receive a process-exit notification after a restart, silently verify the server is still running (e.g., check the port) before saying anything. Never send a panicked message like "the server process exited" without first confirming there is actually a problem.
+
 ---
 
 # Testing Requirements
