@@ -474,9 +474,22 @@
     flex-wrap: wrap;
   }
 
+  .qualityLabel {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .qualityBody {
+    flex: 1 0 calc(100% - 26px);
+  }
+
   .qualityCancelBtn {
+    order: 10;
+  }
+
+  .qualityTime {
+    order: 11;
     margin-left: auto;
-    margin-top: 4px;
   }
 }
 
