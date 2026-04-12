@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 import { useApp } from '../../context/AppContext';
-import { Pause, Play, Square, MoreVertical, Server, Power, PowerOff } from 'lucide-react';
+import { Pause, Play, Square, MoreVertical, Server, Power, PowerOff, Zap } from 'lucide-react';
 import PillSelector from '../common/PillSelector';
 import WorktreeCleanupModal from './WorktreeCleanupModal';
 import styles from './SessionControls.module.css';
@@ -12,11 +12,16 @@ export default function SessionControls({ sessionId, status, session }) {
   const { loadSessions, mcpServers, loadMcpServers } = useApp();
   const [showMenu, setShowMenu] = useState(false);
   const [permissionMode, setPermissionMode] = useState(session?.permission_mode || 'auto');
+  const [maxEffort, setMaxEffort] = useState(!!session?.max_effort);
 
-  // Reset permission mode when session changes
+  // Reset permission mode and max effort when session changes
   useEffect(() => {
     setPermissionMode(session?.permission_mode || 'auto');
   }, [sessionId, session?.permission_mode]);
+
+  useEffect(() => {
+    setMaxEffort(!!session?.max_effort);
+  }, [sessionId, session?.max_effort]);
 
   useEffect(() => {
     loadMcpServers();
@@ -87,6 +92,12 @@ export default function SessionControls({ sessionId, status, session }) {
     await api.post(`/api/sessions/${sessionId}/permission-mode`, { permissionMode: mode });
   };
 
+  const toggleMaxEffort = async () => {
+    const newValue = !maxEffort;
+    setMaxEffort(newValue);
+    await api.post(`/api/sessions/${sessionId}/max-effort`, { maxEffort: newValue });
+  };
+
   const toggleMcpAutoConnect = async (serverId) => {
     try {
       await api.post(`/api/mcp/${serverId}/toggle-auto-connect`);
@@ -135,6 +146,16 @@ export default function SessionControls({ sessionId, status, session }) {
                   onChange={changePermissionMode}
                 />
               </div>
+
+              <div className={styles.menuDivider} />
+              <button
+                className={styles.menuItem}
+                onClick={toggleMaxEffort}
+              >
+                <Zap size={14} style={maxEffort ? { color: 'var(--warning, #e6a817)' } : {}} />
+                <span>Max Effort</span>
+                <span className={`${styles.indicator} ${maxEffort ? styles.on : ''}`} />
+              </button>
 
               {mcpServers.length > 0 && (
                 <>
