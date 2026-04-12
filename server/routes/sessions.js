@@ -424,6 +424,28 @@ router.post('/:id/permission-mode', async (req, res) => {
   });
 });
 
+// Toggle max effort
+router.post('/:id/max-effort', async (req, res) => {
+  const session = getSession(req.params.id);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found or not active' });
+  }
+
+  const { maxEffort } = req.body;
+  if (typeof maxEffort !== 'boolean') {
+    return res.status(400).json({ error: 'maxEffort must be a boolean' });
+  }
+
+  session.maxEffort = maxEffort;
+  await query('UPDATE sessions SET max_effort = $1 WHERE id = $2', [maxEffort ? 1 : 0, req.params.id]);
+
+  res.json({
+    success: true,
+    maxEffort: session.maxEffort,
+    note: 'Takes effect on next message.'
+  });
+});
+
 // Get session preview URL
 router.get('/:id/preview-url', async (req, res) => {
   const session = (await query('SELECT preview_url FROM sessions WHERE id = $1', [req.params.id])).rows[0];
