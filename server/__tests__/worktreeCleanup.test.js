@@ -237,6 +237,14 @@ describe('checkBranchPR', () => {
     expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 
+  it('returns null when projectRoot is falsy', async () => {
+    const { checkBranchPR } = await import('../services/worktreeCleanup.js');
+    const result = checkBranchPR('feature-branch', null);
+
+    expect(result).toBeNull();
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+  });
+
   it('returns first PR when multiple open PRs exist', async () => {
     mockExecFileSync.mockReturnValue(JSON.stringify([
       { number: 42, title: 'First PR', url: 'https://github.com/user/repo/pull/42' },
