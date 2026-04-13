@@ -313,7 +313,7 @@ router.get('/:id/worktree-status', async (req, res) => {
 // End session (with optional worktree commit/cleanup)
 router.post('/:id/end', async (req, res) => {
   try {
-    const { commit, cleanup } = req.body || {};
+    const { commit, cleanup, keepBranch } = req.body || {};
     const sessionId = req.params.id;
 
     if (commit || cleanup) {
@@ -349,7 +349,7 @@ router.post('/:id/end', async (req, res) => {
           }
 
           if (cleanup) {
-            const deleteBranch = !commit;
+            const deleteBranch = !commit && !keepBranch;
             cleanupWorktree(worktreePath, branchName, projectRoot, deleteBranch);
           }
         }
