@@ -41,6 +41,8 @@ vi.mock('lucide-react', () => ({
   GitCommit: (props) => React.createElement('span', { 'data-testid': 'icon-gitcommit', ...props }),
   Trash2: (props) => React.createElement('span', { 'data-testid': 'icon-trash', ...props }),
   MinusCircle: (props) => React.createElement('span', { 'data-testid': 'icon-minus', ...props }),
+  GitPullRequest: (props) => React.createElement('span', { 'data-testid': 'icon-gitpr', ...props }),
+  GitBranch: (props) => React.createElement('span', { 'data-testid': 'icon-gitbranch', ...props }),
 }));
 
 // Mock CSS modules
@@ -256,6 +258,151 @@ describe('Worktree Cleanup Integration', () => {
 
     // No worktree status check should have been made
     expect(mockApi.get).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('shows PR warning when ending session with open PR and no uncommitted changes', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      hasUncommittedChanges: false,
+      openPR: { number: 42, title: 'Add feature X', url: 'https://github.com/user/repo/pull/42' },
+    });
+
+    render(
+      <SessionControls
+        sessionId={sessionId}
+        status="active"
+        session={{ use_worktree: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('End session'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Open Pull Request')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Add feature X/)).toBeInTheDocument();
+    expect(screen.getByText(/#42/)).toBeInTheDocument();
+    expect(screen.getByText('Keep Branch')).toBeInTheDocument();
+    expect(screen.getByText('Delete Branch')).toBeInTheDocument();
+    expect(screen.getByText('Leave As-Is')).toBeInTheDocument();
+  });
+
+  it('shows combined warning when ending session with uncommitted changes AND open PR', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      hasUncommittedChanges: true,
+      openPR: { number: 42, title: 'Add feature X', url: 'https://github.com/user/repo/pull/42' },
+    });
+
+    render(
+      <SessionControls
+        sessionId={sessionId}
+        status="active"
+        session={{ use_worktree: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('End session'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Uncommitted Changes')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/open pull request/i)).toBeInTheDocument();
+    expect(screen.getByText(/#42/)).toBeInTheDocument();
+    expect(screen.getByText('Commit & Keep Branch')).toBeInTheDocument();
+    expect(screen.getByText('Delete Everything')).toBeInTheDocument();
+    expect(screen.getByText('Leave As-Is')).toBeInTheDocument();
+  });
+
+  it('"Keep Branch" sends keepBranch flag for PR-only scenario', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      hasUncommittedChanges: false,
+      openPR: { number: 42, title: 'Add feature X', url: 'https://github.com/user/repo/pull/42' },
+    });
+
+    render(
+      <SessionControls
+        sessionId={sessionId}
+        status="active"
+        session={{ use_worktree: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('End session'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Keep Branch')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Keep Branch'));
+
+    await waitFor(() => {
+      expect(mockApi.post).toHaveBeenCalledWith(
+        `/api/sessions/${sessionId}/end`,
+        { cleanup: true, keepBranch: true }
+      );
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('"Delete Branch" for PR-only scenario sends cleanup without keepBranch', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      hasUncommittedChanges: false,
+      openPR: { number: 42, title: 'Add feature X', url: 'https://github.com/user/repo/pull/42' },
+    });
+
+    render(
+      <SessionControls
+        sessionId={sessionId}
+        status="active"
+        session={{ use_worktree: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('End session'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Delete Branch')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Delete Branch'));
+
+    await waitFor(() => {
+      expect(mockApi.post).toHaveBeenCalledWith(
+        `/api/sessions/${sessionId}/end`,
+        { cleanup: true }
+      );
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('silently cleans up when no uncommitted changes and no PR', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      hasUncommittedChanges: false,
+      openPR: null,
+    });
+
+    render(
+      <SessionControls
+        sessionId={sessionId}
+        status="active"
+        session={{ use_worktree: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('End session'));
+
+    await waitFor(() => {
+      expect(mockApi.post).toHaveBeenCalledWith(
+        `/api/sessions/${sessionId}/end`,
+        { cleanup: true }
+      );
+    });
+
+    expect(screen.queryByText('Open Pull Request')).not.toBeInTheDocument();
     expect(mockNavigate).toHaveBeenCalledWith('/');
   });
 });

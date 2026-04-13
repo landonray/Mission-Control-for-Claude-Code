@@ -33,12 +33,14 @@ export default function SessionControls({ sessionId, status, session }) {
   };
 
   const [showCleanupModal, setShowCleanupModal] = useState(false);
+  const [worktreeStatus, setWorktreeStatus] = useState(null);
 
   const handleEnd = async () => {
     if (session?.use_worktree) {
       try {
-        const status = await api.get(`/api/sessions/${sessionId}/worktree-status`);
-        if (status.hasUncommittedChanges) {
+        const wtStatus = await api.get(`/api/sessions/${sessionId}/worktree-status`);
+        if (wtStatus.hasUncommittedChanges || wtStatus.openPR) {
+          setWorktreeStatus(wtStatus);
           setShowCleanupModal(true);
           return;
         }
@@ -61,6 +63,8 @@ export default function SessionControls({ sessionId, status, session }) {
       body = { commit: true, cleanup: true };
     } else if (choice === 'delete') {
       body = { cleanup: true };
+    } else if (choice === 'keepBranch') {
+      body = { cleanup: true, keepBranch: true };
     }
     try {
       await api.post(`/api/sessions/${sessionId}/end`, body);
@@ -164,6 +168,8 @@ export default function SessionControls({ sessionId, status, session }) {
         <WorktreeCleanupModal
           onChoice={handleCleanupChoice}
           onClose={() => setShowCleanupModal(false)}
+          hasUncommittedChanges={worktreeStatus?.hasUncommittedChanges}
+          openPR={worktreeStatus?.openPR}
         />
       )}
     </div>
