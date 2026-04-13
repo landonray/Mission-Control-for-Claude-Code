@@ -184,3 +184,72 @@ describe('cleanupWorktree', () => {
     }).not.toThrow();
   });
 });
+
+describe('checkBranchPR', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('returns PR info when an open PR exists on the branch', async () => {
+    mockExecFileSync.mockReturnValue(JSON.stringify([
+      { number: 42, title: 'Add feature X', url: 'https://github.com/user/repo/pull/42' }
+    ]));
+
+    const { checkBranchPR } = await import('../services/worktreeCleanup.js');
+    const result = checkBranchPR('feature-branch', '/path/to/project');
+
+    expect(result).toEqual({
+      number: 42,
+      title: 'Add feature X',
+      url: 'https://github.com/user/repo/pull/42',
+    });
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      ['pr', 'list', '--head', 'feature-branch', '--state', 'open', '--json', 'number,title,url'],
+      expect.objectContaining({ cwd: '/path/to/project', timeout: 10000 }),
+    );
+  });
+
+  it('returns null when no open PR exists', async () => {
+    mockExecFileSync.mockReturnValue('[]');
+
+    const { checkBranchPR } = await import('../services/worktreeCleanup.js');
+    const result = checkBranchPR('feature-branch', '/path/to/project');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when gh command fails', async () => {
+    mockExecFileSync.mockImplementation(() => { throw new Error('gh not found'); });
+
+    const { checkBranchPR } = await import('../services/worktreeCleanup.js');
+    const result = checkBranchPR('no-gh-branch', '/path/to/project');
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when branch name is falsy', async () => {
+    const { checkBranchPR } = await import('../services/worktreeCleanup.js');
+    const result = checkBranchPR(null, '/path/to/project');
+
+    expect(result).toBeNull();
+    expect(mockExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('returns first PR when multiple open PRs exist', async () => {
+    mockExecFileSync.mockReturnValue(JSON.stringify([
+      { number: 42, title: 'First PR', url: 'https://github.com/user/repo/pull/42' },
+      { number: 43, title: 'Second PR', url: 'https://github.com/user/repo/pull/43' },
+    ]));
+
+    const { checkBranchPR } = await import('../services/worktreeCleanup.js');
+    const result = checkBranchPR('feature-branch', '/path/to/project');
+
+    expect(result).toEqual({
+      number: 42,
+      title: 'First PR',
+      url: 'https://github.com/user/repo/pull/42',
+    });
+  });
+});
