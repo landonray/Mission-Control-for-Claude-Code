@@ -93,7 +93,7 @@ describe('Worktree Cleanup Integration', () => {
   });
 
   it('does not show modal for clean worktrees — silently cleans up', async () => {
-    mockApi.get.mockResolvedValueOnce({ hasUncommittedChanges: false });
+    mockApi.get.mockResolvedValueOnce({ hasUncommittedChanges: false, openPR: null });
 
     render(
       <SessionControls
@@ -373,6 +373,38 @@ describe('Worktree Cleanup Integration', () => {
       expect(mockApi.post).toHaveBeenCalledWith(
         `/api/sessions/${sessionId}/end`,
         { cleanup: true }
+      );
+    });
+
+    expect(mockNavigate).toHaveBeenCalledWith('/');
+  });
+
+  it('"Leave As-Is" in PR-only scenario sends empty body', async () => {
+    mockApi.get.mockResolvedValueOnce({
+      hasUncommittedChanges: false,
+      openPR: { number: 42, title: 'Add feature X', url: 'https://github.com/user/repo/pull/42' },
+    });
+
+    render(
+      <SessionControls
+        sessionId={sessionId}
+        status="active"
+        session={{ use_worktree: true }}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('End session'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Leave As-Is')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Leave As-Is'));
+
+    await waitFor(() => {
+      expect(mockApi.post).toHaveBeenCalledWith(
+        `/api/sessions/${sessionId}/end`,
+        {}
       );
     });
 
