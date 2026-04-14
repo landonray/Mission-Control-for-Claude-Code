@@ -57,6 +57,39 @@ export function commitWorktreeChanges(worktreePath) {
 }
 
 /**
+ * Check if a branch has an open pull request on GitHub.
+ * Returns the first open PR's info, or null if none found.
+ */
+export function checkBranchPR(branchName, projectRoot) {
+  if (!branchName || !projectRoot) return null;
+
+  try {
+    const output = execFileSync('gh', [
+      'pr', 'list',
+      '--head', branchName,
+      '--state', 'open',
+      '--json', 'number,title,url',
+    ], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
+
+    const prs = JSON.parse(output);
+    if (prs.length === 0) return null;
+
+    return {
+      number: prs[0].number,
+      title: prs[0].title,
+      url: prs[0].url,
+    };
+  } catch (e) {
+    // gh CLI not available or failed — treat as no PR (safe default)
+    return null;
+  }
+}
+
+/**
  * Remove a worktree directory and optionally delete its branch.
  * Errors are logged but never thrown — cleanup must not block session ending.
  */

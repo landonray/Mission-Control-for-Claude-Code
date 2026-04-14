@@ -269,7 +269,7 @@ router.post('/:id/archive', async (req, res) => {
   res.json({ success: true, archived: value });
 });
 
-// Check worktree status for uncommitted changes
+// Check worktree status for uncommitted changes and open PRs
 router.get('/:id/worktree-status', async (req, res) => {
   try {
     const result = await query('SELECT working_directory, use_worktree FROM sessions WHERE id = $1', [req.params.id]);
@@ -278,11 +278,33 @@ router.get('/:id/worktree-status', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
     if (!session.use_worktree || !session.working_directory) {
-      return res.json({ hasUncommittedChanges: false, worktreePath: null });
+      return res.json({ hasUncommittedChanges: false, openPR: null, worktreePath: null });
     }
-    const { getWorktreeStatus } = await loadWorktreeCleanup();
+    const { getWorktreeStatus, checkBranchPR } = await loadWorktreeCleanup();
     const status = getWorktreeStatus(session.working_directory);
-    res.json(status);
+
+    // Check for open PRs on this branch
+    const worktreePath = session.working_directory;
+    const wtMatch = worktreePath.match(/^(.+?)\/\.claude\/worktrees\/(.+)$/);
+    const projectRoot = wtMatch ? wtMatch[1] : null;
+    let openPR = null;
+    if (projectRoot) {
+      let branchName = null;
+      try {
+        branchName = execFileSync('git', ['branch', '--show-current'], {
+          cwd: worktreePath,
+          encoding: 'utf-8',
+          timeout: 5000,
+        }).trim();
+      } catch (e) {
+        // Worktree may be gone
+      }
+      if (branchName) {
+        openPR = checkBranchPR(branchName, projectRoot);
+      }
+    }
+
+    res.json({ ...status, openPR });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -291,7 +313,7 @@ router.get('/:id/worktree-status', async (req, res) => {
 // End session (with optional worktree commit/cleanup)
 router.post('/:id/end', async (req, res) => {
   try {
-    const { commit, cleanup } = req.body || {};
+    const { commit, cleanup, keepBranch } = req.body || {};
     const sessionId = req.params.id;
 
     if (commit || cleanup) {
@@ -327,7 +349,7 @@ router.post('/:id/end', async (req, res) => {
           }
 
           if (cleanup) {
-            const deleteBranch = !commit;
+            const deleteBranch = !commit && !keepBranch;
             cleanupWorktree(worktreePath, branchName, projectRoot, deleteBranch);
           }
         }
