@@ -1383,6 +1383,24 @@ class SessionProcess {
     });
     this.generateSummary();
     this.cleanupTmuxFiles();
+
+    // Fire-and-forget: trigger eval run on session end
+    this._triggerEvalsOnEnd().catch(err => {
+      console.error(`[Evals] Failed to trigger evals on session end:`, err.message);
+    });
+  }
+
+  async _triggerEvalsOnEnd() {
+    try {
+      const result = await query('SELECT project_id FROM sessions WHERE id = $1', [this.id]);
+      const projectId = result.rows[0]?.project_id;
+      if (!projectId) return;
+
+      const { triggerEvalRun } = require('../routes/evals');
+      triggerEvalRun(projectId, 'session_end', this.id, this.tmuxSessionName);
+    } catch (err) {
+      console.error(`[Evals] _triggerEvalsOnEnd error:`, err.message);
+    }
   }
 
   cleanupTmuxFiles() {
