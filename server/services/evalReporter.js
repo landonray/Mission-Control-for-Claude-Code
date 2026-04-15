@@ -5,6 +5,16 @@
 import path from 'path';
 
 /**
+ * Safely parse a judge verdict — may be an object, a JSON string, or malformed.
+ * Returns the parsed object, or null if unparseable.
+ */
+function safeParseVerdict(v) {
+  if (!v) return null;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch { return null; }
+}
+
+/**
  * Compose a failure message from eval results, history, and summary.
  *
  * @param {object[]} results - Array of eval run results
@@ -26,9 +36,8 @@ export function composeFailureMessage(results, history, summary) {
 
   // Identify low-confidence passes — spec requires these to be flagged in the message
   const lowConfPasses = passed.filter(r => {
-    if (!r.judgeVerdict) return false;
-    const v = typeof r.judgeVerdict === 'string' ? JSON.parse(r.judgeVerdict) : r.judgeVerdict;
-    return v.confidence === 'low';
+    const v = safeParseVerdict(r.judgeVerdict);
+    return v && v.confidence === 'low';
   });
 
   // PASSED
@@ -44,7 +53,7 @@ export function composeFailureMessage(results, history, summary) {
     lines.push('LOW-CONFIDENCE PASSES — verify these results:');
     for (const r of lowConfPasses) {
       const folder = r.evalFolder ? path.basename(r.evalFolder) + '/' : '';
-      const v = typeof r.judgeVerdict === 'string' ? JSON.parse(r.judgeVerdict) : r.judgeVerdict;
+      const v = safeParseVerdict(r.judgeVerdict);
       lines.push(`  ${r.evalName} (${folder})`);
       if (v.reasoning) {
         lines.push(`    Judge reasoning: "${v.reasoning}"`);
@@ -75,11 +84,11 @@ export function composeFailureMessage(results, history, summary) {
     }
 
     if (r.judgeVerdict) {
-      const verdict = typeof r.judgeVerdict === 'string' ? JSON.parse(r.judgeVerdict) : r.judgeVerdict;
-      if (verdict.reasoning) {
+      const verdict = safeParseVerdict(r.judgeVerdict);
+      if (verdict && verdict.reasoning) {
         lines.push(`  Judge reasoning: "${verdict.reasoning}"`);
       }
-      if (verdict.confidence !== undefined) {
+      if (verdict && verdict.confidence !== undefined) {
         lines.push(`  Confidence: ${verdict.confidence}`);
         if (verdict.confidence === 'low') {
           lines.push(`  Note: Judge confidence was low — verify before acting on this result.`);

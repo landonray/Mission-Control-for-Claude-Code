@@ -280,17 +280,35 @@ export async function gatherSubAgent(config, context) {
  */
 export function truncateLogEvidence(content, maxBytes) {
   if (!content) return '';
-  const buf = Buffer.from(content, 'utf8');
-  if (buf.length <= maxBytes) return content;
+  if (Buffer.byteLength(content, 'utf8') <= maxBytes) return content;
 
-  // Split into lines for head+tail with line-count reporting per spec
+  // Line-based head+tail truncation that respects the byte budget.
+  // Build head lines from the front and tail lines from the back,
+  // stopping when adding another line would exceed half the budget.
   const lines = content.split('\n');
   const totalLines = lines.length;
-  // Take roughly half the lines from head and half from tail
-  const halfLines = Math.max(1, Math.floor(totalLines / 4));
-  const headLines = lines.slice(0, halfLines);
-  const tailLines = lines.slice(totalLines - halfLines);
-  const omitted = totalLines - halfLines * 2;
+  const separatorReserve = 60; // room for "[truncated — N lines omitted]" separator
+  const halfBudget = Math.floor((maxBytes - separatorReserve) / 2);
+
+  const headLines = [];
+  let headBytes = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const lineBytes = Buffer.byteLength(lines[i], 'utf8') + 1; // +1 for newline
+    if (headBytes + lineBytes > halfBudget && headLines.length > 0) break;
+    headLines.push(lines[i]);
+    headBytes += lineBytes;
+  }
+
+  const tailLines = [];
+  let tailBytes = 0;
+  for (let i = lines.length - 1; i >= headLines.length; i--) {
+    const lineBytes = Buffer.byteLength(lines[i], 'utf8') + 1;
+    if (tailBytes + lineBytes > halfBudget && tailLines.length > 0) break;
+    tailLines.unshift(lines[i]);
+    tailBytes += lineBytes;
+  }
+
+  const omitted = totalLines - headLines.length - tailLines.length;
   return `${headLines.join('\n')}\n\n[truncated — ${omitted} lines omitted]\n\n${tailLines.join('\n')}`;
 }
 
