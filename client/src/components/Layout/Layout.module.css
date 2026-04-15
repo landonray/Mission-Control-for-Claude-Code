@@ -79,6 +79,21 @@
   border-left: 1px solid var(--border);
 }
 
+.rightPanel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/left-panel-bg.jpg') center bottom / cover no-repeat;
+  opacity: 0.2;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.rightPanel > * {
+  position: relative;
+  z-index: 1;
+}
+
 .rightPanel.collapsed {
   width: 40px !important;
   min-width: 40px;
