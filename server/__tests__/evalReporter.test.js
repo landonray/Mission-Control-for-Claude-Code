@@ -32,12 +32,12 @@ describe('evalReporter', () => {
       expect(msg).toContain('check-db:    FAIL def456 → PASS abc123');
     });
 
-    it('adds low-confidence note when judge confidence is below 0.5', () => {
+    it('adds low-confidence note when judge confidence is low', () => {
       const results = [
         {
           evalName: 'flaky-eval', state: 'fail', evalFolder: '/project/evals',
           failReason: 'output mismatch',
-          judgeVerdict: { result: 'fail', reasoning: 'Unclear evidence', confidence: 0.3 },
+          judgeVerdict: { result: 'fail', reasoning: 'Unclear evidence', confidence: 'low' },
         },
       ];
       const summary = { total: 1, passed: 0, failed: 1, errors: 0 };
@@ -47,12 +47,12 @@ describe('evalReporter', () => {
       expect(msg).toContain('Judge confidence was low — verify before acting on this result.');
     });
 
-    it('does not add low-confidence note when confidence is 0.5 or above', () => {
+    it('does not add low-confidence note when confidence is medium or high', () => {
       const results = [
         {
           evalName: 'solid-eval', state: 'fail', evalFolder: '/project/evals',
           failReason: 'wrong output',
-          judgeVerdict: { result: 'fail', reasoning: 'Clear mismatch', confidence: 0.5 },
+          judgeVerdict: { result: 'fail', reasoning: 'Clear mismatch', confidence: 'medium' },
         },
       ];
       const summary = { total: 1, passed: 0, failed: 1, errors: 0 };

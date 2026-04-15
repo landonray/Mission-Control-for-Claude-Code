@@ -150,7 +150,9 @@ export default function QualityTab({ sessionId }) {
         await api.post(`/api/evals/folders/${project.id}/arm`, { folder_path: folder.folder_path, folder_name: folder.folder_name });
       }
       loadFolders();
-    } catch {}
+    } catch (err) {
+      console.error('[QualityTab] Failed to toggle arm state:', err);
+    }
   };
 
   const handleAutoSend = async (folder) => {
@@ -160,7 +162,9 @@ export default function QualityTab({ sessionId }) {
         auto_send: !folder.auto_send,
       });
       loadFolders();
-    } catch {}
+    } catch (err) {
+      console.error('[QualityTab] Failed to update auto-send:', err);
+    }
   };
 
   const handleTriggerToggle = async (folder, trigger) => {
@@ -177,7 +181,9 @@ export default function QualityTab({ sessionId }) {
         triggers: updated.join(','),
       });
       loadFolders();
-    } catch {}
+    } catch (err) {
+      console.error('[QualityTab] Failed to toggle trigger:', err);
+    }
   };
 
   const handleRunEvals = async () => {
@@ -186,7 +192,9 @@ export default function QualityTab({ sessionId }) {
     try {
       await api.post(`/api/evals/run/${project.id}`);
       loadHistory();
-    } catch {}
+    } catch (err) {
+      console.error('[QualityTab] Failed to run evals:', err);
+    }
     setRunning(false);
   };
 
@@ -201,7 +209,9 @@ export default function QualityTab({ sessionId }) {
       try {
         const runs = await api.get(`/api/evals/batch/${batchId}`);
         setBatchRuns(prev => ({ ...prev, [batchId]: runs }));
-      } catch {}
+      } catch (err) {
+        console.error('[QualityTab] Failed to load batch runs:', err);
+      }
     }
   };
 

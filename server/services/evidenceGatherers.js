@@ -243,6 +243,7 @@ export function interpolateVariables(str, context) {
 export function buildParameterizedQuery(queryTemplate, context) {
   const params = [];
   let paramIndex = 0;
+  const unresolved = [];
 
   const sql = queryTemplate.replace(/\$\{([^}]+)\}/g, (match, expr) => {
     const parts = expr.trim().split('.');
@@ -253,16 +254,26 @@ export function buildParameterizedQuery(queryTemplate, context) {
     }
 
     for (const part of parts) {
-      if (value == null || typeof value !== 'object') return match; // leave unresolved
+      if (value == null || typeof value !== 'object') {
+        unresolved.push(expr.trim());
+        return match;
+      }
       value = value[part];
     }
 
-    if (value == null) return match; // leave unresolved placeholders as-is
+    if (value == null) {
+      unresolved.push(expr.trim());
+      return match;
+    }
 
     paramIndex++;
     params.push(value);
     return `$${paramIndex}`;
   });
+
+  if (unresolved.length > 0) {
+    throw new Error(`Unresolved variable(s) in DB query: ${unresolved.join(', ')}`);
+  }
 
   return { sql, params };
 }

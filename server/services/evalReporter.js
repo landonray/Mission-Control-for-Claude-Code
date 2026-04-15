@@ -58,7 +58,7 @@ export function composeFailureMessage(results, history, summary) {
       }
       if (verdict.confidence !== undefined) {
         lines.push(`  Confidence: ${verdict.confidence}`);
-        if (verdict.confidence < 0.5) {
+        if (verdict.confidence === 'low') {
           lines.push(`  Note: Judge confidence was low — verify before acting on this result.`);
         }
       }
