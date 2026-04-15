@@ -23,6 +23,37 @@ function renderMarkdown(text) {
     return `<pre class="md-code-block"><code>${code.trim()}</code></pre>`;
   });
 
+  // Tables (must run before inline formatting)
+  html = html.replace(/(^\|.+\|[ ]*\n\|[\s:|-]+\|[ ]*\n(\|.+\|[ ]*\n?)*)/gm, (tableBlock) => {
+    const rows = tableBlock.trim().split('\n');
+    if (rows.length < 2) return tableBlock;
+    const parseRow = (row) => row.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+    const headers = parseRow(rows[0]);
+    // Parse alignment from separator row
+    const separators = parseRow(rows[1]);
+    const aligns = separators.map(s => {
+      if (/^:-+:$/.test(s)) return 'center';
+      if (/^-+:$/.test(s)) return 'right';
+      return 'left';
+    });
+    let table = '<table class="md-table"><thead><tr>';
+    headers.forEach((h, i) => {
+      table += `<th style="text-align:${aligns[i] || 'left'}">${h}</th>`;
+    });
+    table += '</tr></thead><tbody>';
+    for (let r = 2; r < rows.length; r++) {
+      if (!rows[r].trim()) continue;
+      const cells = parseRow(rows[r]);
+      table += '<tr>';
+      cells.forEach((c, i) => {
+        table += `<td style="text-align:${aligns[i] || 'left'}">${c}</td>`;
+      });
+      table += '</tr>';
+    }
+    table += '</tbody></table>';
+    return table;
+  });
+
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
 
@@ -86,6 +117,8 @@ function renderMarkdown(text) {
   html = html.replace(/<p>(<blockquote>)/g, '$1');
   html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
   html = html.replace(/<p>(<hr \/>)<\/p>/g, '$1');
+  html = html.replace(/<p>(<table)/g, '$1');
+  html = html.replace(/(<\/table>)<\/p>/g, '$1');
 
   return html;
 }
