@@ -123,9 +123,20 @@ router.post('/create', async (req, res) => {
     // Step 3: git init
     execSync('git init', { cwd: folderPath, stdio: 'pipe' });
 
-    // Step 4: Initial commit
+    // Step 4: Initial commit (includes .mission-control.yaml for project linking)
     fs.writeFileSync(path.join(folderPath, 'README.md'), `# ${name}\n`);
-    execSync('git add README.md', { cwd: folderPath, stdio: 'pipe' });
+    const yaml = require('js-yaml');
+    const defaultConfig = {
+      project: { name },
+      evals: { folders: [] },
+      quality_rules: { enabled: [], disabled: [] }
+    };
+    fs.writeFileSync(
+      path.join(folderPath, '.mission-control.yaml'),
+      yaml.dump(defaultConfig, { flowLevel: -1, lineWidth: 120 }),
+      'utf8'
+    );
+    execSync('git add README.md .mission-control.yaml', { cwd: folderPath, stdio: 'pipe' });
     execSync('git commit -m "Initial commit"', {
       cwd: folderPath,
       stdio: 'pipe',
