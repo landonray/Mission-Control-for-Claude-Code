@@ -151,9 +151,14 @@ describe('evidenceGatherers', () => {
   });
 
   describe('gatherDbQuery', () => {
-    it('executes SQL and returns JSON rows', async () => {
+    it('executes SQL in a read-only transaction and returns JSON rows', async () => {
+      const queryCalls = [];
       const mockDb = {
-        query: vi.fn().mockResolvedValue({ rows: [{ id: 1, name: 'test' }] }),
+        query: vi.fn().mockImplementation((sql) => {
+          queryCalls.push(sql);
+          if (sql === 'BEGIN TRANSACTION READ ONLY' || sql === 'COMMIT') return Promise.resolve({ rows: [] });
+          return Promise.resolve({ rows: [{ id: 1, name: 'test' }] });
+        }),
         end: vi.fn().mockResolvedValue(undefined),
       };
       const { gatherDbQuery } = await getModule();
@@ -165,6 +170,9 @@ describe('evidenceGatherers', () => {
 
       const parsed = JSON.parse(result.split('\n\n[truncated')[0]);
       expect(parsed).toEqual([{ id: 1, name: 'test' }]);
+      // Verify read-only transaction was used
+      expect(queryCalls[0]).toBe('BEGIN TRANSACTION READ ONLY');
+      expect(queryCalls[queryCalls.length - 1]).toBe('COMMIT');
     });
 
     it('throws when no query specified', async () => {
@@ -191,10 +199,17 @@ describe('evidenceGatherers', () => {
       ).rejects.toThrow('No database connection factory');
     });
 
-    it('closes db connection even on error', async () => {
+    it('closes db connection and rolls back on error', async () => {
       const mockEnd = vi.fn().mockResolvedValue(undefined);
+      let callCount = 0;
       const mockDb = {
-        query: vi.fn().mockRejectedValue(new Error('SQL error')),
+        query: vi.fn().mockImplementation((sql) => {
+          callCount++;
+          // First call is BEGIN — succeed. Second call is the actual query — fail.
+          if (callCount === 1) return Promise.resolve({ rows: [] });
+          if (sql === 'ROLLBACK') return Promise.resolve({ rows: [] });
+          return Promise.reject(new Error('SQL error'));
+        }),
         end: mockEnd,
       };
       const { gatherDbQuery } = await getModule();
@@ -251,12 +266,15 @@ describe('evidenceGatherers', () => {
       expect(result).toBe('short content');
     });
 
-    it('truncates with head+tail when over limit', async () => {
+    it('truncates with head+tail and line count when over limit', async () => {
       const { truncateLogEvidence } = await getModule();
-      const content = 'A'.repeat(200);
-      const result = truncateLogEvidence(content, 100);
-      expect(result).toContain('... [truncated');
-      expect(result.length).toBeLessThan(200);
+      // Create multi-line content that exceeds limit
+      const lines = Array.from({ length: 100 }, (_, i) => `Line ${i}: ${'x'.repeat(20)}`);
+      const content = lines.join('\n');
+      const result = truncateLogEvidence(content, 500);
+      expect(result).toContain('[truncated —');
+      expect(result).toContain('lines omitted]');
+      expect(result.length).toBeLessThan(content.length);
     });
 
     it('handles empty content', async () => {

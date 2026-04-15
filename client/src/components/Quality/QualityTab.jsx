@@ -576,7 +576,7 @@ export default function QualityTab({ sessionId }) {
                   {expandedFolders[folder.folder_path] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
                 <div className={styles.folderInfo}>
-                  <span className={styles.folderName}>{folder.name || folder.folder_path}</span>
+                  <span className={styles.folderName}>{folder.folder_name || folder.name || folder.folder_path}</span>
                   {folder.eval_count != null && (
                     <span className={styles.evalCount}>{folder.eval_count} eval{folder.eval_count !== 1 ? 's' : ''}</span>
                   )}

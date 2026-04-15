@@ -2,7 +2,8 @@
  * Eval Judge — calls an LLM to judge evidence against expected outcomes.
  */
 
-import { chatCompletion } from './llmGateway.js';
+import llmGateway from './llmGateway.js';
+const { chatCompletion } = llmGateway;
 
 export const MODEL_MAP = {
   default: 'claude-sonnet-4-6',

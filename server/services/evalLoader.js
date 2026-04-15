@@ -128,11 +128,26 @@ function validate(evalDef, filePath) {
     );
   }
 
-  // Validate evidence type
-  if (evalDef.evidence.type && !VALID_EVIDENCE_TYPES.includes(evalDef.evidence.type)) {
+  // Validate evidence type — required field per spec
+  if (!evalDef.evidence.type) {
+    throw new Error(
+      `${label}: missing required field "evidence.type" — must be one of ${VALID_EVIDENCE_TYPES.join(', ')}`
+    );
+  }
+  if (!VALID_EVIDENCE_TYPES.includes(evalDef.evidence.type)) {
     throw new Error(
       `${label}: invalid evidence type "${evalDef.evidence.type}" — must be one of ${VALID_EVIDENCE_TYPES.join(', ')}`
     );
+  }
+
+  // Validate judge.model if provided — must be a tier key, not a model name
+  if (evalDef.judge && evalDef.judge.model) {
+    const validModelTiers = ['default', 'fast', 'strong'];
+    if (!validModelTiers.includes(evalDef.judge.model)) {
+      throw new Error(
+        `${label}: invalid judge model "${evalDef.judge.model}" — must be one of ${validModelTiers.join(', ')} (not a model name)`
+      );
+    }
   }
 
   // Validate check types

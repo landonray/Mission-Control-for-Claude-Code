@@ -1255,6 +1255,40 @@ exit 0`,
       config: null,
       category: 'teams',
       sort_order: 35
+    },
+    {
+      id: 'eval-authoring',
+      name: 'Eval Authoring',
+      description: 'Proposes new eval YAML files for the project based on the current session work. Analyzes what was built or changed and suggests evals that would catch regressions.',
+      hook_type: 'agent',
+      fires_on: 'Stop',
+      severity: 'low',
+      enabled: 0,
+      prompt: `You are an eval authoring assistant. Based on the work done in this session, propose new eval YAML files that would catch regressions.
+
+For each eval you propose, output a complete YAML eval definition following this schema:
+- name: descriptive kebab-case name
+- description: what this eval checks
+- input: key-value map of test inputs
+- evidence: { type: log_query|db_query|sub_agent|file, source/path/query as appropriate }
+- checks: list of deterministic checks (regex_match, not_empty, json_valid, json_schema, http_status, field_exists)
+- judge_prompt: (optional) LLM judge instructions for nuanced evaluation
+- expected: (required if judge_prompt is set) what the judge should look for
+
+Guidelines:
+1. Focus on the specific features or fixes from this session
+2. Prefer deterministic checks over judge-based evals where possible
+3. Each eval should test one specific behavior
+4. Use realistic input values based on the actual code
+5. Place evals in the appropriate subfolder based on the feature area
+
+Output each proposed eval as a separate YAML code block with a suggested file path comment at the top.
+If no meaningful evals can be proposed for this session's work, respond with:
+PASS: No new evals needed for this session.`,
+      script: null,
+      config: JSON.stringify({ tools: ['Read', 'Glob', 'Grep'] }),
+      category: 'evals',
+      sort_order: 36
     }
   ];
 

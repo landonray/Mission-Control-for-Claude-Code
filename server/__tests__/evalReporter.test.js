@@ -95,6 +95,27 @@ describe('evalReporter', () => {
       expect(msg).toContain('FAIL abc123 → PASS ???');
     });
 
+    it('flags low-confidence pass results in the message', () => {
+      const results = [
+        {
+          evalName: 'ambiguous-eval', state: 'pass', evalFolder: '/project/evals',
+          judgeVerdict: { result: 'pass', reasoning: 'Evidence is borderline', confidence: 'low' },
+        },
+        { evalName: 'solid-eval', state: 'pass', evalFolder: '/project/evals' },
+      ];
+      const summary = { total: 2, passed: 2, failed: 0, errors: 0 };
+
+      const msg = composeFailureMessage(results, [], summary);
+
+      expect(msg).toContain('PASSED (LOW CONFIDENCE): ambiguous-eval');
+      expect(msg).toContain('LOW-CONFIDENCE PASSES');
+      expect(msg).toContain('Evidence is borderline');
+      expect(msg).toContain('verify before trusting this pass');
+      // The solid eval should NOT be flagged
+      expect(msg).toMatch(/PASSED: solid-eval/);
+      expect(msg).not.toMatch(/PASSED \(LOW CONFIDENCE\): solid-eval/);
+    });
+
     it('handles empty results gracefully', () => {
       const msg = composeFailureMessage([], [], { total: 0, passed: 0, failed: 0, errors: 0 });
       expect(msg).toContain('Eval run complete: 0 evals ran, 0 failed, 0 errors.');

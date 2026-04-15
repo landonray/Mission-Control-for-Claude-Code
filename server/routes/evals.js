@@ -391,7 +391,7 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
       }
 
       // Build shared context for evidence gatherers
-      const pg = await import('pg');
+      const { neon } = require('@neondatabase/serverless');
       const baseContext = {
         projectRoot: project.root_path,
         commitSha,
@@ -399,9 +399,15 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         // DB readonly connection — required for db_query evidence
         dbReadonlyUrl: process.env.DATABASE_URL_READONLY || null,
         createDbConnection: async (url) => {
-          const client = new pg.default.Client({ connectionString: url });
-          await client.connect();
-          return client;
+          const sql = neon(url);
+          // Return a pg-compatible interface with .query() and .end()
+          return {
+            query: async (text, params) => {
+              const rows = await sql.query(text, params || []);
+              return { rows, rowCount: rows.length };
+            },
+            end: async () => { /* neon serverless is stateless, no connection to close */ },
+          };
         },
         // Session log path — capture tmux scrollback if session is available
         sessionLogPath: null,

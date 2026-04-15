@@ -183,6 +183,53 @@ describe('evalLoader', () => {
       expect(() => loadEval('/eval.yaml')).toThrow('invalid evidence type "magic_source"');
     });
 
+    it('throws when evidence.type is missing', async () => {
+      mockReadFileSync.mockReturnValue('yaml');
+      mockYamlLoad.mockReturnValue({
+        name: 'test',
+        description: 'desc',
+        input: {},
+        evidence: { source: 'stdout' },
+        checks: [{ type: 'not_empty' }],
+      });
+
+      const { loadEval } = await getModule();
+      expect(() => loadEval('/eval.yaml')).toThrow('missing required field "evidence.type"');
+    });
+
+    it('throws for invalid judge.model tier', async () => {
+      mockReadFileSync.mockReturnValue('yaml');
+      mockYamlLoad.mockReturnValue({
+        name: 'test',
+        description: 'desc',
+        input: {},
+        evidence: { type: 'file', path: 'out.txt' },
+        judge_prompt: 'Check it',
+        expected: 'works',
+        judge: { model: 'claude-sonnet-4-6' },
+      });
+
+      const { loadEval } = await getModule();
+      expect(() => loadEval('/eval.yaml')).toThrow('invalid judge model "claude-sonnet-4-6"');
+    });
+
+    it('accepts valid judge.model tier', async () => {
+      mockReadFileSync.mockReturnValue('yaml');
+      mockYamlLoad.mockReturnValue({
+        name: 'test',
+        description: 'desc',
+        input: {},
+        evidence: { type: 'file', path: 'out.txt' },
+        judge_prompt: 'Check it',
+        expected: 'works',
+        judge: { model: 'strong' },
+      });
+
+      const { loadEval } = await getModule();
+      const result = loadEval('/eval.yaml');
+      expect(result.judge.model).toBe('strong');
+    });
+
     it('throws for non-object YAML', async () => {
       mockReadFileSync.mockReturnValue('yaml');
       mockYamlLoad.mockReturnValue('just a string');

@@ -71,13 +71,14 @@ export async function gatherLogQuery(config, context) {
 
   // Apply regex filter if provided.
   // Spec format: filter: { regex: "pattern" } or filter: "pattern" (legacy string shorthand)
+  // Variable interpolation is applied to filter patterns per spec.
   if (config.filter) {
     let pattern, flags;
     if (typeof config.filter === 'object' && config.filter.regex) {
-      pattern = config.filter.regex;
+      pattern = interpolateVariables(config.filter.regex, context);
       flags = config.filter.flags || 'gm';
     } else if (typeof config.filter === 'string') {
-      pattern = config.filter;
+      pattern = interpolateVariables(config.filter, context);
       flags = config.filter_flags || 'gm';
     }
     if (pattern) {
@@ -169,8 +170,15 @@ export async function gatherDbQuery(config, context) {
   let rows;
   const db = await context.createDbConnection(context.dbReadonlyUrl);
   try {
+    // Second safety layer: wrap in a read-only transaction so even if the
+    // readonly URL has write privileges, mutating statements are rejected.
+    await db.query('BEGIN TRANSACTION READ ONLY');
     const result = await db.query(sql, params);
     rows = result.rows || result;
+    await db.query('COMMIT');
+  } catch (err) {
+    try { await db.query('ROLLBACK'); } catch (_) {}
+    throw err;
   } finally {
     if (db.end) await db.end();
   }
@@ -201,7 +209,7 @@ export async function gatherSubAgent(config, context) {
       const os = await import('os');
       const sourcePath = resolveLogSource(config.context_source, context);
       const sourceContent = fs.readFileSync(sourcePath, 'utf8');
-      contextFilePath = path.join(os.default.tmpdir(), `eval-subagent-context-${Date.now()}.txt`);
+      contextFilePath = path.join(os.tmpdir(), `eval-subagent-context-${Date.now()}.txt`);
       fs.writeFileSync(contextFilePath, sourceContent, 'utf8');
     }
 
@@ -213,23 +221,46 @@ export async function gatherSubAgent(config, context) {
 
     return await new Promise((resolve, reject) => {
       const args = ['--print', prompt];
-      if (context.projectRoot) {
-        args.unshift('--cwd', context.projectRoot);
-      }
-      // Sub-agent isolation: restrict to read-only tools per spec
+
+      // Sub-agent isolation per spec:
+      // - Restrict to read-only tools only
+      // - Most restrictive permission mode
+      // - No MCP servers
+      // - No tmux access (implicitly prevented by tool restrictions)
       const allowedTools = config.allowed_tools || ['Read', 'Glob', 'Grep', 'Bash(read-only)'];
       args.push('--allowedTools', allowedTools.join(','));
+      args.push('--permission-mode', 'plan');
+      args.push('--no-mcp');
+
+      // If we have a context file, scope the sub-agent to its directory only;
+      // otherwise allow project root access for file reads
+      if (contextFilePath) {
+        args.unshift('--cwd', path.dirname(contextFilePath));
+      } else if (context.projectRoot) {
+        args.unshift('--cwd', context.projectRoot);
+      }
+
+      const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.sub_agent;
 
       execFile('claude', args, {
         timeout: config.timeout || DEFAULT_TIMEOUTS.sub_agent,
-        maxBuffer: DEFAULT_SIZE_CAPS.sub_agent,
+        maxBuffer: maxBytes + 1024, // small buffer margin for overhead
       }, (err, stdout) => {
         if (err) {
+          // Check if this is a buffer overflow — spec says fail with clear error, no truncation
+          if (err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+            reject(new Error(`Sub-agent evidence too large: output exceeded ${maxBytes} byte cap`));
+            return;
+          }
           reject(new Error(`Sub-agent failed: ${err.message}`));
           return;
         }
-        const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.sub_agent;
-        resolve(truncateLogEvidence(stdout, maxBytes));
+        // Spec: sub-agent evidence must NOT be truncated — fail if too large
+        if (Buffer.byteLength(stdout, 'utf8') > maxBytes) {
+          reject(new Error(`Sub-agent evidence too large: output is ${Buffer.byteLength(stdout, 'utf8')} bytes, cap is ${maxBytes} bytes`));
+          return;
+        }
+        resolve(stdout);
       });
     });
   } finally {
@@ -252,10 +283,15 @@ export function truncateLogEvidence(content, maxBytes) {
   const buf = Buffer.from(content, 'utf8');
   if (buf.length <= maxBytes) return content;
 
-  const halfBytes = Math.floor(maxBytes / 2) - 30; // 30 bytes for separator
-  const head = buf.subarray(0, halfBytes).toString('utf8');
-  const tail = buf.subarray(buf.length - halfBytes).toString('utf8');
-  return `${head}\n\n... [truncated ${buf.length - maxBytes} bytes] ...\n\n${tail}`;
+  // Split into lines for head+tail with line-count reporting per spec
+  const lines = content.split('\n');
+  const totalLines = lines.length;
+  // Take roughly half the lines from head and half from tail
+  const halfLines = Math.max(1, Math.floor(totalLines / 4));
+  const headLines = lines.slice(0, halfLines);
+  const tailLines = lines.slice(totalLines - halfLines);
+  const omitted = totalLines - halfLines * 2;
+  return `${headLines.join('\n')}\n\n[truncated — ${omitted} lines omitted]\n\n${tailLines.join('\n')}`;
 }
 
 /**

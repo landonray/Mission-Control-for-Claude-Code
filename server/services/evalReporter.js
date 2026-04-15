@@ -24,12 +24,35 @@ export function composeFailureMessage(results, history, summary) {
   const failed = results.filter(r => r.state === 'fail');
   const errors = results.filter(r => r.state === 'error');
 
+  // Identify low-confidence passes — spec requires these to be flagged in the message
+  const lowConfPasses = passed.filter(r => {
+    if (!r.judgeVerdict) return false;
+    const v = typeof r.judgeVerdict === 'string' ? JSON.parse(r.judgeVerdict) : r.judgeVerdict;
+    return v.confidence === 'low';
+  });
+
   // PASSED
   for (const r of passed) {
     const folder = r.evalFolder ? path.basename(r.evalFolder) + '/' : '';
-    lines.push(`PASSED: ${r.evalName} (${folder})`);
+    const isLowConf = lowConfPasses.includes(r);
+    lines.push(`PASSED${isLowConf ? ' (LOW CONFIDENCE)' : ''}: ${r.evalName} (${folder})`);
   }
   if (passed.length > 0) lines.push('');
+
+  // LOW-CONFIDENCE PASS DETAILS — spec: amber-flagged passes must be called out
+  if (lowConfPasses.length > 0) {
+    lines.push('LOW-CONFIDENCE PASSES — verify these results:');
+    for (const r of lowConfPasses) {
+      const folder = r.evalFolder ? path.basename(r.evalFolder) + '/' : '';
+      const v = typeof r.judgeVerdict === 'string' ? JSON.parse(r.judgeVerdict) : r.judgeVerdict;
+      lines.push(`  ${r.evalName} (${folder})`);
+      if (v.reasoning) {
+        lines.push(`    Judge reasoning: "${v.reasoning}"`);
+      }
+      lines.push(`    Note: Judge confidence was low — verify before trusting this pass.`);
+    }
+    lines.push('');
+  }
 
   // FAILED
   for (const r of failed) {
