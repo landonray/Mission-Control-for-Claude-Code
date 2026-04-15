@@ -13,6 +13,11 @@ export const VALID_CHECK_TYPES = [
   'json_schema',
   'http_status',
   'field_exists',
+  'equals',
+  'contains',
+  'greater_than',
+  'less_than',
+  'numeric_score',
 ];
 
 export const VALID_EVIDENCE_TYPES = ['log_query', 'db_query', 'sub_agent', 'file'];
