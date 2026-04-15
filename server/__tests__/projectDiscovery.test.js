@@ -2,19 +2,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockExistsSync = vi.fn();
 const mockReadFileSync = vi.fn();
+const mockWriteFileSync = vi.fn();
 const mockYamlLoad = vi.fn();
+const mockYamlDump = vi.fn(() => 'project: {}\nevals:\n  folders: []\nquality_rules:\n  enabled: []\n  disabled: []\n');
 const mockQuery = vi.fn();
 const mockUuidV4 = vi.fn(() => 'test-uuid-1234');
 
 vi.mock('fs', () => ({
   existsSync: mockExistsSync,
   readFileSync: mockReadFileSync,
-  default: { existsSync: mockExistsSync, readFileSync: mockReadFileSync },
+  writeFileSync: mockWriteFileSync,
+  default: { existsSync: mockExistsSync, readFileSync: mockReadFileSync, writeFileSync: mockWriteFileSync },
 }));
 
 vi.mock('js-yaml', () => ({
   load: mockYamlLoad,
-  default: { load: mockYamlLoad },
+  dump: mockYamlDump,
+  default: { load: mockYamlLoad, dump: mockYamlDump },
 }));
 
 vi.mock('uuid', () => ({
@@ -133,10 +137,35 @@ describe('resolveProject', () => {
     expect(await resolveProject('')).toBeNull();
   });
 
-  it('returns null when no .mission-control.yaml is found', async () => {
+  it('returns null when no .mission-control.yaml and no git root is found', async () => {
     mockExistsSync.mockReturnValue(false);
     const { resolveProject } = await import('../services/projectDiscovery.js');
     expect(await resolveProject('/projects/no-config')).toBeNull();
+  });
+
+  it('auto-creates .mission-control.yaml when git root exists but no yaml', async () => {
+    // No .mission-control.yaml anywhere, but .git exists at /projects/git-app
+    mockExistsSync.mockImplementation((p) => {
+      if (p === '/projects/git-app/.git') return true;
+      if (p.endsWith('.mission-control.yaml')) return false;
+      return false;
+    });
+    mockReadFileSync.mockReturnValue('');
+    mockYamlLoad.mockReturnValue({});
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 'test-uuid-1234', name: 'git-app', root_path: '/projects/git-app' }],
+    });
+
+    const { resolveProject } = await import('../services/projectDiscovery.js');
+    const project = await resolveProject('/projects/git-app');
+    expect(project).not.toBeNull();
+    expect(project.id).toBe('test-uuid-1234');
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      '/projects/git-app/.mission-control.yaml',
+      expect.any(String),
+      'utf8'
+    );
   });
 
   it('returns existing project from DB when root_path matches', async () => {
@@ -191,6 +220,64 @@ describe('resolveProject', () => {
     const { resolveProject } = await import('../services/projectDiscovery.js');
     await resolveProject('/projects/my-app');
     expect(mockQuery.mock.calls[1][1][1]).toBe('my-app');
+  });
+});
+
+describe('findGitRoot', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('returns the directory containing .git', async () => {
+    mockExistsSync.mockImplementation((p) => p === '/projects/my-app/.git');
+    const { findGitRoot } = await import('../services/projectDiscovery.js');
+    expect(findGitRoot('/projects/my-app/src')).toBe('/projects/my-app');
+  });
+
+  it('returns null when no .git is found up to root', async () => {
+    mockExistsSync.mockReturnValue(false);
+    const { findGitRoot } = await import('../services/projectDiscovery.js');
+    expect(findGitRoot('/projects/no-git')).toBeNull();
+  });
+});
+
+describe('createDefaultConfig', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('writes default config yaml to disk', async () => {
+    mockExistsSync.mockReturnValue(false);
+    const { createDefaultConfig } = await import('../services/projectDiscovery.js');
+    const result = createDefaultConfig('/projects/my-app');
+    expect(result).toBe(true);
+    expect(mockWriteFileSync).toHaveBeenCalledWith(
+      '/projects/my-app/.mission-control.yaml',
+      expect.any(String),
+      'utf8'
+    );
+  });
+
+  it('returns false if file already exists', async () => {
+    mockExistsSync.mockImplementation((p) =>
+      p === '/projects/my-app/.mission-control.yaml'
+    );
+    const { createDefaultConfig } = await import('../services/projectDiscovery.js');
+    const result = createDefaultConfig('/projects/my-app');
+    expect(result).toBe(false);
+    expect(mockWriteFileSync).not.toHaveBeenCalled();
+  });
+
+  it('returns false and logs warning on write failure', async () => {
+    mockExistsSync.mockReturnValue(false);
+    mockWriteFileSync.mockImplementation(() => { throw new Error('EACCES'); });
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { createDefaultConfig } = await import('../services/projectDiscovery.js');
+    const result = createDefaultConfig('/projects/readonly');
+    expect(result).toBe(false);
+    spy.mockRestore();
   });
 });
 

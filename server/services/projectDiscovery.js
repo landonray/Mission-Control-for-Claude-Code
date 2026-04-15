@@ -34,6 +34,45 @@ function findProjectRoot(startDir) {
 }
 
 /**
+ * Walk up the directory tree looking for a .git directory (the git repo root).
+ * Returns the directory path where found, or null.
+ */
+function findGitRoot(startDir) {
+  let current = path.resolve(startDir);
+  const root = path.parse(current).root;
+
+  while (true) {
+    const gitPath = path.join(current, '.git');
+    if (fs.existsSync(gitPath)) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current || current === root) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+/**
+ * Create a default .mission-control.yaml at the given directory.
+ * Returns true if the file was created, false if it already exists or creation failed.
+ */
+function createDefaultConfig(projectRoot) {
+  const configPath = path.join(projectRoot, CONFIG_FILENAME);
+  if (fs.existsSync(configPath)) return false;
+
+  try {
+    const content = yaml.dump(DEFAULT_CONFIG, { flowLevel: -1, lineWidth: 120 });
+    fs.writeFileSync(configPath, content, 'utf8');
+    return true;
+  } catch (err) {
+    console.warn('Failed to create default .mission-control.yaml:', err.message);
+    return false;
+  }
+}
+
+/**
  * Read and parse .mission-control.yaml from a project root directory.
  * Returns config with defaults for missing fields.
  */
@@ -70,8 +109,16 @@ function loadProjectConfig(projectRoot) {
 async function resolveProject(workingDirectory) {
   if (!workingDirectory) return null;
 
-  const projectRoot = findProjectRoot(workingDirectory);
-  if (!projectRoot) return null;
+  let projectRoot = findProjectRoot(workingDirectory);
+
+  // If no .mission-control.yaml exists but we're inside a git repo,
+  // auto-create a default config so project linking and quality rules work.
+  if (!projectRoot) {
+    const gitRoot = findGitRoot(workingDirectory);
+    if (!gitRoot) return null;
+    createDefaultConfig(gitRoot);
+    projectRoot = gitRoot;
+  }
 
   const config = loadProjectConfig(projectRoot);
   const projectName = config.project.name || path.basename(projectRoot);
@@ -141,6 +188,8 @@ async function updateProjectSettings(projectId, settings) {
 
 export {
   findProjectRoot,
+  findGitRoot,
+  createDefaultConfig,
   loadProjectConfig,
   resolveProject,
   getProject,
