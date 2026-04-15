@@ -122,8 +122,10 @@ async function getProject(projectId) {
  * Update the settings JSONB for a project.
  */
 async function updateProjectSettings(projectId, settings) {
+  // Merge new settings into existing JSONB instead of overwriting,
+  // so callers can update one key without wiping others.
   const result = await query(
-    'UPDATE projects SET settings = $1 WHERE id = $2 RETURNING *',
+    'UPDATE projects SET settings = COALESCE(settings, \'{}\'::jsonb) || $1::jsonb WHERE id = $2 RETURNING *',
     [JSON.stringify(settings), projectId]
   );
   if (result.rows.length === 0) return null;

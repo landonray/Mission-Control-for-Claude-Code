@@ -111,6 +111,20 @@ describe('evidenceGatherers', () => {
       ).rejects.toThrow('requires a "path" field');
     });
 
+    it('rejects path traversal with ../', async () => {
+      const { gatherFile } = await getModule();
+      await expect(
+        gatherFile({ type: 'file', path: '../../etc/passwd' }, { projectRoot: '/project' })
+      ).rejects.toThrow('Path traversal denied');
+    });
+
+    it('rejects absolute paths outside project root', async () => {
+      const { gatherFile } = await getModule();
+      await expect(
+        gatherFile({ type: 'file', path: '/etc/passwd' }, { projectRoot: '/project' })
+      ).rejects.toThrow('Path traversal denied');
+    });
+
     it('throws when file cannot be read', async () => {
       mockReadFileSync.mockImplementation(() => {
         throw new Error('ENOENT');

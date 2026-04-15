@@ -373,9 +373,9 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         triggerSource,
         // DB readonly connection — required for db_query evidence
         dbReadonlyUrl: process.env.DATABASE_URL_READONLY || null,
-        createDbConnection: (url) => {
+        createDbConnection: async (url) => {
           const client = new pg.default.Client({ connectionString: url });
-          client.connect();
+          await client.connect();
           return client;
         },
         // Session log path — capture tmux scrollback if session is available

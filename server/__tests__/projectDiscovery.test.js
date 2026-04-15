@@ -252,7 +252,7 @@ describe('updateProjectSettings', () => {
     const project = await updateProjectSettings('proj-1', { theme: 'dark' });
     expect(project.settings).toEqual({ theme: 'dark' });
     expect(mockQuery).toHaveBeenCalledWith(
-      'UPDATE projects SET settings = $1 WHERE id = $2 RETURNING *',
+      "UPDATE projects SET settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb WHERE id = $2 RETURNING *",
       [JSON.stringify({ theme: 'dark' }), 'proj-1']
     );
   });

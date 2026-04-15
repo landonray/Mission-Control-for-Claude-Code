@@ -95,6 +95,9 @@ export async function gatherFile(config, context) {
     throw new Error('File evidence requires a "path" field');
   }
 
+  // Prevent path traversal outside the project root
+  assertPathWithinRoot(filePath, context.projectRoot);
+
   let content;
   try {
     content = fs.readFileSync(filePath, 'utf8');
@@ -153,7 +156,7 @@ export async function gatherDbQuery(config, context) {
   const { sql, params } = buildParameterizedQuery(resolvedQuery, context);
 
   let rows;
-  const db = context.createDbConnection(context.dbReadonlyUrl);
+  const db = await context.createDbConnection(context.dbReadonlyUrl);
   try {
     const result = await db.query(sql, params);
     rows = result.rows || result;
@@ -275,6 +278,18 @@ export function truncateDbEvidence(rows, maxBytes) {
 }
 
 /**
+ * Ensure a resolved file path stays within the project root directory.
+ * Prevents path traversal attacks via ../../ or absolute paths in eval YAML.
+ */
+function assertPathWithinRoot(filePath, projectRoot) {
+  const resolved = path.resolve(filePath);
+  const root = path.resolve(projectRoot);
+  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
+    throw new Error(`Path traversal denied: "${filePath}" resolves outside project root`);
+  }
+}
+
+/**
  * Interpolate ${input.field} and other context variables in a string.
  * @param {string} str - String with variable placeholders
  * @param {object} context - Context object containing variables
@@ -374,8 +389,11 @@ function resolveLogSource(source, context) {
     case 'build':
       if (!context.buildOutputPath) throw new Error('Log source "build" requires buildOutputPath in context');
       return context.buildOutputPath;
-    default:
+    default: {
       // Treat as a file path relative to project root
-      return path.resolve(context.projectRoot || '.', source);
+      const resolved = path.resolve(context.projectRoot || '.', source);
+      assertPathWithinRoot(resolved, context.projectRoot || '.');
+      return resolved;
+    }
   }
 }
