@@ -67,9 +67,28 @@ export function discoverEvalFolders(projectRoot, config) {
     return config.evals.folders.map((dir) => path.resolve(projectRoot, dir));
   }
 
-  // Default: scan for evals/ directory at project root
+  // Default: scan for evals/ directory at project root.
+  // The spec says each subfolder is a logical group (the unit of arming),
+  // so return subdirectories that contain YAML files, or the evals/ dir itself
+  // if it directly contains YAML files.
   const defaultDir = path.join(projectRoot, 'evals');
-  if (fs.existsSync(defaultDir)) {
+  if (!fs.existsSync(defaultDir)) {
+    return [];
+  }
+
+  const entries = fs.readdirSync(defaultDir, { withFileTypes: true });
+  const subfolders = entries
+    .filter((e) => e.isDirectory())
+    .map((e) => path.join(defaultDir, e.name));
+
+  // If there are subfolders, use them as eval folders (spec: each subfolder = a group)
+  if (subfolders.length > 0) {
+    return subfolders;
+  }
+
+  // Fallback: if YAML files are directly in evals/ (flat structure), use that
+  const hasYaml = entries.some((e) => e.isFile() && (e.name.endsWith('.yaml') || e.name.endsWith('.yml')));
+  if (hasYaml) {
     return [defaultDir];
   }
 

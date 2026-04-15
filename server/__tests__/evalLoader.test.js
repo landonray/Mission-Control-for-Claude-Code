@@ -236,13 +236,43 @@ describe('evalLoader', () => {
       ]);
     });
 
-    it('falls back to evals/ directory when no config', async () => {
+    it('returns subfolders of evals/ when subfolders exist', async () => {
       mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'event-onboarding', isDirectory: () => true, isFile: () => false },
+        { name: 'recipe-extraction', isDirectory: () => true, isFile: () => false },
+        { name: 'readme.md', isDirectory: () => false, isFile: () => true },
+      ]);
+
+      const { discoverEvalFolders } = await getModule();
+      const result = discoverEvalFolders('/project');
+
+      expect(result).toEqual([
+        '/project/evals/event-onboarding',
+        '/project/evals/recipe-extraction',
+      ]);
+    });
+
+    it('falls back to evals/ itself when it has YAML files but no subfolders', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        { name: 'test-eval.yaml', isDirectory: () => false, isFile: () => true },
+      ]);
 
       const { discoverEvalFolders } = await getModule();
       const result = discoverEvalFolders('/project');
 
       expect(result).toEqual(['/project/evals']);
+    });
+
+    it('returns empty when evals/ exists but is empty', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([]);
+
+      const { discoverEvalFolders } = await getModule();
+      const result = discoverEvalFolders('/project');
+
+      expect(result).toEqual([]);
     });
 
     it('returns empty when no config and no evals/ directory', async () => {

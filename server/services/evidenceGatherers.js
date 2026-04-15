@@ -69,11 +69,22 @@ export async function gatherLogQuery(config, context) {
     throw new Error(`Failed to read log source "${config.source}": ${err.message}`);
   }
 
-  // Apply regex filter if provided
+  // Apply regex filter if provided.
+  // Spec format: filter: { regex: "pattern" } or filter: "pattern" (legacy string shorthand)
   if (config.filter) {
-    const regex = new RegExp(config.filter, config.filter_flags || 'gm');
-    const matches = content.match(regex);
-    content = matches ? matches.join('\n') : '';
+    let pattern, flags;
+    if (typeof config.filter === 'object' && config.filter.regex) {
+      pattern = config.filter.regex;
+      flags = config.filter.flags || 'gm';
+    } else if (typeof config.filter === 'string') {
+      pattern = config.filter;
+      flags = config.filter_flags || 'gm';
+    }
+    if (pattern) {
+      const regex = new RegExp(pattern, flags);
+      const matches = content.match(regex);
+      content = matches ? matches.join('\n') : '';
+    }
   }
 
   const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.log_query;

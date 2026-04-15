@@ -80,7 +80,7 @@ export async function runSingleEval(evalDef, context) {
       expected: evalDef.expected,
       evidence,
       judgePrompt: evalDef.judge_prompt,
-      model: evalDef.model,
+      model: (evalDef.judge && evalDef.judge.model) || evalDef.model,
     });
     result.judgeVerdict = verdict;
   } catch (err) {

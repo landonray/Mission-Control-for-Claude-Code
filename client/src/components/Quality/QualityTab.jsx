@@ -153,8 +153,8 @@ function RunDetailView({ run, onBack }) {
           <div className={styles.detailLabel}>Judge Verdict</div>
           <div className={styles.judgeVerdict}>
             <div className={styles.judgeRow}>
-              <StatusDot result={judgeVerdict.pass ? 'pass' : 'fail'} />
-              <span className={styles.judgeResult}>{judgeVerdict.pass ? 'Pass' : 'Fail'}</span>
+              <StatusDot result={judgeVerdict.result === 'pass' ? 'pass' : 'fail'} />
+              <span className={styles.judgeResult}>{judgeVerdict.result === 'pass' ? 'Pass' : 'Fail'}</span>
               {judgeVerdict.confidence && (
                 <span className={styles.judgeConfidence}>{judgeVerdict.confidence} confidence</span>
               )}

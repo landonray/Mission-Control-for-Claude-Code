@@ -431,7 +431,7 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             runId, batchId, result.evalName, folder.folder_path, commitSha, triggerSource,
-            evalDef.expected ? JSON.stringify(evalDef.expected) : null,
+            evalDef.input ? JSON.stringify(evalDef.input) : null,
             result.evidence ? JSON.stringify(result.evidence) : null,
             result.checkResults ? JSON.stringify(result.checkResults) : null,
             result.judgeVerdict ? JSON.stringify(result.judgeVerdict) : null,

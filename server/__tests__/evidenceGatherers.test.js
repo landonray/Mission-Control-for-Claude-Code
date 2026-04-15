@@ -51,6 +51,19 @@ describe('evidenceGatherers', () => {
       expect(result).toContain('ERROR: another bad');
     });
 
+    it('applies filter when specified as object with regex key (spec format)', async () => {
+      mockReadFileSync.mockReturnValue('INFO: hello\nERROR: bad thing\nINFO: world\nERROR: another bad');
+      const { gatherLogQuery } = await getModule();
+
+      const result = await gatherLogQuery(
+        { type: 'log_query', source: 'session', filter: { regex: 'ERROR:.*' } },
+        { sessionLogPath: '/logs/session.log' }
+      );
+
+      expect(result).toContain('ERROR: bad thing');
+      expect(result).toContain('ERROR: another bad');
+    });
+
     it('returns empty string when filter matches nothing', async () => {
       mockReadFileSync.mockReturnValue('INFO: hello\nINFO: world');
       const { gatherLogQuery } = await getModule();
