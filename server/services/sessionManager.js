@@ -1877,6 +1877,20 @@ async function createSession(options = {}) {
     [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || 'claude-opus-4-6', options.useWorktree ? 1 : 0]
   );
 
+  // Link session to project if a .mission-control.yaml is found
+  try {
+    if (options.workingDirectory) {
+      const { resolveProject } = await import('./projectDiscovery.js');
+      const project = await resolveProject(options.workingDirectory);
+      if (project) {
+        await query('UPDATE sessions SET project_id = $1 WHERE id = $2', [project.id, id]);
+      }
+    }
+  } catch (err) {
+    // Non-fatal: project linking is best-effort
+    console.warn('Failed to link session to project:', err.message);
+  }
+
   const session = new SessionProcess(id, options);
   activeSessions.set(id, session);
   session.start();
