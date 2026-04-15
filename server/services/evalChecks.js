@@ -112,6 +112,13 @@ function jsonSchema(base, check, evidence, context) {
   }
 
   const schemaPath = path.resolve(projectRoot, check.schema);
+
+  // Prevent path traversal outside project root
+  const resolvedRoot = path.resolve(projectRoot);
+  if (!schemaPath.startsWith(resolvedRoot + path.sep) && schemaPath !== resolvedRoot) {
+    return { ...base, passed: false, reason: `Path traversal denied: schema "${check.schema}" resolves outside project root` };
+  }
+
   let schemaObj;
   try {
     const raw = fs.readFileSync(schemaPath, 'utf8');

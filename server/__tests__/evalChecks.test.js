@@ -83,6 +83,12 @@ describe('evalChecks', () => {
         expect(result.reason).toContain('no project root');
       });
 
+      it('rejects path traversal in schema path', () => {
+        const result = runCheck({ type: 'json_schema', schema: '../../etc/passwd' }, '{"a": 1}', { projectRoot: '/tmp' });
+        expect(result.passed).toBe(false);
+        expect(result.reason).toContain('Path traversal denied');
+      });
+
       it('fails when schema file does not exist', () => {
         const result = runCheck({ type: 'json_schema', schema: 'nonexistent.json' }, '{"a": 1}', { projectRoot: '/tmp' });
         expect(result.passed).toBe(false);
