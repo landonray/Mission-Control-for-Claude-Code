@@ -55,6 +55,27 @@ router.get('/folders/:projectId', async (req, res) => {
     );
     const armedMap = new Map(armed.rows.map(r => [r.folder_path, r]));
 
+    // Query last run state per eval per folder for status dots
+    const lastRunResult = await query(`
+      SELECT DISTINCT ON (er.eval_name, er.eval_folder)
+        er.eval_name, er.eval_folder, er.state,
+        CASE WHEN er.judge_verdict::text LIKE '%"confidence":"low"%' THEN true ELSE false END AS low_confidence
+      FROM eval_runs er
+      JOIN eval_batches eb ON er.batch_id = eb.id
+      WHERE eb.project_id = $1
+      ORDER BY er.eval_name, er.eval_folder, er.timestamp DESC
+    `, [project.id]);
+    // Build a map: folder_path -> [{eval_name, state, low_confidence}]
+    const lastRunMap = new Map();
+    for (const row of lastRunResult.rows) {
+      if (!lastRunMap.has(row.eval_folder)) lastRunMap.set(row.eval_folder, []);
+      lastRunMap.get(row.eval_folder).push({
+        eval_name: row.eval_name,
+        state: row.state,
+        low_confidence: row.low_confidence,
+      });
+    }
+
     const folders = folderPaths.map(fp => {
       const name = require('path').basename(fp);
       const armedRow = armedMap.get(fp);
@@ -72,6 +93,9 @@ router.get('/folders/:projectId', async (req, res) => {
         console.warn(`[Evals] Failed to load evals from ${fp}:`, err.message);
       }
 
+      // Attach last-run status dots: one per eval in this folder
+      const lastRuns = lastRunMap.get(fp) || [];
+
       return {
         folder_path: fp,
         folder_name: name,
@@ -81,6 +105,7 @@ router.get('/folders/:projectId', async (req, res) => {
         id: armedRow ? armedRow.id : null,
         eval_count: evals.length,
         evals,
+        last_run_status: lastRuns,
       };
     });
 
@@ -381,6 +406,7 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         // Session log path — capture tmux scrollback if session is available
         sessionLogPath: null,
         buildOutputPath: null,
+        prDiffPath: null,
       };
 
       // If triggered from a session, try to capture the session log
@@ -399,6 +425,26 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
           }
         } catch (e) {
           // Session may already be gone — that's fine, log_query evals will error gracefully
+        }
+      }
+
+      // If triggered by pr_updated, capture the PR diff via gh CLI
+      if (triggerSource === 'pr_updated') {
+        try {
+          const { execSync } = require('child_process');
+          const os = require('os');
+          const fs = require('fs');
+          const diffPath = require('path').join(os.tmpdir(), `eval-pr-diff-${batchId}.txt`);
+          const diff = execSync('gh pr diff', {
+            cwd: project.root_path,
+            encoding: 'utf8',
+            stdio: ['pipe', 'pipe', 'pipe'],
+            timeout: 15000,
+          });
+          fs.writeFileSync(diffPath, diff, 'utf8');
+          baseContext.prDiffPath = diffPath;
+        } catch (e) {
+          // gh CLI not available or no PR in context — pr_diff source will error gracefully
         }
       }
 
@@ -538,20 +584,38 @@ async function triggerEvalRun(projectId, triggerSource, sessionId, tmuxSessionNa
 }
 
 /**
- * Retention cleanup: delete eval runs older than 90 days, but always keep
- * the most recent 100 runs per eval name (whichever is larger).
+ * Retention cleanup: delete eval runs older than retention_days, but always keep
+ * the most recent retention_runs per eval name (whichever is larger).
+ * Defaults: 90 days, 100 runs. Configurable per project via settings.evals.retention_days / retention_runs.
  * Runs after each batch completes.
  */
 async function cleanupOldRuns(projectId) {
+  // Read project retention settings
+  let retentionDays = 90;
+  let retentionRuns = 100;
+  try {
+    const settingsResult = await query(
+      "SELECT settings->'evals'->'retention_days' AS days, settings->'evals'->'retention_runs' AS runs FROM projects WHERE id = $1",
+      [projectId]
+    );
+    if (settingsResult.rows.length > 0) {
+      const row = settingsResult.rows[0];
+      if (row.days != null) retentionDays = parseInt(row.days, 10) || 90;
+      if (row.runs != null) retentionRuns = parseInt(row.runs, 10) || 100;
+    }
+  } catch (e) {
+    // Fall back to defaults if settings query fails
+  }
+
   // Delete runs that are both:
-  //   1. Older than 90 days
-  //   2. NOT in the top 100 most recent runs for that eval_name in this project
+  //   1. Older than retention_days
+  //   2. NOT in the top retention_runs most recent runs for that eval_name in this project
   await query(`
     DELETE FROM eval_runs WHERE id IN (
       SELECT er.id FROM eval_runs er
       JOIN eval_batches eb ON er.batch_id = eb.id
       WHERE eb.project_id = $1
-        AND er.timestamp < NOW() - INTERVAL '90 days'
+        AND er.timestamp < NOW() - INTERVAL '1 day' * $2
         AND er.id NOT IN (
           SELECT id FROM (
             SELECT er2.id,
@@ -559,10 +623,10 @@ async function cleanupOldRuns(projectId) {
             FROM eval_runs er2
             JOIN eval_batches eb2 ON er2.batch_id = eb2.id
             WHERE eb2.project_id = $1
-          ) ranked WHERE rn <= 100
+          ) ranked WHERE rn <= $3
         )
     )
-  `, [projectId]);
+  `, [projectId, retentionDays, retentionRuns]);
 
   // Also clean up empty batches (all runs deleted)
   await query(`

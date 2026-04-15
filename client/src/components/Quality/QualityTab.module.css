@@ -319,6 +319,78 @@
   text-transform: lowercase;
 }
 
+.triggerRemove {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 0 0 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.triggerRemove:hover {
+  opacity: 1;
+}
+
+.triggerAddWrap {
+  position: relative;
+}
+
+.triggerAddBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px dashed var(--text-muted);
+  background: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.triggerAddBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.triggerDropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.triggerOption {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.triggerOption:hover {
+  background: var(--bg-tertiary);
+}
+
 .autoSendWrap {
   display: flex;
   align-items: center;
@@ -458,6 +530,14 @@
   align-items: center;
   gap: 8px;
   padding: 6px 14px 6px 36px;
+}
+
+.statusDots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 
 .statusDot {

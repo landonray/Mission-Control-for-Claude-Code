@@ -58,8 +58,38 @@ function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, chi
   );
 }
 
-function TriggerPill({ label }) {
-  return <span className={styles.triggerPill}>{label.replace('_', ' ')}</span>;
+function TriggerPill({ label, onRemove }) {
+  return (
+    <span className={styles.triggerPill}>
+      {label.replace('_', ' ')}
+      {onRemove && (
+        <button className={styles.triggerRemove} onClick={onRemove} title="Remove trigger">&times;</button>
+      )}
+    </span>
+  );
+}
+
+const ALL_TRIGGERS = ['session_end', 'pr_updated'];
+
+function TriggerAddButton({ currentTriggers, onAdd }) {
+  const [open, setOpen] = useState(false);
+  const available = ALL_TRIGGERS.filter(t => !currentTriggers.includes(t));
+  if (available.length === 0) return null;
+
+  return (
+    <div className={styles.triggerAddWrap}>
+      <button className={styles.triggerAddBtn} onClick={() => setOpen(!open)} title="Add trigger">+</button>
+      {open && (
+        <div className={styles.triggerDropdown}>
+          {available.map(t => (
+            <button key={t} className={styles.triggerOption} onClick={() => { onAdd(t); setOpen(false); }}>
+              {t.replace('_', ' ')}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function SeverityBadge({ severity }) {
@@ -76,11 +106,22 @@ function safeParseJson(val) {
   try { return JSON.parse(val); } catch { return null; }
 }
 
+function isLowConfidence(run) {
+  const verdict = safeParseJson(run.judge_verdict);
+  return verdict && verdict.confidence === 'low';
+}
+
+function effectiveResult(run) {
+  if (run.state === 'pass' && isLowConfidence(run)) return 'low_confidence';
+  return run.state;
+}
+
 function RunDetailView({ run, onBack }) {
   const evidence = safeParseJson(run.evidence);
   const checkResults = safeParseJson(run.check_results);
   const judgeVerdict = safeParseJson(run.judge_verdict);
   const input = safeParseJson(run.input);
+  const displayResult = effectiveResult(run);
 
   return (
     <div className={styles.drillDown}>
@@ -90,8 +131,8 @@ function RunDetailView({ run, onBack }) {
       </button>
       <div className={styles.drillDownHeader}>
         <h3 className={styles.drillDownTitle}>{run.eval_name}</h3>
-        <StatusDot result={run.state} />
-        <span className={styles.drillDownState}>{run.state}</span>
+        <StatusDot result={displayResult} />
+        <span className={styles.drillDownState}>{displayResult === 'low_confidence' ? 'pass (low confidence)' : run.state}</span>
       </div>
       <div className={styles.drillDownMeta}>
         {run.commit_sha && <span className={styles.batchSha}>{run.commit_sha.slice(0, 7)}</span>}
@@ -187,20 +228,23 @@ function EvalHistoryView({ evalName, runs, loading: isLoading, onBack, onRunClic
         <div className={styles.emptySection}>No runs found for this eval</div>
       ) : (
         <div className={styles.evalRunsList}>
-          {runs.map((run, i) => (
+          {runs.map((run, i) => {
+            const display = effectiveResult(run);
+            return (
             <button
               key={run.id || i}
               className={styles.evalRunRow}
               onClick={() => onRunClick(run)}
             >
-              <StatusDot result={run.state} />
-              <span className={styles.evalRunState}>{run.state}</span>
+              <StatusDot result={display} />
+              <span className={styles.evalRunState}>{display === 'low_confidence' ? 'low conf' : run.state}</span>
               {run.commit_sha && <span className={styles.batchSha}>{run.commit_sha.slice(0, 7)}</span>}
               <span className={styles.evalRunTime}>{new Date(run.timestamp).toLocaleString()}</span>
               {run.duration > 0 && <span className={styles.evalRunDuration}>{(run.duration / 1000).toFixed(1)}s</span>}
               <ChevronRight size={12} className={styles.evalRunArrow} />
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -539,13 +583,31 @@ export default function QualityTab({ sessionId }) {
                 </div>
                 <div className={styles.folderActions}>
                   {(typeof folder.triggers === 'string' ? folder.triggers.split(',').filter(Boolean) : (folder.triggers || [])).map(t => (
-                    <TriggerPill key={t} label={t} />
+                    <TriggerPill key={t} label={t} onRemove={folder.armed ? () => handleTriggerToggle(folder, t) : undefined} />
                   ))}
+                  {folder.armed && (
+                    <TriggerAddButton
+                      currentTriggers={typeof folder.triggers === 'string' ? folder.triggers.split(',').filter(Boolean) : (folder.triggers || [])}
+                      onAdd={(t) => handleTriggerToggle(folder, t)}
+                    />
+                  )}
                   <div className={styles.autoSendWrap}>
                     <span className={styles.autoSendLabel}>auto-send</span>
                     <Toggle on={folder.auto_send} onChange={() => handleAutoSend(folder)} small />
                   </div>
                 </div>
+                {folder.last_run_status && folder.last_run_status.length > 0 && (
+                  <div className={styles.statusDots}>
+                    {folder.last_run_status.map((s, k) => (
+                      <span
+                        key={k}
+                        className={styles.statusDot}
+                        style={{ background: s.low_confidence ? resultColors.low_confidence : (resultColors[s.state] || 'var(--text-muted)') }}
+                        title={`${s.eval_name}: ${s.low_confidence ? 'low confidence' : s.state}`}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
               {expandedFolders[folder.folder_path] && folder.evals && (
                 <div className={styles.evalList}>
@@ -605,9 +667,9 @@ export default function QualityTab({ sessionId }) {
                       className={styles.runRow}
                       onClick={() => handleRunClick(run)}
                     >
-                      <StatusDot result={run.state} />
+                      <StatusDot result={effectiveResult(run)} />
                       <span className={styles.runName}>{run.eval_name || run.name}</span>
-                      <span className={styles.runResult}>{run.state}</span>
+                      <span className={styles.runResult}>{effectiveResult(run) === 'low_confidence' ? 'low conf' : run.state}</span>
                       <ChevronRight size={12} className={styles.evalRunArrow} />
                     </button>
                   ))}

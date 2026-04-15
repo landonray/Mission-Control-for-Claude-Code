@@ -216,6 +216,9 @@ export async function gatherSubAgent(config, context) {
       if (context.projectRoot) {
         args.unshift('--cwd', context.projectRoot);
       }
+      // Sub-agent isolation: restrict to read-only tools per spec
+      const allowedTools = config.allowed_tools || ['Read', 'Glob', 'Grep', 'Bash(read-only)'];
+      args.push('--allowedTools', allowedTools.join(','));
 
       execFile('claude', args, {
         timeout: config.timeout || DEFAULT_TIMEOUTS.sub_agent,
@@ -398,8 +401,12 @@ function resolveLogSource(source, context) {
       if (!context.sessionLogPath) throw new Error(`Log source "${source}" requires sessionLogPath in context`);
       return context.sessionLogPath;
     case 'build':
-      if (!context.buildOutputPath) throw new Error('Log source "build" requires buildOutputPath in context');
+    case 'build_output':
+      if (!context.buildOutputPath) throw new Error(`Log source "${source}" requires buildOutputPath in context`);
       return context.buildOutputPath;
+    case 'pr_diff':
+      if (!context.prDiffPath) throw new Error('Log source "pr_diff" requires prDiffPath in context');
+      return context.prDiffPath;
     default: {
       // Treat as a file path relative to project root
       const resolved = path.resolve(context.projectRoot || '.', source);
