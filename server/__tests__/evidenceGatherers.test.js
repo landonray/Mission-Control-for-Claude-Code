@@ -148,12 +148,20 @@ describe('evidenceGatherers', () => {
       ).rejects.toThrow('requires a "query" field');
     });
 
-    it('throws when no db connection available', async () => {
+    it('throws when no readonly DB URL provided', async () => {
       const { gatherDbQuery } = await getModule();
 
       await expect(
         gatherDbQuery({ type: 'db_query', query: 'SELECT 1' }, {})
-      ).rejects.toThrow('No database connection available');
+      ).rejects.toThrow('read-only database connection');
+    });
+
+    it('throws when no db connection factory provided', async () => {
+      const { gatherDbQuery } = await getModule();
+
+      await expect(
+        gatherDbQuery({ type: 'db_query', query: 'SELECT 1' }, { dbReadonlyUrl: 'postgres://ro' })
+      ).rejects.toThrow('No database connection factory');
     });
 
     it('closes db connection even on error', async () => {
@@ -167,7 +175,7 @@ describe('evidenceGatherers', () => {
       await expect(
         gatherDbQuery(
           { type: 'db_query', query: 'BAD SQL' },
-          { createDbConnection: () => mockDb }
+          { createDbConnection: () => mockDb, dbReadonlyUrl: 'postgres://readonly' }
         )
       ).rejects.toThrow('SQL error');
 

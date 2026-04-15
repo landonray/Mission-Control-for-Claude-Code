@@ -35,7 +35,7 @@ const runningBatches = new Map();
 router.get('/folders/:projectId', async (req, res) => {
   try {
     const { getProject } = await getProjectDiscovery();
-    const { discoverEvalFolders } = await getEvalLoader();
+    const { discoverEvalFolders, loadEvalFolder } = await getEvalLoader();
 
     const project = await getProject(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -52,6 +52,20 @@ router.get('/folders/:projectId', async (req, res) => {
     const folders = folderPaths.map(fp => {
       const name = require('path').basename(fp);
       const armedRow = armedMap.get(fp);
+
+      // Load eval details from disk for folder expansion
+      let evals = [];
+      try {
+        const loaded = loadEvalFolder(fp);
+        evals = loaded.map(ev => ({
+          name: ev.name,
+          description: ev.description || null,
+          evidence_type: ev.evidence?.type || null,
+        }));
+      } catch (err) {
+        console.warn(`[Evals] Failed to load evals from ${fp}:`, err.message);
+      }
+
       return {
         folder_path: fp,
         folder_name: name,
@@ -59,6 +73,8 @@ router.get('/folders/:projectId', async (req, res) => {
         triggers: armedRow ? armedRow.triggers : 'manual',
         auto_send: armedRow ? armedRow.auto_send : 0,
         id: armedRow ? armedRow.id : null,
+        eval_count: evals.length,
+        evals,
       };
     });
 

@@ -328,22 +328,22 @@ export default function QualityTab({ sessionId }) {
                     <span className={styles.batchSha}>{batch.commit_sha.slice(0, 7)}</span>
                   )}
                   <span className={styles.batchTime}>
-                    {new Date(batch.created_at).toLocaleString()}
+                    {new Date(batch.started_at).toLocaleString()}
                   </span>
                 </div>
                 <div className={styles.batchCounts}>
-                  {batch.pass_count > 0 && <span className={styles.countPass}>{batch.pass_count} pass</span>}
-                  {batch.fail_count > 0 && <span className={styles.countFail}>{batch.fail_count} fail</span>}
-                  {batch.error_count > 0 && <span className={styles.countError}>{batch.error_count} error</span>}
+                  {batch.passed > 0 && <span className={styles.countPass}>{batch.passed} pass</span>}
+                  {batch.failed > 0 && <span className={styles.countFail}>{batch.failed} fail</span>}
+                  {batch.errors > 0 && <span className={styles.countError}>{batch.errors} error</span>}
                 </div>
               </button>
               {expandedBatches[batch.id] && batchRuns[batch.id] && (
                 <div className={styles.batchRuns}>
                   {(Array.isArray(batchRuns[batch.id]) ? batchRuns[batch.id] : []).map((run, j) => (
                     <div key={run.id || j} className={styles.runRow}>
-                      <StatusDot result={run.result} />
+                      <StatusDot result={run.state} />
                       <span className={styles.runName}>{run.eval_name || run.name}</span>
-                      <span className={styles.runResult}>{run.result}</span>
+                      <span className={styles.runResult}>{run.state}</span>
                     </div>
                   ))}
                 </div>

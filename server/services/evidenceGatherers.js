@@ -101,21 +101,29 @@ export async function gatherDbQuery(config, context) {
     throw new Error('DB query evidence requires a "query" field');
   }
 
+  // Enforce read-only DB access: refuse to run without a dedicated readonly URL.
+  // This is a spec requirement — evals must never be capable of writing to the database.
+  if (!context.dbReadonlyUrl) {
+    throw new Error(
+      'DB query evidence requires a read-only database connection (dbReadonlyUrl). ' +
+      'Set DATABASE_URL_READONLY in your project .env or .mission-control.yaml.'
+    );
+  }
+
+  if (!context.createDbConnection) {
+    throw new Error('No database connection factory available (need createDbConnection in context)');
+  }
+
   // Use parameterized queries to prevent SQL injection.
-  // Extract ${variable} placeholders, replace with $1/$2/etc., and pass values as params.
   const { sql, params } = buildParameterizedQuery(config.query, context);
 
   let rows;
-  if (context.createDbConnection) {
-    const db = context.createDbConnection(context.dbReadonlyUrl);
-    try {
-      const result = await db.query(sql, params);
-      rows = result.rows || result;
-    } finally {
-      if (db.end) await db.end();
-    }
-  } else {
-    throw new Error('No database connection available (need createDbConnection in context)');
+  const db = context.createDbConnection(context.dbReadonlyUrl);
+  try {
+    const result = await db.query(sql, params);
+    rows = result.rows || result;
+  } finally {
+    if (db.end) await db.end();
   }
 
   const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.db_query;

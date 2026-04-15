@@ -164,10 +164,10 @@ describe('QualityTab Integration', () => {
         id: 'batch-1',
         trigger_source: 'manual',
         commit_sha: 'abc1234567890',
-        created_at: '2026-04-15T10:00:00Z',
-        pass_count: 2,
-        fail_count: 1,
-        error_count: 0,
+        started_at: '2026-04-15T10:00:00Z',
+        passed: 2,
+        failed: 1,
+        errors: 0,
       },
     ]);
 
