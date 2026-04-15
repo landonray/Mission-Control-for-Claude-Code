@@ -170,6 +170,120 @@ router.post('/rules/bulk-toggle', async (req, res) => {
 });
 
 // ==========================================
+// PER-PROJECT RULE OVERRIDES
+// ==========================================
+
+// Get resolved rules for a project (3-tier: global defaults -> YAML -> DB overrides)
+router.get('/rules/project/:projectId', async (req, res) => {
+  try {
+    // Load global rules
+    const { rows: globalRules } = await query('SELECT * FROM quality_rules ORDER BY sort_order');
+
+    // Load project settings
+    const { rows: projectRows } = await query('SELECT settings FROM projects WHERE id = $1', [req.params.projectId]);
+    const project = projectRows[0];
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const projectSettings = project.settings || {};
+    const dbOverrides = projectSettings.quality_rules || {};
+
+    // Load YAML config overrides (if project has a config)
+    let yamlOverrides = {};
+    try {
+      const { getProject } = await (await import('../services/projectDiscovery.js')).default || await import('../services/projectDiscovery.js');
+      const fullProject = typeof getProject === 'function'
+        ? await getProject(req.params.projectId)
+        : null;
+      if (fullProject && fullProject.config && fullProject.config.quality_rules) {
+        const cfg = fullProject.config.quality_rules;
+        if (Array.isArray(cfg.enabled)) {
+          cfg.enabled.forEach(name => { yamlOverrides[name] = { enabled: true }; });
+        }
+        if (Array.isArray(cfg.disabled)) {
+          cfg.disabled.forEach(name => { yamlOverrides[name] = { enabled: false }; });
+        }
+      }
+    } catch (e) {
+      // YAML config not available — that's fine, skip
+    }
+
+    // Resolve 3-tier priority: DB override > YAML override > global default
+    const resolved = globalRules.map(rule => {
+      const ruleId = rule.id || rule.name;
+      const yaml = yamlOverrides[ruleId] || yamlOverrides[rule.name] || {};
+      const db = dbOverrides[ruleId] || {};
+
+      // Determine effective enabled state and source
+      let effectiveEnabled = rule.enabled;
+      let overrideSource = 'global';
+
+      if ('enabled' in yaml) {
+        effectiveEnabled = yaml.enabled ? 1 : 0;
+        overrideSource = 'yaml';
+      }
+      if ('enabled' in db) {
+        effectiveEnabled = db.enabled ? 1 : 0;
+        overrideSource = 'db';
+      }
+
+      return {
+        ...rule,
+        enabled: effectiveEnabled,
+        override_source: overrideSource,
+        has_override: overrideSource !== 'global',
+      };
+    });
+
+    res.json(resolved);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Set a per-project rule override
+router.post('/rules/project/:projectId/override', async (req, res) => {
+  try {
+    const { rule_id, enabled } = req.body;
+    if (!rule_id || enabled === undefined) {
+      return res.status(400).json({ error: 'rule_id and enabled are required' });
+    }
+
+    // Read current settings
+    const { rows } = await query('SELECT settings FROM projects WHERE id = $1', [req.params.projectId]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+
+    const settings = rows[0].settings || {};
+    if (!settings.quality_rules) settings.quality_rules = {};
+    settings.quality_rules[rule_id] = { enabled: !!enabled };
+
+    await query('UPDATE projects SET settings = $1 WHERE id = $2', [JSON.stringify(settings), req.params.projectId]);
+
+    res.json({ ok: true, rule_id, enabled: !!enabled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Remove a per-project rule override (revert to default)
+router.delete('/rules/project/:projectId/override/:ruleId', async (req, res) => {
+  try {
+    const { rows } = await query('SELECT settings FROM projects WHERE id = $1', [req.params.projectId]);
+    if (rows.length === 0) return res.status(404).json({ error: 'Project not found' });
+
+    const settings = rows[0].settings || {};
+    if (settings.quality_rules) {
+      delete settings.quality_rules[req.params.ruleId];
+    }
+
+    await query('UPDATE projects SET settings = $1 WHERE id = $2', [JSON.stringify(settings), req.params.projectId]);
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
 // HOOKS MANAGEMENT
 // ==========================================
 

@@ -2,13 +2,18 @@
  * Eval Check Runner — runs deterministic checks against gathered evidence.
  */
 
+import fs from 'fs';
+import path from 'path';
+import Ajv from 'ajv';
+
 /**
  * Run a single check against evidence.
  * @param {object} check - Check definition with type, description, and type-specific fields
  * @param {string} evidence - The gathered evidence string
+ * @param {object} [context] - Optional context with projectRoot for schema resolution
  * @returns {{ type: string, description: string, passed: boolean, reason: string }}
  */
-export function runCheck(check, evidence) {
+export function runCheck(check, evidence, context) {
   const base = {
     type: check.type,
     description: check.description || check.type,
@@ -22,7 +27,7 @@ export function runCheck(check, evidence) {
     case 'json_valid':
       return jsonValid(base, evidence);
     case 'json_schema':
-      return jsonSchema(base, evidence);
+      return jsonSchema(base, check, evidence, context);
     case 'http_status':
       return httpStatus(base, check, evidence);
     case 'field_exists':
@@ -36,10 +41,11 @@ export function runCheck(check, evidence) {
  * Run all checks against evidence (no short-circuit — runs all even if some fail).
  * @param {object[]} checks - Array of check definitions
  * @param {string} evidence - The gathered evidence string
+ * @param {object} [context] - Optional context with projectRoot for schema resolution
  * @returns {{ allPassed: boolean, results: object[], failures: object[] }}
  */
-export function runAllChecks(checks, evidence) {
-  const results = checks.map((check) => runCheck(check, evidence));
+export function runAllChecks(checks, evidence, context) {
+  const results = checks.map((check) => runCheck(check, evidence, context));
   const failures = results.filter((r) => !r.passed);
   return {
     allPassed: failures.length === 0,
@@ -87,14 +93,46 @@ function jsonValid(base, evidence) {
   }
 }
 
-function jsonSchema(base, evidence) {
-  // Basic validation: just check that it's valid JSON
-  // Full JSON Schema validation deferred to a future task
+function jsonSchema(base, check, evidence, context) {
+  let parsed;
   try {
-    JSON.parse(evidence);
-    return { ...base, passed: true, reason: 'Valid JSON (full schema validation deferred)' };
+    parsed = JSON.parse(evidence);
   } catch {
     return { ...base, passed: false, reason: 'Evidence is not valid JSON' };
+  }
+
+  if (!check.schema) {
+    return { ...base, passed: false, reason: 'No schema specified in check config' };
+  }
+
+  // Resolve schema path relative to project root
+  const projectRoot = context && context.projectRoot;
+  if (!projectRoot) {
+    return { ...base, passed: false, reason: 'Cannot resolve schema path — no project root in context' };
+  }
+
+  const schemaPath = path.resolve(projectRoot, check.schema);
+  let schemaObj;
+  try {
+    const raw = fs.readFileSync(schemaPath, 'utf8');
+    schemaObj = JSON.parse(raw);
+  } catch (err) {
+    return { ...base, passed: false, reason: `Failed to load schema "${check.schema}": ${err.message}` };
+  }
+
+  try {
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(schemaObj);
+    const valid = validate(parsed);
+    if (valid) {
+      return { ...base, passed: true, reason: `Evidence conforms to schema "${check.schema}"` };
+    }
+    const errorDetails = validate.errors
+      .map(e => `${e.instancePath || '/'}: ${e.message}`)
+      .join('; ');
+    return { ...base, passed: false, reason: `Schema validation failed: ${errorDetails}` };
+  } catch (err) {
+    return { ...base, passed: false, reason: `Schema compilation error: ${err.message}` };
   }
 }
 

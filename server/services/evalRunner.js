@@ -52,7 +52,7 @@ export async function runSingleEval(evalDef, context) {
 
   // Step 3: Run deterministic checks
   if (evalDef.checks && evalDef.checks.length > 0) {
-    const checkResult = runAllChecks(evalDef.checks, evidence);
+    const checkResult = runAllChecks(evalDef.checks, evidence, context);
     result.checkResults = checkResult.results;
     result.checkFailures = checkResult.failures;
 

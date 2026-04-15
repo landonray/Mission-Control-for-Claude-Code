@@ -14,6 +14,14 @@ const DEFAULT_SIZE_CAPS = {
   file: 50 * 1024,         // 50KB
 };
 
+// Default timeouts in ms per spec: 5 min sub-agent, 30s log/db, no timeout for file (sync read)
+const DEFAULT_TIMEOUTS = {
+  log_query: 30_000,
+  db_query: 30_000,
+  sub_agent: 300_000,
+  file: 30_000,
+};
+
 /**
  * Dispatch to the appropriate evidence gatherer based on type.
  * @param {object} evidenceConfig - Evidence config from eval definition
@@ -22,19 +30,27 @@ const DEFAULT_SIZE_CAPS = {
  */
 export async function gatherEvidence(evidenceConfig, context) {
   const type = evidenceConfig.type;
+  const timeoutMs = evidenceConfig.timeout || DEFAULT_TIMEOUTS[type] || 30_000;
 
+  let gatherFn;
   switch (type) {
     case 'log_query':
-      return gatherLogQuery(evidenceConfig, context);
+      gatherFn = () => gatherLogQuery(evidenceConfig, context);
+      break;
     case 'file':
-      return gatherFile(evidenceConfig, context);
+      gatherFn = () => gatherFile(evidenceConfig, context);
+      break;
     case 'db_query':
-      return gatherDbQuery(evidenceConfig, context);
+      gatherFn = () => gatherDbQuery(evidenceConfig, context);
+      break;
     case 'sub_agent':
-      return gatherSubAgent(evidenceConfig, context);
+      gatherFn = () => gatherSubAgent(evidenceConfig, context);
+      break;
     default:
       throw new Error(`Unknown evidence type: ${type}`);
   }
+
+  return withTimeout(gatherFn(), timeoutMs, `${type} evidence gathering timed out after ${timeoutMs}ms`);
 }
 
 /**
@@ -188,7 +204,7 @@ export async function gatherSubAgent(config, context) {
       }
 
       execFile('claude', args, {
-        timeout: config.timeout || 120000,
+        timeout: config.timeout || DEFAULT_TIMEOUTS.sub_agent,
         maxBuffer: DEFAULT_SIZE_CAPS.sub_agent,
       }, (err, stdout) => {
         if (err) {
@@ -328,6 +344,17 @@ export function buildParameterizedQuery(queryTemplate, context) {
   }
 
   return { sql, params };
+}
+
+/**
+ * Race a promise against a timeout. Rejects with an Error if the timeout fires first.
+ */
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 function resolveLogSource(source, context) {

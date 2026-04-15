@@ -28,6 +28,12 @@ async function getEvalReporter() {
   return _evalReporter;
 }
 
+let _prWatcher;
+async function getPrWatcher() {
+  if (!_prWatcher) _prWatcher = await import('../services/prWatcher.js');
+  return _prWatcher;
+}
+
 // Track running batches per project to prevent duplicates
 const runningBatches = new Map();
 
@@ -144,7 +150,26 @@ router.put('/folders/:projectId/settings', async (req, res) => {
       return res.status(404).json({ error: 'Armed folder not found' });
     }
 
-    res.json(result.rows[0]);
+    const updated = result.rows[0];
+    res.json(updated);
+
+    // Auto-start PR watcher if any armed folder now has pr_updated trigger
+    if (updated && updated.triggers && updated.triggers.includes('pr_updated')) {
+      try {
+        const { getProject } = await getProjectDiscovery();
+        const { startPrWatcher, isWatching } = await getPrWatcher();
+        if (!isWatching(req.params.projectId)) {
+          const project = await getProject(req.params.projectId);
+          if (project) {
+            startPrWatcher(req.params.projectId, project.root_path, (projectId) => {
+              triggerEvalRun(projectId, 'pr_updated', null, null);
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[Evals] Failed to auto-start PR watcher:', e.message);
+      }
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -188,6 +213,50 @@ router.get('/batch/:batchId', async (req, res) => {
       [req.params.batchId]
     );
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /pr-watch/:projectId/start — start PR watching for a project
+router.post('/pr-watch/:projectId/start', async (req, res) => {
+  try {
+    const { getProject } = await getProjectDiscovery();
+    const { startPrWatcher, isWatching } = await getPrWatcher();
+
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    if (isWatching(req.params.projectId)) {
+      return res.json({ status: 'already_watching' });
+    }
+
+    startPrWatcher(req.params.projectId, project.root_path, (projectId) => {
+      triggerEvalRun(projectId, 'pr_updated', null, null);
+    });
+
+    res.json({ status: 'started' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /pr-watch/:projectId/stop — stop PR watching for a project
+router.post('/pr-watch/:projectId/stop', async (req, res) => {
+  try {
+    const { stopPrWatcher } = await getPrWatcher();
+    stopPrWatcher(req.params.projectId);
+    res.json({ status: 'stopped' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /pr-watch/:projectId/status — check if PR watching is active
+router.get('/pr-watch/:projectId/status', async (req, res) => {
+  try {
+    const { isWatching } = await getPrWatcher();
+    res.json({ watching: isWatching(req.params.projectId) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -317,9 +386,8 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         }
       }
 
-      // Run all evals
-      const results = [];
-      for (const { evalDef, folder } of allEvals) {
+      // Run all evals in parallel per spec
+      const results = await Promise.all(allEvals.map(async ({ evalDef, folder }) => {
         // Per-eval context: inject the eval's input map as variables for interpolation
         const context = {
           ...baseContext,
@@ -329,7 +397,6 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
             run: { commit_sha: commitSha, trigger: triggerSource },
             project: { root: project.root_path },
           },
-          // Also expose top-level shortcuts for interpolateVariables
           input: evalDef.input || {},
           eval: { name: evalDef.name },
           run: { commit_sha: commitSha, trigger: triggerSource },
@@ -337,9 +404,11 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         };
         const result = await runSingleEval(evalDef, context);
         result.evalFolder = folder.folder_path;
-        results.push(result);
+        return { result, evalDef, folder };
+      }));
 
-        // Store run in DB
+      // Store all runs in DB (sequential to avoid connection pressure)
+      for (const { result, evalDef, folder } of results) {
         const runId = uuidv4();
         await query(
           `INSERT INTO eval_runs (id, batch_id, eval_name, eval_folder, commit_sha, trigger_source, input, evidence, check_results, judge_verdict, state, fail_reason, error_message, duration)
@@ -359,20 +428,24 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
       }
 
       // Tally results
-      const passed = results.filter(r => r.state === 'pass').length;
-      const failed = results.filter(r => r.state === 'fail').length;
-      const errors = results.filter(r => r.state === 'error').length;
+      const flatResults = results.map(r => r.result);
+      const passed = flatResults.filter(r => r.state === 'pass').length;
+      const failed = flatResults.filter(r => r.state === 'fail').length;
+      const errored = flatResults.filter(r => r.state === 'error').length;
 
       // Update batch
       await query(
         `UPDATE eval_batches SET total = $1, passed = $2, failed = $3, errors = $4, completed_at = NOW(), status = 'complete'
          WHERE id = $5`,
-        [results.length, passed, failed, errors, batchId]
+        [flatResults.length, passed, failed, errored, batchId]
       );
 
-      const summary = { batchId, total: results.length, passed, failed, errors, status: 'complete' };
+      const summary = { batchId, total: flatResults.length, passed, failed, errors: errored, status: 'complete' };
 
-      return { ...summary, results };
+      // Run retention cleanup after batch completes
+      try { await cleanupOldRuns(projectId); } catch (e) { console.warn('[Evals] Retention cleanup failed:', e.message); }
+
+      return { ...summary, results: flatResults };
     } catch (err) {
       await query(
         `UPDATE eval_batches SET status = 'error', completed_at = NOW() WHERE id = $1`,
@@ -446,6 +519,41 @@ async function triggerEvalRun(projectId, triggerSource, sessionId, tmuxSessionNa
   } catch (err) {
     console.error(`[Evals] triggerEvalRun error:`, err.message);
   }
+}
+
+/**
+ * Retention cleanup: delete eval runs older than 90 days, but always keep
+ * the most recent 100 runs per eval name (whichever is larger).
+ * Runs after each batch completes.
+ */
+async function cleanupOldRuns(projectId) {
+  // Delete runs that are both:
+  //   1. Older than 90 days
+  //   2. NOT in the top 100 most recent runs for that eval_name in this project
+  await query(`
+    DELETE FROM eval_runs WHERE id IN (
+      SELECT er.id FROM eval_runs er
+      JOIN eval_batches eb ON er.batch_id = eb.id
+      WHERE eb.project_id = $1
+        AND er.timestamp < NOW() - INTERVAL '90 days'
+        AND er.id NOT IN (
+          SELECT id FROM (
+            SELECT er2.id,
+              ROW_NUMBER() OVER (PARTITION BY er2.eval_name ORDER BY er2.timestamp DESC) AS rn
+            FROM eval_runs er2
+            JOIN eval_batches eb2 ON er2.batch_id = eb2.id
+            WHERE eb2.project_id = $1
+          ) ranked WHERE rn <= 100
+        )
+    )
+  `, [projectId]);
+
+  // Also clean up empty batches (all runs deleted)
+  await query(`
+    DELETE FROM eval_batches
+    WHERE project_id = $1
+      AND id NOT IN (SELECT DISTINCT batch_id FROM eval_runs)
+  `, [projectId]);
 }
 
 module.exports = router;

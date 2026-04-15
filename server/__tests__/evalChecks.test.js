@@ -66,12 +66,27 @@ describe('evalChecks', () => {
     });
 
     describe('json_schema', () => {
-      it('passes for valid JSON (basic check)', () => {
-        expect(runCheck({ type: 'json_schema' }, '{"a": 1}').passed).toBe(true);
+      it('fails when no schema is specified', () => {
+        const result = runCheck({ type: 'json_schema' }, '{"a": 1}');
+        expect(result.passed).toBe(false);
+        expect(result.reason).toContain('No schema specified');
       });
 
-      it('fails for invalid JSON', () => {
-        expect(runCheck({ type: 'json_schema' }, 'nope').passed).toBe(false);
+      it('fails for invalid JSON evidence', () => {
+        expect(runCheck({ type: 'json_schema', schema: 'test.json' }, 'nope').passed).toBe(false);
+        expect(runCheck({ type: 'json_schema', schema: 'test.json' }, 'nope').reason).toContain('not valid JSON');
+      });
+
+      it('fails when no project root in context', () => {
+        const result = runCheck({ type: 'json_schema', schema: 'test.json' }, '{"a": 1}');
+        expect(result.passed).toBe(false);
+        expect(result.reason).toContain('no project root');
+      });
+
+      it('fails when schema file does not exist', () => {
+        const result = runCheck({ type: 'json_schema', schema: 'nonexistent.json' }, '{"a": 1}', { projectRoot: '/tmp' });
+        expect(result.passed).toBe(false);
+        expect(result.reason).toContain('Failed to load schema');
       });
     });
 

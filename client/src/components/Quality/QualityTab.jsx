@@ -112,12 +112,16 @@ export default function QualityTab({ sessionId }) {
 
   const loadRules = useCallback(async () => {
     try {
-      const result = await api.get('/api/quality/rules');
+      // Use per-project resolved rules when a project is available (3-tier priority chain)
+      const url = project?.id
+        ? `/api/quality/rules/project/${project.id}`
+        : '/api/quality/rules';
+      const result = await api.get(url);
       setRules(Array.isArray(result) ? result : []);
     } catch {
       setRules([]);
     }
-  }, []);
+  }, [project?.id]);
 
   const loadFolders = useCallback(async () => {
     if (!project?.id) return;
@@ -186,6 +190,29 @@ export default function QualityTab({ sessionId }) {
     }
   };
 
+  const handleRuleToggle = async (rule) => {
+    if (!project?.id) return;
+    try {
+      await api.post(`/api/quality/rules/project/${project.id}/override`, {
+        rule_id: rule.id,
+        enabled: rule.enabled ? false : true,
+      });
+      loadRules();
+    } catch (err) {
+      console.error('[QualityTab] Failed to toggle rule:', err);
+    }
+  };
+
+  const handleResetRuleOverride = async (rule) => {
+    if (!project?.id) return;
+    try {
+      await api.delete(`/api/quality/rules/project/${project.id}/override/${rule.id}`);
+      loadRules();
+    } catch (err) {
+      console.error('[QualityTab] Failed to reset rule override:', err);
+    }
+  };
+
   const handleRunEvals = async () => {
     if (!project?.id) return;
     setRunning(true);
@@ -248,13 +275,24 @@ export default function QualityTab({ sessionId }) {
           <div className={styles.emptySection}>No quality rules configured</div>
         ) : (
           rules.map((rule, i) => (
-            <div key={rule.id || i} className={`${styles.ruleCard} ${rule.enabled === false ? styles.disabled : ''}`}>
+            <div key={rule.id || i} className={`${styles.ruleCard} ${rule.enabled === false || rule.enabled === 0 ? styles.disabled : ''}`}>
               <div className={styles.ruleRow}>
+                {project && <Toggle on={!!rule.enabled} onChange={() => handleRuleToggle(rule)} small />}
                 <span className={styles.ruleName}>{rule.display_name || rule.name}</span>
                 <SeverityBadge severity={rule.severity} />
-                <span className={`${styles.statusLabel} ${rule.enabled !== false ? styles.enabled : styles.disabledLabel}`}>
-                  {rule.enabled !== false ? 'enabled' : 'disabled'}
+                <span className={`${styles.statusLabel} ${rule.enabled ? styles.enabled : styles.disabledLabel}`}>
+                  {rule.enabled ? 'enabled' : 'disabled'}
                 </span>
+                {rule.override_source && rule.override_source !== 'global' && (
+                  <span className={styles.overrideBadge} title={`Override from ${rule.override_source}`}>
+                    {rule.override_source}
+                  </span>
+                )}
+                {project && rule.has_override && (
+                  <button className={styles.resetBtn} onClick={() => handleResetRuleOverride(rule)} title="Reset to default">
+                    &times;
+                  </button>
+                )}
               </div>
               {rule.description && <div className={styles.ruleDescription}>{rule.description}</div>}
             </div>
