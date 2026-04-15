@@ -215,112 +215,120 @@ router.get('/eval-history/:projectId/:evalName', async (req, res) => {
  * Shared by the manual /run endpoint and the session_end trigger.
  */
 async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName) {
-  const { getProject } = await getProjectDiscovery();
-  const { loadEvalFolder } = await getEvalLoader();
-  const { runSingleEval } = await getEvalRunner();
-
-  const project = await getProject(projectId);
-  if (!project) throw new Error('Project not found');
-
-  // Get armed folders
-  const armedResult = await query(
-    'SELECT * FROM eval_armed_folders WHERE project_id = $1',
-    [projectId]
-  );
-  const armedFolders = armedResult.rows;
-
-  if (armedFolders.length === 0) {
-    return { message: 'No armed eval folders', total: 0 };
+  // Set the running flag immediately (synchronously) to prevent TOCTOU race.
+  // Two concurrent calls could both pass the has-check before either sets the flag
+  // if we waited until after the awaits below.
+  if (runningBatches.has(projectId)) {
+    return { message: 'A batch is already running', total: 0 };
   }
-
-  // If trigger-based, filter to folders matching the trigger
-  const matchingFolders = triggerSource === 'manual'
-    ? armedFolders
-    : armedFolders.filter(f => f.triggers.split(',').map(t => t.trim()).includes(triggerSource));
-
-  if (matchingFolders.length === 0) {
-    return { message: 'No armed folders match this trigger', total: 0 };
-  }
-
-  // Get current commit SHA
-  let commitSha = null;
-  try {
-    const { execSync } = require('child_process');
-    commitSha = execSync('git rev-parse --short HEAD', {
-      cwd: project.root_path,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-  } catch (e) {}
-
-  // Create batch
-  const batchId = uuidv4();
-  await query(
-    `INSERT INTO eval_batches (id, project_id, trigger_source, commit_sha, session_id, status)
-     VALUES ($1, $2, $3, $4, $5, 'running')`,
-    [batchId, projectId, triggerSource, commitSha, sessionId]
-  );
-
-  runningBatches.set(projectId, batchId);
+  runningBatches.set(projectId, true);
 
   try {
-    // Load evals from all matching folders
-    const allEvals = [];
-    for (const folder of matchingFolders) {
-      const evals = loadEvalFolder(folder.folder_path);
-      for (const evalDef of evals) {
-        allEvals.push({ evalDef, folder });
+    const { getProject } = await getProjectDiscovery();
+    const { loadEvalFolder } = await getEvalLoader();
+    const { runSingleEval } = await getEvalRunner();
+
+    const project = await getProject(projectId);
+    if (!project) throw new Error('Project not found');
+
+    // Get armed folders
+    const armedResult = await query(
+      'SELECT * FROM eval_armed_folders WHERE project_id = $1',
+      [projectId]
+    );
+    const armedFolders = armedResult.rows;
+
+    if (armedFolders.length === 0) {
+      return { message: 'No armed eval folders', total: 0 };
+    }
+
+    // If trigger-based, filter to folders matching the trigger
+    const matchingFolders = triggerSource === 'manual'
+      ? armedFolders
+      : armedFolders.filter(f => f.triggers.split(',').map(t => t.trim()).includes(triggerSource));
+
+    if (matchingFolders.length === 0) {
+      return { message: 'No armed folders match this trigger', total: 0 };
+    }
+
+    // Get current commit SHA
+    let commitSha = null;
+    try {
+      const { execSync } = require('child_process');
+      commitSha = execSync('git rev-parse --short HEAD', {
+        cwd: project.root_path,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch (e) {}
+
+    // Create batch
+    const batchId = uuidv4();
+    await query(
+      `INSERT INTO eval_batches (id, project_id, trigger_source, commit_sha, session_id, status)
+       VALUES ($1, $2, $3, $4, $5, 'running')`,
+      [batchId, projectId, triggerSource, commitSha, sessionId]
+    );
+
+    try {
+      // Load evals from all matching folders
+      const allEvals = [];
+      for (const folder of matchingFolders) {
+        const evals = loadEvalFolder(folder.folder_path);
+        for (const evalDef of evals) {
+          allEvals.push({ evalDef, folder });
+        }
       }
-    }
 
-    // Run all evals
-    const results = [];
-    for (const { evalDef, folder } of allEvals) {
-      const context = { projectRoot: project.root_path, commitSha };
-      const result = await runSingleEval(evalDef, context);
-      result.evalFolder = folder.folder_path;
-      results.push(result);
+      // Run all evals
+      const results = [];
+      for (const { evalDef, folder } of allEvals) {
+        const context = { projectRoot: project.root_path, commitSha };
+        const result = await runSingleEval(evalDef, context);
+        result.evalFolder = folder.folder_path;
+        results.push(result);
 
-      // Store run in DB
-      const runId = uuidv4();
+        // Store run in DB
+        const runId = uuidv4();
+        await query(
+          `INSERT INTO eval_runs (id, batch_id, eval_name, eval_folder, commit_sha, trigger_source, input, evidence, check_results, judge_verdict, state, fail_reason, error_message, duration)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            runId, batchId, result.evalName, folder.folder_path, commitSha, triggerSource,
+            evalDef.expected ? JSON.stringify(evalDef.expected) : null,
+            result.evidence ? JSON.stringify(result.evidence) : null,
+            result.checkResults ? JSON.stringify(result.checkResults) : null,
+            result.judgeVerdict ? JSON.stringify(result.judgeVerdict) : null,
+            result.state,
+            result.failReason || null,
+            result.error || null,
+            result.duration || 0,
+          ]
+        );
+      }
+
+      // Tally results
+      const passed = results.filter(r => r.state === 'pass').length;
+      const failed = results.filter(r => r.state === 'fail').length;
+      const errors = results.filter(r => r.state === 'error').length;
+
+      // Update batch
       await query(
-        `INSERT INTO eval_runs (id, batch_id, eval_name, eval_folder, commit_sha, trigger_source, input, evidence, check_results, judge_verdict, state, fail_reason, error_message, duration)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-        [
-          runId, batchId, result.evalName, folder.folder_path, commitSha, triggerSource,
-          evalDef.expected ? JSON.stringify(evalDef.expected) : null,
-          result.evidence ? JSON.stringify(result.evidence) : null,
-          result.checkResults ? JSON.stringify(result.checkResults) : null,
-          result.judgeVerdict ? JSON.stringify(result.judgeVerdict) : null,
-          result.state,
-          result.failReason || null,
-          result.error || null,
-          result.duration || 0,
-        ]
+        `UPDATE eval_batches SET total = $1, passed = $2, failed = $3, errors = $4, completed_at = NOW(), status = 'complete'
+         WHERE id = $5`,
+        [results.length, passed, failed, errors, batchId]
       );
+
+      const summary = { batchId, total: results.length, passed, failed, errors, status: 'complete' };
+
+      return { ...summary, results };
+    } catch (err) {
+      await query(
+        `UPDATE eval_batches SET status = 'error', completed_at = NOW() WHERE id = $1`,
+        [batchId]
+      );
+      throw err;
     }
-
-    // Tally results
-    const passed = results.filter(r => r.state === 'pass').length;
-    const failed = results.filter(r => r.state === 'fail').length;
-    const errors = results.filter(r => r.state === 'error').length;
-
-    // Update batch
-    await query(
-      `UPDATE eval_batches SET total = $1, passed = $2, failed = $3, errors = $4, completed_at = NOW(), status = 'complete'
-       WHERE id = $5`,
-      [results.length, passed, failed, errors, batchId]
-    );
-
-    const summary = { batchId, total: results.length, passed, failed, errors, status: 'complete' };
-
-    return { ...summary, results };
-  } catch (err) {
-    await query(
-      `UPDATE eval_batches SET status = 'error', completed_at = NOW() WHERE id = $1`,
-      [batchId]
-    );
-    throw err;
   } finally {
     runningBatches.delete(projectId);
   }

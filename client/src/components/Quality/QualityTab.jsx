@@ -159,7 +159,7 @@ export default function QualityTab({ sessionId }) {
     try {
       await api.put(`/api/evals/folders/${project.id}/settings`, {
         folder_path: folder.folder_path,
-        auto_send: !folder.auto_send,
+        auto_send: folder.auto_send ? 0 : 1,
       });
       loadFolders();
     } catch (err) {

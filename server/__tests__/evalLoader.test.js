@@ -190,10 +190,10 @@ describe('evalLoader', () => {
   });
 
   describe('discoverEvalFolders', () => {
-    it('uses config eval_dirs when provided', async () => {
+    it('uses config evals.folders when provided', async () => {
       const { discoverEvalFolders } = await getModule();
       const result = discoverEvalFolders('/project', {
-        eval_dirs: ['tests/evals', 'custom/evals'],
+        evals: { folders: ['tests/evals', 'custom/evals'] },
       });
 
       expect(result).toEqual([

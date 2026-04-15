@@ -62,8 +62,9 @@ export function loadEvalFolder(folderPath) {
  */
 export function discoverEvalFolders(projectRoot, config) {
   // If config specifies eval directories, use those
-  if (config && Array.isArray(config.eval_dirs) && config.eval_dirs.length > 0) {
-    return config.eval_dirs.map((dir) => path.resolve(projectRoot, dir));
+  // Config structure from .mission-control.yaml: { evals: { folders: [...] } }
+  if (config && config.evals && Array.isArray(config.evals.folders) && config.evals.folders.length > 0) {
+    return config.evals.folders.map((dir) => path.resolve(projectRoot, dir));
   }
 
   // Default: scan for evals/ directory at project root
