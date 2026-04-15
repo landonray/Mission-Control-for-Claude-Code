@@ -189,7 +189,6 @@ class SessionProcess {
     this.useWorktree = options.useWorktree || false;
     this.worktreeReady = !this.useWorktree; // non-worktree sessions are immediately ready
     this.model = options.model || 'claude-opus-4-6';
-    this.maxEffort = options.maxEffort || false;
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
@@ -300,11 +299,6 @@ class SessionProcess {
     // Model selection
     if (this.model) {
       args.push('--model', this.model);
-    }
-
-    // Effort level
-    if (this.maxEffort) {
-      args.push('--effort', 'max');
     }
 
     const mcpConfig = await this.buildMcpConfig();
@@ -1679,7 +1673,6 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
       workingDirectory: workingDir,
       permissionMode: sessionRow.permission_mode || 'auto',
       model: sessionRow.model || DEFAULT_MODEL,
-      maxEffort: !!sessionRow.max_effort,
       mcpConnections: [],
       tmuxSessionName: sessionRow.tmux_session_name || null
     });
@@ -1821,7 +1814,6 @@ async function recoverTmuxSessions() {
       workingDirectory: sessionRow.working_directory,
       permissionMode: sessionRow.permission_mode || 'auto',
       model: sessionRow.model || DEFAULT_MODEL,
-      maxEffort: !!sessionRow.max_effort,
       mcpConnections: [],
       tmuxSessionName: tmuxName
     });
