@@ -41,8 +41,9 @@ export async function runSingleEval(evalDef, context) {
     return result;
   }
 
-  // Step 2: Empty evidence check
-  if ((!evidence || String(evidence).trim().length === 0) && !evalDef.allow_empty) {
+  // Step 2: Empty evidence check — spec nests allow_empty under evidence:
+  const allowEmpty = evalDef.evidence && evalDef.evidence.allow_empty;
+  if ((!evidence || String(evidence).trim().length === 0) && !allowEmpty) {
     result.state = 'fail';
     result.failReason = 'no evidence gathered';
     result.duration = Date.now() - startTime;

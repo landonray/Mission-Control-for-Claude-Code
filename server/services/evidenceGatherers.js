@@ -114,8 +114,27 @@ export async function gatherDbQuery(config, context) {
     throw new Error('No database connection factory available (need createDbConnection in context)');
   }
 
+  // Resolve :param placeholders from the params map before parameterizing.
+  // Spec example: query: "SELECT * FROM recipes WHERE source_url = :url"
+  //               params: { url: "${input.url}" }
+  let resolvedQuery = config.query;
+  if (config.params && typeof config.params === 'object') {
+    // First interpolate variables in each param value
+    const resolvedParams = {};
+    for (const [key, val] of Object.entries(config.params)) {
+      resolvedParams[key] = interpolateVariables(String(val), context);
+    }
+    // Replace :param placeholders with ${_param.key} so buildParameterizedQuery can handle them
+    resolvedQuery = resolvedQuery.replace(/:([a-zA-Z_]\w*)/g, (match, name) => {
+      if (name in resolvedParams) return `\${_param.${name}}`;
+      return match; // leave unrecognized :params as-is (will error later)
+    });
+    // Inject resolved params into context for buildParameterizedQuery
+    context = { ...context, _param: resolvedParams, variables: { ...context.variables, _param: resolvedParams } };
+  }
+
   // Use parameterized queries to prevent SQL injection.
-  const { sql, params } = buildParameterizedQuery(config.query, context);
+  const { sql, params } = buildParameterizedQuery(resolvedQuery, context);
 
   let rows;
   const db = context.createDbConnection(context.dbReadonlyUrl);
@@ -132,35 +151,60 @@ export async function gatherDbQuery(config, context) {
 
 /**
  * Spawn a sandboxed Claude CLI session to gather evidence.
- * @param {object} config - Evidence config with prompt
+ * Spec: accepts extraction_prompt (or prompt as fallback) and optional context_source.
+ * If context_source is set, the source content is written to a temp file and
+ * the path is injected into the extraction prompt as ${context_file}.
+ * @param {object} config - Evidence config with extraction_prompt/prompt and optional context_source
  * @param {object} context - Execution context
  * @returns {Promise<string>} Sub-agent output
  */
 export async function gatherSubAgent(config, context) {
-  if (!config.prompt) {
-    throw new Error('Sub-agent evidence requires a "prompt" field');
+  const promptTemplate = config.extraction_prompt || config.prompt;
+  if (!promptTemplate) {
+    throw new Error('Sub-agent evidence requires an "extraction_prompt" (or "prompt") field');
   }
 
-  const prompt = interpolateVariables(config.prompt, context);
-
-  return new Promise((resolve, reject) => {
-    const args = ['--print', prompt];
-    if (context.projectRoot) {
-      args.unshift('--cwd', context.projectRoot);
+  let contextFilePath = null;
+  try {
+    // If context_source is specified, resolve it to a file and write to temp
+    if (config.context_source) {
+      const os = await import('os');
+      const sourcePath = resolveLogSource(config.context_source, context);
+      const sourceContent = fs.readFileSync(sourcePath, 'utf8');
+      contextFilePath = path.join(os.default.tmpdir(), `eval-subagent-context-${Date.now()}.txt`);
+      fs.writeFileSync(contextFilePath, sourceContent, 'utf8');
     }
 
-    const child = execFile('claude', args, {
-      timeout: config.timeout || 120000,
-      maxBuffer: DEFAULT_SIZE_CAPS.sub_agent,
-    }, (err, stdout, stderr) => {
-      if (err) {
-        reject(new Error(`Sub-agent failed: ${err.message}`));
-        return;
+    // Interpolate variables in the prompt, including ${context_file} if we have one
+    const extendedContext = contextFilePath
+      ? { ...context, context_file: contextFilePath, variables: { ...context.variables, context_file: contextFilePath } }
+      : context;
+    const prompt = interpolateVariables(promptTemplate, extendedContext);
+
+    return await new Promise((resolve, reject) => {
+      const args = ['--print', prompt];
+      if (context.projectRoot) {
+        args.unshift('--cwd', context.projectRoot);
       }
-      const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.sub_agent;
-      resolve(truncateLogEvidence(stdout, maxBytes));
+
+      execFile('claude', args, {
+        timeout: config.timeout || 120000,
+        maxBuffer: DEFAULT_SIZE_CAPS.sub_agent,
+      }, (err, stdout) => {
+        if (err) {
+          reject(new Error(`Sub-agent failed: ${err.message}`));
+          return;
+        }
+        const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.sub_agent;
+        resolve(truncateLogEvidence(stdout, maxBytes));
+      });
     });
-  });
+  } finally {
+    // Clean up temp context file
+    if (contextFilePath) {
+      try { fs.unlinkSync(contextFilePath); } catch (_) {}
+    }
+  }
 }
 
 /**
@@ -295,6 +339,7 @@ function resolveLogSource(source, context) {
 
   // Predefined source names
   switch (source) {
+    case 'session_log':
     case 'session':
     case 'stdout':
       if (!context.sessionLogPath) throw new Error(`Log source "${source}" requires sessionLogPath in context`);

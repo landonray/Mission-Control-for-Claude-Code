@@ -72,7 +72,7 @@ describe('evalRunner', () => {
       const { runSingleEval } = await getModule();
 
       const result = await runSingleEval(
-        { ...baseEval, checks: [{ type: 'json_valid' }], allow_empty: true },
+        { ...baseEval, evidence: { ...baseEval.evidence, allow_empty: true }, checks: [{ type: 'json_valid' }] },
         context
       );
 

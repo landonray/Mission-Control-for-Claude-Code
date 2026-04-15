@@ -45,7 +45,7 @@ export async function callJudge({ expected, evidence, judgePrompt, model }) {
     '## Evidence',
     evidence || '(no evidence gathered)',
     '',
-    '## Additional Instructions',
+    '## Judging Criteria',
     judgePrompt || '(none)',
   ].join('\n');
 

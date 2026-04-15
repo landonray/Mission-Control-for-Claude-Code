@@ -280,10 +280,61 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         }
       }
 
+      // Build shared context for evidence gatherers
+      const pg = await import('pg');
+      const baseContext = {
+        projectRoot: project.root_path,
+        commitSha,
+        triggerSource,
+        // DB readonly connection — required for db_query evidence
+        dbReadonlyUrl: process.env.DATABASE_URL_READONLY || null,
+        createDbConnection: (url) => {
+          const client = new pg.default.Client({ connectionString: url });
+          client.connect();
+          return client;
+        },
+        // Session log path — capture tmux scrollback if session is available
+        sessionLogPath: null,
+        buildOutputPath: null,
+      };
+
+      // If triggered from a session, try to capture the session log
+      if (sessionId && tmuxSessionName) {
+        try {
+          const { execSync } = require('child_process');
+          const os = require('os');
+          const fs = require('fs');
+          const logPath = require('path').join(os.tmpdir(), `eval-session-log-${sessionId}.txt`);
+          const sanitizedSession = tmuxSessionName.replace(/[^a-zA-Z0-9_\-.:]/g, '');
+          if (sanitizedSession === tmuxSessionName) {
+            execSync(`tmux capture-pane -t '${sanitizedSession}' -p -S -5000 > '${logPath}'`, { stdio: 'pipe' });
+            if (fs.existsSync(logPath)) {
+              baseContext.sessionLogPath = logPath;
+            }
+          }
+        } catch (e) {
+          // Session may already be gone — that's fine, log_query evals will error gracefully
+        }
+      }
+
       // Run all evals
       const results = [];
       for (const { evalDef, folder } of allEvals) {
-        const context = { projectRoot: project.root_path, commitSha };
+        // Per-eval context: inject the eval's input map as variables for interpolation
+        const context = {
+          ...baseContext,
+          variables: {
+            input: evalDef.input || {},
+            eval: { name: evalDef.name },
+            run: { commit_sha: commitSha, trigger: triggerSource },
+            project: { root: project.root_path },
+          },
+          // Also expose top-level shortcuts for interpolateVariables
+          input: evalDef.input || {},
+          eval: { name: evalDef.name },
+          run: { commit_sha: commitSha, trigger: triggerSource },
+          project: { root: project.root_path },
+        };
         const result = await runSingleEval(evalDef, context);
         result.evalFolder = folder.folder_path;
         results.push(result);
