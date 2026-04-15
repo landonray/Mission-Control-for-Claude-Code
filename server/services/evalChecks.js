@@ -32,6 +32,16 @@ export function runCheck(check, evidence, context) {
       return httpStatus(base, check, evidence);
     case 'field_exists':
       return fieldExists(base, check, evidence);
+    case 'equals':
+      return equals(base, check, evidence);
+    case 'contains':
+      return contains(base, check, evidence);
+    case 'greater_than':
+      return greaterThan(base, check, evidence);
+    case 'less_than':
+      return lessThan(base, check, evidence);
+    case 'numeric_score':
+      return numericScore(base, check, evidence);
     default:
       return { ...base, passed: false, reason: `Unknown check type: ${check.type}` };
   }
@@ -181,4 +191,164 @@ function fieldExists(base, check, evidence) {
   } catch {
     return { ...base, passed: false, reason: 'Evidence is not valid JSON' };
   }
+}
+
+/**
+ * Extract a value from evidence, optionally from a JSON field using dot notation.
+ * Returns { value, error } — error is a string if extraction fails.
+ */
+function extractValue(evidence, field) {
+  if (!field) {
+    return { value: evidence || '' };
+  }
+  let obj;
+  try {
+    obj = JSON.parse(evidence);
+  } catch {
+    return { error: 'Evidence is not valid JSON (required when "field" is specified)' };
+  }
+  const parts = field.split('.');
+  let current = obj;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object' || !(part in current)) {
+      return { error: `Field "${field}" not found in JSON evidence` };
+    }
+    current = current[part];
+  }
+  return { value: current };
+}
+
+function equals(base, check, evidence) {
+  if (check.value === undefined) {
+    return { ...base, passed: false, reason: 'No "value" specified in check config' };
+  }
+  const extracted = extractValue(evidence, check.field);
+  if (extracted.error) {
+    return { ...base, passed: false, reason: extracted.error };
+  }
+  const actual = extracted.value;
+  const expected = check.value;
+  const passed = String(actual) === String(expected);
+  return {
+    ...base,
+    passed,
+    reason: passed
+      ? `Value equals "${expected}"`
+      : `Expected "${expected}" but got "${actual}"`,
+  };
+}
+
+function contains(base, check, evidence) {
+  if (check.value === undefined) {
+    return { ...base, passed: false, reason: 'No "value" specified in check config' };
+  }
+  const extracted = extractValue(evidence, check.field);
+  if (extracted.error) {
+    return { ...base, passed: false, reason: extracted.error };
+  }
+  const haystack = String(extracted.value);
+  const needle = String(check.value);
+  const passed = haystack.includes(needle);
+  return {
+    ...base,
+    passed,
+    reason: passed
+      ? `Evidence contains "${needle}"`
+      : `Evidence does not contain "${needle}"`,
+  };
+}
+
+function parseNumeric(value, label) {
+  const num = Number(value);
+  if (isNaN(num)) {
+    return { error: `${label} is not a number: "${value}"` };
+  }
+  return { num };
+}
+
+function greaterThan(base, check, evidence) {
+  if (check.value === undefined) {
+    return { ...base, passed: false, reason: 'No "value" specified in check config' };
+  }
+  const extracted = extractValue(evidence, check.field);
+  if (extracted.error) {
+    return { ...base, passed: false, reason: extracted.error };
+  }
+  const actual = parseNumeric(extracted.value, 'Evidence value');
+  if (actual.error) return { ...base, passed: false, reason: actual.error };
+  const threshold = parseNumeric(check.value, 'Threshold');
+  if (threshold.error) return { ...base, passed: false, reason: threshold.error };
+
+  const passed = actual.num > threshold.num;
+  return {
+    ...base,
+    passed,
+    reason: passed
+      ? `${actual.num} > ${threshold.num}`
+      : `${actual.num} is not greater than ${threshold.num}`,
+  };
+}
+
+function lessThan(base, check, evidence) {
+  if (check.value === undefined) {
+    return { ...base, passed: false, reason: 'No "value" specified in check config' };
+  }
+  const extracted = extractValue(evidence, check.field);
+  if (extracted.error) {
+    return { ...base, passed: false, reason: extracted.error };
+  }
+  const actual = parseNumeric(extracted.value, 'Evidence value');
+  if (actual.error) return { ...base, passed: false, reason: actual.error };
+  const threshold = parseNumeric(check.value, 'Threshold');
+  if (threshold.error) return { ...base, passed: false, reason: threshold.error };
+
+  const passed = actual.num < threshold.num;
+  return {
+    ...base,
+    passed,
+    reason: passed
+      ? `${actual.num} < ${threshold.num}`
+      : `${actual.num} is not less than ${threshold.num}`,
+  };
+}
+
+function numericScore(base, check, evidence) {
+  const extracted = extractValue(evidence, check.field);
+  if (extracted.error) {
+    return { ...base, passed: false, reason: extracted.error };
+  }
+  const parsed = parseNumeric(extracted.value, 'Score value');
+  if (parsed.error) return { ...base, passed: false, reason: parsed.error };
+
+  const score = parsed.num;
+  let passed = true;
+  const violations = [];
+
+  if (check.min !== undefined) {
+    const minVal = parseNumeric(check.min, 'Min threshold');
+    if (minVal.error) return { ...base, passed: false, reason: minVal.error };
+    if (score < minVal.num) {
+      passed = false;
+      violations.push(`below min ${minVal.num}`);
+    }
+  }
+  if (check.max !== undefined) {
+    const maxVal = parseNumeric(check.max, 'Max threshold');
+    if (maxVal.error) return { ...base, passed: false, reason: maxVal.error };
+    if (score > maxVal.num) {
+      passed = false;
+      violations.push(`above max ${maxVal.num}`);
+    }
+  }
+
+  return {
+    ...base,
+    passed,
+    score,
+    reason: passed
+      ? `Score: ${score}` + (check.min !== undefined || check.max !== undefined
+          ? ` (within range${check.min !== undefined ? ` min=${check.min}` : ''}${check.max !== undefined ? ` max=${check.max}` : ''})`
+          : '')
+      : `Score: ${score} — ${violations.join(', ')}`,
+  };
 }
