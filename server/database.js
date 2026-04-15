@@ -90,6 +90,10 @@ async function initializeDb() {
     `CREATE TABLE IF NOT EXISTS slash_commands (
       id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, message TEXT NOT NULL,
       sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, root_path TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT NOW(), settings JSONB
     )`
   ];
 
@@ -110,6 +114,7 @@ async function initializeDb() {
     `ALTER TABLE quality_results ADD COLUMN IF NOT EXISTS analysis TEXT`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS has_spec INTEGER DEFAULT 0`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS max_effort INTEGER DEFAULT 0`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES projects(id)`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
