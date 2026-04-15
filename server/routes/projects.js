@@ -5,6 +5,15 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { query } = require('../database');
 
+// projectDiscovery is ESM — use lazy dynamic import
+let _projectDiscovery;
+async function getProjectDiscovery() {
+  if (!_projectDiscovery) {
+    _projectDiscovery = await import('../services/projectDiscovery.js');
+  }
+  return _projectDiscovery;
+}
+
 async function getSettings() {
   const result = await query('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1');
   return result.rows[0];
@@ -175,6 +184,63 @@ router.post('/create', async (req, res) => {
     res.json({ sessionId: session.id });
   } catch (err) {
     res.status(500).json({ error: `Project created but failed to start session: ${err.message}` });
+  }
+});
+
+// GET /api/projects/by-session/:sessionId — get the project for a session
+router.get('/by-session/:sessionId', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT p.* FROM projects p
+       JOIN sessions s ON s.project_id = p.id
+       WHERE s.id = $1`,
+      [req.params.sessionId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No project found for this session' });
+    }
+    const project = result.rows[0];
+    try {
+      const { loadProjectConfig } = await getProjectDiscovery();
+      project.config = loadProjectConfig(project.root_path);
+    } catch {
+      project.config = { project: {}, evals: { folders: [] }, quality_rules: { enabled: [], disabled: [] } };
+    }
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:id — get a single project with config
+router.get('/:id', async (req, res) => {
+  try {
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.id);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/projects/:id/settings — update project settings
+router.put('/:id/settings', async (req, res) => {
+  try {
+    const { settings } = req.body;
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ error: 'Request body must include a settings object' });
+    }
+    const { updateProjectSettings } = await getProjectDiscovery();
+    const project = await updateProjectSettings(req.params.id, settings);
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
