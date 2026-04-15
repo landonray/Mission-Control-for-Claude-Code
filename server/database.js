@@ -94,7 +94,51 @@ async function initializeDb() {
     `CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, root_path TEXT NOT NULL UNIQUE,
       created_at TEXT DEFAULT NOW(), settings JSONB
-    )`
+    )`,
+    `CREATE TABLE IF NOT EXISTS eval_armed_folders (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      folder_path TEXT NOT NULL,
+      folder_name TEXT NOT NULL,
+      triggers TEXT NOT NULL DEFAULT 'manual',
+      auto_send INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT NOW(),
+      UNIQUE(project_id, folder_path)
+    )`,
+    `CREATE TABLE IF NOT EXISTS eval_batches (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      trigger_source TEXT NOT NULL,
+      commit_sha TEXT,
+      session_id TEXT,
+      total INTEGER DEFAULT 0,
+      passed INTEGER DEFAULT 0,
+      failed INTEGER DEFAULT 0,
+      errors INTEGER DEFAULT 0,
+      started_at TEXT DEFAULT NOW(),
+      completed_at TEXT,
+      status TEXT DEFAULT 'running'
+    )`,
+    `CREATE TABLE IF NOT EXISTS eval_runs (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES eval_batches(id),
+      eval_name TEXT NOT NULL,
+      eval_folder TEXT NOT NULL,
+      commit_sha TEXT,
+      trigger_source TEXT NOT NULL,
+      input TEXT,
+      evidence TEXT,
+      check_results TEXT,
+      judge_verdict TEXT,
+      state TEXT NOT NULL,
+      fail_reason TEXT,
+      error_message TEXT,
+      duration INTEGER DEFAULT 0,
+      timestamp TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_eval_runs_batch ON eval_runs(batch_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_eval_runs_name ON eval_runs(eval_name)`,
+    `CREATE INDEX IF NOT EXISTS idx_eval_batches_project ON eval_batches(project_id)`
   ];
 
   for (const stmt of statements) {
