@@ -6,7 +6,7 @@ describe('evalReporter', () => {
     it('formats a summary with passed, failed, and error evals', () => {
       const results = [
         { evalName: 'check-api', state: 'pass', evalFolder: '/project/evals' },
-        { evalName: 'check-db', state: 'fail', evalFolder: '/project/evals', failReason: 'DB returns stale data', evidence: 'query returned old rows', judgeVerdict: { result: 'fail', reasoning: 'Evidence shows stale data', confidence: 0.85 } },
+        { evalName: 'check-db', state: 'fail', evalFolder: '/project/evals', expected: 'DB returns fresh data', evidence: 'query returned old rows', judgeVerdict: { result: 'fail', reasoning: 'Evidence shows stale data', confidence: 0.85 } },
         { evalName: 'check-deploy', state: 'error', evalFolder: '/project/evals', error: 'Connection timeout' },
       ];
       const history = [
@@ -21,7 +21,7 @@ describe('evalReporter', () => {
       expect(msg).toContain('Eval run complete: 3 evals ran, 1 failed, 1 errors.');
       expect(msg).toContain('PASSED: check-api (evals/)');
       expect(msg).toContain('FAILED: check-db (evals/)');
-      expect(msg).toContain('Expected: DB returns stale data');
+      expect(msg).toContain('Expected: DB returns fresh data');
       expect(msg).toContain('Evidence: query returned old rows');
       expect(msg).toContain('Judge reasoning: "Evidence shows stale data"');
       expect(msg).toContain('Confidence: 0.85');
@@ -76,8 +76,8 @@ describe('evalReporter', () => {
 
       const msg = composeFailureMessage(results, [], summary);
 
-      expect(msg).toContain('Checks failed: regex_match: Pattern not found; not_empty: Evidence was empty');
-      expect(msg).toContain('Judge was not invoked');
+      expect(msg).toContain('Check failure: regex_match: Pattern not found; not_empty: Evidence was empty');
+      expect(msg).toContain('Judge was not invoked — structural check failed');
     });
 
     it('handles history with unknown commit SHAs', () => {

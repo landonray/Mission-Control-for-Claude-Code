@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 // Mocks — vi.mock is hoisted, so use vi.hoisted for shared references
 const { mockApi } = vi.hoisted(() => ({
-  mockApi: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  mockApi: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
 vi.mock('../../../utils/api', () => ({
@@ -17,6 +17,7 @@ vi.mock('../../../utils/api', () => ({
 vi.mock('lucide-react', () => ({
   ChevronDown: (props) => React.createElement('span', { 'data-testid': 'icon-chevron-down', ...props }),
   ChevronRight: (props) => React.createElement('span', { 'data-testid': 'icon-chevron-right', ...props }),
+  ChevronLeft: (props) => React.createElement('span', { 'data-testid': 'icon-chevron-left', ...props }),
   Shield: (props) => React.createElement('span', { 'data-testid': 'icon-shield', ...props }),
   FolderOpen: (props) => React.createElement('span', { 'data-testid': 'icon-folder', ...props }),
   Clock: (props) => React.createElement('span', { 'data-testid': 'icon-clock', ...props }),

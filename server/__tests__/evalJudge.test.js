@@ -163,7 +163,7 @@ describe('evalJudge', () => {
 
     it('exports JUDGE_SYSTEM_PROMPT', async () => {
       const { JUDGE_SYSTEM_PROMPT } = await getModule();
-      expect(JUDGE_SYSTEM_PROMPT).toContain('eval judge');
+      expect(JUDGE_SYSTEM_PROMPT).toContain('evaluation judge');
       expect(JUDGE_SYSTEM_PROMPT).toContain('pass');
       expect(JUDGE_SYSTEM_PROMPT).toContain('fail');
     });

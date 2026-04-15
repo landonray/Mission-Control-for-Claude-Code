@@ -6,7 +6,8 @@ const mockCallJudge = vi.fn();
 
 vi.mock('../services/evidenceGatherers.js', () => ({
   gatherEvidence: mockGatherEvidence,
-  default: { gatherEvidence: mockGatherEvidence },
+  interpolateVariables: (str) => str, // pass-through for tests
+  default: { gatherEvidence: mockGatherEvidence, interpolateVariables: (str) => str },
 }));
 
 vi.mock('../services/evalChecks.js', () => ({

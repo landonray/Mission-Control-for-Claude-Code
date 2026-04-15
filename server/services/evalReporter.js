@@ -68,13 +68,16 @@ export function composeFailureMessage(results, history, summary) {
     const folder = r.evalFolder ? path.basename(r.evalFolder) + '/' : '';
     lines.push(`FAILED: ${r.evalName} (${folder})`);
 
+    // Show the human-readable expected outcome from the eval definition
+    if (r.expected) {
+      lines.push(`  Expected: ${r.expected}`);
+    }
+
     // Check if this was a check failure (no judge invoked)
     if (r.checkFailures && r.checkFailures.length > 0) {
       const failedChecks = r.checkFailures.map(f => `${f.type}: ${f.reason}`).join('; ');
-      lines.push(`  Checks failed: ${failedChecks}`);
-      lines.push(`  Judge was not invoked`);
-    } else if (r.failReason) {
-      lines.push(`  Expected: ${r.failReason}`);
+      lines.push(`  Check failure: ${failedChecks}`);
+      lines.push(`  (Judge was not invoked — structural check failed)`);
     }
 
     if (r.evidence) {

@@ -14,12 +14,12 @@ const DEFAULT_SIZE_CAPS = {
   file: 50 * 1024,         // 50KB
 };
 
-// Default timeouts in ms per spec: 5 min sub-agent, 30s log/db, no timeout for file (sync read)
+// Default timeouts in ms per spec: 5 min sub-agent, 30s log/db.
+// File reads are synchronous and have no spec-defined timeout.
 const DEFAULT_TIMEOUTS = {
   log_query: 30_000,
   db_query: 30_000,
   sub_agent: 300_000,
-  file: 30_000,
 };
 
 /**
@@ -30,7 +30,6 @@ const DEFAULT_TIMEOUTS = {
  */
 export async function gatherEvidence(evidenceConfig, context) {
   const type = evidenceConfig.type;
-  const timeoutMs = evidenceConfig.timeout || DEFAULT_TIMEOUTS[type] || 30_000;
 
   let gatherFn;
   switch (type) {
@@ -50,7 +49,13 @@ export async function gatherEvidence(evidenceConfig, context) {
       throw new Error(`Unknown evidence type: ${type}`);
   }
 
-  return withTimeout(gatherFn(), timeoutMs, `${type} evidence gathering timed out after ${timeoutMs}ms`);
+  // File reads are synchronous — no timeout per spec.
+  // Other types get configurable timeouts with spec-defined defaults.
+  const timeoutMs = evidenceConfig.timeout || DEFAULT_TIMEOUTS[type];
+  if (timeoutMs) {
+    return withTimeout(gatherFn(), timeoutMs, `${type} evidence gathering timed out after ${timeoutMs}ms`);
+  }
+  return gatherFn();
 }
 
 /**
@@ -222,13 +227,10 @@ export async function gatherSubAgent(config, context) {
     return await new Promise((resolve, reject) => {
       const args = ['--print', prompt];
 
-      // Sub-agent isolation per spec:
-      // - Restrict to read-only tools only
-      // - Most restrictive permission mode
-      // - No MCP servers
-      // - No tmux access (implicitly prevented by tool restrictions)
-      const allowedTools = config.allowed_tools || ['Read', 'Glob', 'Grep', 'Bash(read-only)'];
-      args.push('--allowedTools', allowedTools.join(','));
+      // Sub-agent isolation per spec — enforced by the system, not configurable per-eval.
+      // config.allowed_tools is intentionally ignored to prevent sandbox bypass via YAML.
+      const SANDBOX_TOOLS = ['Read', 'Glob', 'Grep', 'Bash(read-only)'];
+      args.push('--allowedTools', SANDBOX_TOOLS.join(','));
       args.push('--permission-mode', 'plan');
       args.push('--no-mcp');
 

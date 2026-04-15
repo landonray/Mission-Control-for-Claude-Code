@@ -2,7 +2,7 @@
  * Eval Runner — orchestrates evidence gathering, checks, and judge evaluation.
  */
 
-import { gatherEvidence } from './evidenceGatherers.js';
+import { gatherEvidence, interpolateVariables } from './evidenceGatherers.js';
 import { runAllChecks } from './evalChecks.js';
 import { callJudge } from './evalJudge.js';
 
@@ -77,9 +77,9 @@ export async function runSingleEval(evalDef, context) {
   let verdict;
   try {
     verdict = await callJudge({
-      expected: evalDef.expected,
+      expected: interpolateVariables(evalDef.expected, context),
       evidence,
-      judgePrompt: evalDef.judge_prompt,
+      judgePrompt: interpolateVariables(evalDef.judge_prompt, context),
       model: (evalDef.judge && evalDef.judge.model) || evalDef.model,
     });
     result.judgeVerdict = verdict;

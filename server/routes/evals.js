@@ -469,6 +469,8 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
         };
         const result = await runSingleEval(evalDef, context);
         result.evalFolder = folder.folder_path;
+        // Attach the human-readable expected outcome for failure reporting
+        if (evalDef.expected) result.expected = evalDef.expected;
         return { result, evalDef, folder };
       }));
 
@@ -481,7 +483,7 @@ async function executeBatch(projectId, triggerSource, sessionId, tmuxSessionName
           [
             runId, batchId, result.evalName, folder.folder_path, commitSha, triggerSource,
             evalDef.input ? JSON.stringify(evalDef.input) : null,
-            result.evidence ? JSON.stringify(result.evidence) : null,
+            result.evidence != null ? (typeof result.evidence === 'string' ? result.evidence : JSON.stringify(result.evidence)) : null,
             result.checkResults ? JSON.stringify(result.checkResults) : null,
             result.judgeVerdict ? JSON.stringify(result.judgeVerdict) : null,
             result.state,
