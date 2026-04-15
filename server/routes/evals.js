@@ -358,11 +358,16 @@ async function triggerEvalRun(projectId, triggerSource, sessionId, tmuxSessionNa
       errors: result.errors,
     });
 
-    // Send via tmux
+    // Send via tmux — sanitize session name to prevent command injection
     const { execSync } = require('child_process');
+    const sanitizedSession = tmuxSessionName.replace(/[^a-zA-Z0-9_\-.:]/g, '');
+    if (!sanitizedSession || sanitizedSession !== tmuxSessionName) {
+      console.warn(`[Evals] Refusing to send to suspicious tmux session name: ${tmuxSessionName}`);
+      return;
+    }
     const escaped = message.replace(/'/g, "'\\''");
-    execSync(`tmux send-keys -t ${tmuxSessionName} '${escaped}' Enter`, { stdio: 'ignore' });
-    console.log(`[Evals] Sent failure message to tmux session ${tmuxSessionName}`);
+    execSync(`tmux send-keys -t '${sanitizedSession}' '${escaped}' Enter`, { stdio: 'ignore' });
+    console.log(`[Evals] Sent failure message to tmux session ${sanitizedSession}`);
   } catch (err) {
     console.error(`[Evals] triggerEvalRun error:`, err.message);
   }

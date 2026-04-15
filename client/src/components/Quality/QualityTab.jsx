@@ -147,7 +147,7 @@ export default function QualityTab({ sessionId }) {
       if (folder.armed) {
         await api.post(`/api/evals/folders/${project.id}/disarm`, { folder_path: folder.folder_path });
       } else {
-        await api.post(`/api/evals/folders/${project.id}/arm`, { folder_path: folder.folder_path });
+        await api.post(`/api/evals/folders/${project.id}/arm`, { folder_path: folder.folder_path, folder_name: folder.folder_name });
       }
       loadFolders();
     } catch {}
@@ -164,14 +164,17 @@ export default function QualityTab({ sessionId }) {
   };
 
   const handleTriggerToggle = async (folder, trigger) => {
-    const current = folder.triggers || [];
+    // triggers is stored as comma-separated string in DB, parse to array for manipulation
+    const current = typeof folder.triggers === 'string'
+      ? folder.triggers.split(',').filter(Boolean)
+      : (folder.triggers || []);
     const updated = current.includes(trigger)
       ? current.filter(t => t !== trigger)
       : [...current, trigger];
     try {
       await api.put(`/api/evals/folders/${project.id}/settings`, {
         folder_path: folder.folder_path,
-        triggers: updated,
+        triggers: updated.join(','),
       });
       loadFolders();
     } catch {}
@@ -270,7 +273,7 @@ export default function QualityTab({ sessionId }) {
                   )}
                 </div>
                 <div className={styles.folderActions}>
-                  {(folder.triggers || []).map(t => (
+                  {(typeof folder.triggers === 'string' ? folder.triggers.split(',').filter(Boolean) : (folder.triggers || [])).map(t => (
                     <TriggerPill key={t} label={t} />
                   ))}
                   <div className={styles.autoSendWrap}>

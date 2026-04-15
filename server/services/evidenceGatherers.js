@@ -101,13 +101,15 @@ export async function gatherDbQuery(config, context) {
     throw new Error('DB query evidence requires a "query" field');
   }
 
-  const sql = interpolateVariables(config.query, context);
+  // Use parameterized queries to prevent SQL injection.
+  // Extract ${variable} placeholders, replace with $1/$2/etc., and pass values as params.
+  const { sql, params } = buildParameterizedQuery(config.query, context);
 
   let rows;
   if (context.createDbConnection) {
     const db = context.createDbConnection(context.dbReadonlyUrl);
     try {
-      const result = await db.query(sql);
+      const result = await db.query(sql, params);
       rows = result.rows || result;
     } finally {
       if (db.end) await db.end();
@@ -116,7 +118,6 @@ export async function gatherDbQuery(config, context) {
     throw new Error('No database connection available (need createDbConnection in context)');
   }
 
-  const json = JSON.stringify(rows, null, 2);
   const maxBytes = config.max_bytes || DEFAULT_SIZE_CAPS.db_query;
   return truncateDbEvidence(rows, maxBytes);
 }
@@ -186,13 +187,20 @@ export function truncateDbEvidence(rows, maxBytes) {
 
   // Progressively remove rows from the end until we fit
   let truncated = [...rows];
-  while (truncated.length > 0) {
-    truncated = truncated.slice(0, Math.max(1, Math.floor(truncated.length * 0.75)));
+  while (truncated.length > 1) {
+    truncated = truncated.slice(0, Math.floor(truncated.length * 0.75) || 1);
     const candidate = JSON.stringify(truncated, null, 2);
     const note = `\n\n[truncated: showing ${truncated.length} of ${rows.length} rows]`;
     if (Buffer.from(candidate + note, 'utf8').length <= maxBytes) {
       return candidate + note;
     }
+  }
+
+  // Down to 1 row — check if it fits, otherwise give up
+  const singleCandidate = JSON.stringify(truncated, null, 2);
+  const singleNote = `\n\n[truncated: showing 1 of ${rows.length} rows]`;
+  if (Buffer.from(singleCandidate + singleNote, 'utf8').length <= maxBytes) {
+    return singleCandidate + singleNote;
   }
 
   return `[truncated: ${rows.length} rows exceeded ${maxBytes} byte limit]`;
@@ -226,6 +234,38 @@ export function interpolateVariables(str, context) {
 }
 
 // --- Internal helpers ---
+
+/**
+ * Convert a query with ${variable} placeholders into a parameterized query.
+ * Returns { sql, params } where sql uses $1, $2, etc. and params is the values array.
+ * This prevents SQL injection by never inlining user values into the query string.
+ */
+export function buildParameterizedQuery(queryTemplate, context) {
+  const params = [];
+  let paramIndex = 0;
+
+  const sql = queryTemplate.replace(/\$\{([^}]+)\}/g, (match, expr) => {
+    const parts = expr.trim().split('.');
+    let value = context.variables || {};
+
+    if (parts[0] in context) {
+      value = context;
+    }
+
+    for (const part of parts) {
+      if (value == null || typeof value !== 'object') return match; // leave unresolved
+      value = value[part];
+    }
+
+    if (value == null) return match; // leave unresolved placeholders as-is
+
+    paramIndex++;
+    params.push(value);
+    return `$${paramIndex}`;
+  });
+
+  return { sql, params };
+}
 
 function resolveLogSource(source, context) {
   if (!source) {
