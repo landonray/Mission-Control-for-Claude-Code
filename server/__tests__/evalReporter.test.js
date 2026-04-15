@@ -29,7 +29,7 @@ describe('evalReporter', () => {
       expect(msg).toContain('Connection timeout');
       expect(msg).toContain('(Infrastructure issue, not a regression)');
       expect(msg).toContain('LAST 3 RUNS:');
-      expect(msg).toContain('check-db:    PASS abc123 → FAIL def456');
+      expect(msg).toContain('check-db:    FAIL def456 → PASS abc123');
     });
 
     it('adds low-confidence note when judge confidence is below 0.5', () => {
@@ -92,7 +92,7 @@ describe('evalReporter', () => {
 
       const msg = composeFailureMessage(results, history, summary);
 
-      expect(msg).toContain('PASS ??? → FAIL abc123');
+      expect(msg).toContain('FAIL abc123 → PASS ???');
     });
 
     it('handles empty results gracefully', () => {
