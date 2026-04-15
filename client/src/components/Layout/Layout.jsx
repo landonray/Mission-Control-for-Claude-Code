@@ -5,6 +5,7 @@ import ChatInterface from '../Chat/ChatInterface';
 import FileBrowser from '../FileBrowser/FileBrowser';
 import PreviewPanel from '../PreviewPanel/PreviewPanel';
 import CliPanel from '../CliPanel/CliPanel';
+import QualityTab from '../Quality/QualityTab';
 import PillSelector from '../common/PillSelector';
 import { useApp } from '../../context/AppContext';
 import { PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -14,6 +15,7 @@ const RIGHT_PANEL_TABS = [
   { value: 'files', label: 'Files' },
   { value: 'preview', label: 'Preview' },
   { value: 'cli', label: 'CLI' },
+  { value: 'quality', label: 'Quality' },
 ];
 
 const LEFT_DEFAULT = 280;
@@ -156,6 +158,8 @@ export default function Layout() {
               <FileBrowser directory={activeSession?.working_directory} useWorktree={!!activeSession?.use_worktree} />
             ) : rightPanelMode === 'preview' ? (
               <PreviewPanel sessionId={sessionId} />
+            ) : rightPanelMode === 'quality' ? (
+              <QualityTab sessionId={sessionId} />
             ) : (
               <CliPanel sessionId={sessionId} />
             )}

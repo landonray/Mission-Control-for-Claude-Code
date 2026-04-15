@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
+    "ajv": "^8.18.0",
     "chokidar": "^3.6.0",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
+    "js-yaml": "^4.1.1",
     "multer": "^2.1.1",
     "tree-kill": "^1.2.2",
     "undici": "^7.24.6",

@@ -90,7 +90,55 @@ async function initializeDb() {
     `CREATE TABLE IF NOT EXISTS slash_commands (
       id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, message TEXT NOT NULL,
       sort_order INTEGER DEFAULT 0, created_at TEXT DEFAULT NOW()
-    )`
+    )`,
+    `CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY, name TEXT NOT NULL, root_path TEXT NOT NULL UNIQUE,
+      created_at TEXT DEFAULT NOW(), settings JSONB
+    )`,
+    `CREATE TABLE IF NOT EXISTS eval_armed_folders (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      folder_path TEXT NOT NULL,
+      folder_name TEXT NOT NULL,
+      triggers TEXT NOT NULL DEFAULT 'manual',
+      auto_send INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT NOW(),
+      UNIQUE(project_id, folder_path)
+    )`,
+    `CREATE TABLE IF NOT EXISTS eval_batches (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      trigger_source TEXT NOT NULL,
+      commit_sha TEXT,
+      session_id TEXT,
+      total INTEGER DEFAULT 0,
+      passed INTEGER DEFAULT 0,
+      failed INTEGER DEFAULT 0,
+      errors INTEGER DEFAULT 0,
+      started_at TEXT DEFAULT NOW(),
+      completed_at TEXT,
+      status TEXT DEFAULT 'running'
+    )`,
+    `CREATE TABLE IF NOT EXISTS eval_runs (
+      id TEXT PRIMARY KEY,
+      batch_id TEXT NOT NULL REFERENCES eval_batches(id),
+      eval_name TEXT NOT NULL,
+      eval_folder TEXT NOT NULL,
+      commit_sha TEXT,
+      trigger_source TEXT NOT NULL,
+      input TEXT,
+      evidence TEXT,
+      check_results TEXT,
+      judge_verdict TEXT,
+      state TEXT NOT NULL,
+      fail_reason TEXT,
+      error_message TEXT,
+      duration INTEGER DEFAULT 0,
+      timestamp TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_eval_runs_batch ON eval_runs(batch_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_eval_runs_name ON eval_runs(eval_name)`,
+    `CREATE INDEX IF NOT EXISTS idx_eval_batches_project ON eval_batches(project_id)`
   ];
 
   for (const stmt of statements) {
@@ -109,6 +157,8 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS lines_removed INTEGER DEFAULT 0`,
     `ALTER TABLE quality_results ADD COLUMN IF NOT EXISTS analysis TEXT`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS has_spec INTEGER DEFAULT 0`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS max_effort INTEGER DEFAULT 0`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES projects(id)`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
@@ -1205,6 +1255,40 @@ exit 0`,
       config: null,
       category: 'teams',
       sort_order: 35
+    },
+    {
+      id: 'eval-authoring',
+      name: 'Eval Authoring',
+      description: 'Proposes new eval YAML files for the project based on the current session work. Analyzes what was built or changed and suggests evals that would catch regressions.',
+      hook_type: 'agent',
+      fires_on: 'Stop',
+      severity: 'low',
+      enabled: 0,
+      prompt: `You are an eval authoring assistant. Based on the work done in this session, propose new eval YAML files that would catch regressions.
+
+For each eval you propose, output a complete YAML eval definition following this schema:
+- name: descriptive kebab-case name
+- description: what this eval checks
+- input: key-value map of test inputs
+- evidence: { type: log_query|db_query|sub_agent|file, source/path/query as appropriate }
+- checks: list of deterministic checks (regex_match, not_empty, json_valid, json_schema, http_status, field_exists)
+- judge_prompt: (optional) LLM judge instructions for nuanced evaluation
+- expected: (required if judge_prompt is set) what the judge should look for
+
+Guidelines:
+1. Focus on the specific features or fixes from this session
+2. Prefer deterministic checks over judge-based evals where possible
+3. Each eval should test one specific behavior
+4. Use realistic input values based on the actual code
+5. Place evals in the appropriate subfolder based on the feature area
+
+Output each proposed eval as a separate YAML code block with a suggested file path comment at the top.
+If no meaningful evals can be proposed for this session's work, respond with:
+PASS: No new evals needed for this session.`,
+      script: null,
+      config: JSON.stringify({ tools: ['Read', 'Glob', 'Grep'] }),
+      category: 'evals',
+      sort_order: 36
     }
   ];
 

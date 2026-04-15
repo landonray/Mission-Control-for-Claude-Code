@@ -1377,6 +1377,24 @@ class SessionProcess {
     });
     this.generateSummary();
     this.cleanupTmuxFiles();
+
+    // Fire-and-forget: trigger eval run on session end
+    this._triggerEvalsOnEnd().catch(err => {
+      console.error(`[Evals] Failed to trigger evals on session end:`, err.message);
+    });
+  }
+
+  async _triggerEvalsOnEnd() {
+    try {
+      const result = await query('SELECT project_id FROM sessions WHERE id = $1', [this.id]);
+      const projectId = result.rows[0]?.project_id;
+      if (!projectId) return;
+
+      const { triggerEvalRun } = require('../routes/evals');
+      triggerEvalRun(projectId, 'session_end', this.id, this.tmuxSessionName);
+    } catch (err) {
+      console.error(`[Evals] _triggerEvalsOnEnd error:`, err.message);
+    }
   }
 
   cleanupTmuxFiles() {
@@ -1868,6 +1886,20 @@ async function createSession(options = {}) {
      VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, NOW(), NOW())`,
     [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || 'claude-opus-4-6', options.useWorktree ? 1 : 0]
   );
+
+  // Link session to project if a .mission-control.yaml is found
+  try {
+    if (options.workingDirectory) {
+      const { resolveProject } = await import('./projectDiscovery.js');
+      const project = await resolveProject(options.workingDirectory);
+      if (project) {
+        await query('UPDATE sessions SET project_id = $1 WHERE id = $2', [project.id, id]);
+      }
+    }
+  } catch (err) {
+    // Non-fatal: project linking is best-effort
+    console.warn('Failed to link session to project:', err.message);
+  }
 
   const session = new SessionProcess(id, options);
   activeSessions.set(id, session);

@@ -1,0 +1,812 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Top bar with run button */
+.topBar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+}
+
+.runButton {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.runButton:hover {
+  opacity: 0.9;
+}
+
+.runButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty state */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+.emptySection {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Collapsible sections */
+.section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.sectionHeader:hover {
+  background: var(--bg-tertiary);
+}
+
+.sectionTitle {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sectionCount {
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.sectionBody {
+  border-top: 1px solid var(--border);
+}
+
+/* Toggle */
+.toggleBtn {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.toggleBtn.small {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+}
+
+.toggleBtn.on {
+  background: var(--accent);
+}
+
+.toggleBtn.off {
+  background: var(--bg-tertiary);
+}
+
+.toggleTrack {
+  display: block;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.toggleThumb {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  top: 3px;
+  transition: left 0.2s;
+  background: white;
+  box-shadow: 0 1px 3px rgba(120, 90, 50, 0.15);
+}
+
+.toggleBtn.on .toggleThumb {
+  left: 23px;
+}
+
+.toggleBtn.off .toggleThumb {
+  left: 3px;
+  background: var(--text-muted);
+}
+
+.toggleBtn.small .toggleThumb {
+  width: 12px;
+  height: 12px;
+  top: 3px;
+}
+
+.toggleBtn.small.on .toggleThumb {
+  left: 17px;
+}
+
+.toggleBtn.small.off .toggleThumb {
+  left: 3px;
+}
+
+/* Quality Rules */
+.ruleCard {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ruleCard:last-child {
+  border-bottom: none;
+}
+
+.ruleCard.disabled {
+  opacity: 0.5;
+}
+
+.ruleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ruleName {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.ruleDescription {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.severityBadge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.statusLabel {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+.enabled {
+  background: rgba(42, 144, 112, 0.1);
+  color: var(--success);
+}
+
+.disabledLabel {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+}
+
+.overrideBadge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.resetBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.resetBtn:hover {
+  opacity: 1;
+  color: var(--error);
+}
+
+/* Eval Folders */
+.folderCard {
+  border-bottom: 1px solid var(--border);
+}
+
+.folderCard:last-child {
+  border-bottom: none;
+}
+
+.folderHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.folderExpand {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.folderInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.folderName {
+  font-size: 13px;
+  font-weight: 600;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evalCount {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.folderActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.triggerPill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(196, 90, 32, 0.1);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+.triggerRemove {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 0 0 4px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.triggerRemove:hover {
+  opacity: 1;
+}
+
+.triggerAddWrap {
+  position: relative;
+}
+
+.triggerAddBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px dashed var(--text-muted);
+  background: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.triggerAddBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.triggerDropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  min-width: 120px;
+  overflow: hidden;
+}
+
+.triggerOption {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.triggerOption:hover {
+  background: var(--bg-tertiary);
+}
+
+.autoSendWrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.autoSendLabel {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.evalList {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+
+.evalItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 14px 8px 54px;
+  color: var(--text-secondary);
+}
+
+.evalInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.evalName {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.evalMeta {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 4px;
+  width: fit-content;
+}
+
+.evalDescription {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Run History */
+.batchCard {
+  border-bottom: 1px solid var(--border);
+}
+
+.batchCard:last-child {
+  border-bottom: none;
+}
+
+.batchHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.batchHeader:hover {
+  background: var(--bg-tertiary);
+}
+
+.batchInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.batchTrigger {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.batchSha {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.batchTime {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.batchCounts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.countPass {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.countFail {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--error);
+}
+
+.countError {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.batchRuns {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+
+.runRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 36px;
+}
+
+.statusDots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.runName {
+  font-size: 12px;
+  flex: 1;
+}
+
+.runResult {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Eval items and run rows — clickable buttons */
+.evalItem,
+.runRow {
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.evalItem:hover,
+.runRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.evalRunArrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Drill-down views */
+.drillDown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 0;
+  width: fit-content;
+  transition: opacity 0.15s;
+}
+
+.backButton:hover {
+  opacity: 0.8;
+}
+
+.drillDownHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drillDownTitle {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.drillDownState {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.drillDownMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drillDownTime {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.drillDownDuration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Eval run history list */
+.evalRunsList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.evalRunRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.evalRunRow:last-child {
+  border-bottom: none;
+}
+
+.evalRunRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.evalRunState {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  min-width: 36px;
+}
+
+.evalRunTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.evalRunDuration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Run detail view sections */
+.detailSection {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.detailLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  letter-spacing: 0.03em;
+}
+
+.detailPre {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.detailError {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--error);
+  line-height: 1.5;
+}
+
+/* Check results list */
+.checkList {
+  display: flex;
+  flex-direction: column;
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.checkItem:last-child {
+  border-bottom: none;
+}
+
+.checkType {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.checkDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.checkReason {
+  font-size: 11px;
+  color: var(--error);
+  width: 100%;
+  padding-left: 16px;
+}
+
+.checkPass .checkType {
+  color: var(--success);
+}
+
+.checkFail .checkType {
+  color: var(--error);
+}
+
+/* Judge verdict */
+.judgeVerdict {
+  padding: 12px 14px;
+}
+
+.judgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.judgeResult {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.judgeConfidence {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.judgeReasoning {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
