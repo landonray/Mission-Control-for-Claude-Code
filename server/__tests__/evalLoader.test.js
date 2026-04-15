@@ -37,6 +37,7 @@ describe('evalLoader', () => {
       mockYamlLoad.mockReturnValue({
         name: 'test-eval',
         description: 'A test eval',
+        input: { prompt: 'test prompt' },
         evidence: { type: 'log_query', source: 'stdout' },
         checks: [{ type: 'not_empty' }],
       });
@@ -53,6 +54,7 @@ describe('evalLoader', () => {
       mockYamlLoad.mockReturnValue({
         name: 'judge-eval',
         description: 'A judge eval',
+        input: {},
         evidence: { type: 'file', path: 'output.txt' },
         judge_prompt: 'Did it work?',
         expected: 'Yes it worked',
@@ -99,11 +101,39 @@ describe('evalLoader', () => {
       expect(() => loadEval('/eval.yaml')).toThrow('missing required field "evidence"');
     });
 
+    it('throws when input is missing', async () => {
+      mockReadFileSync.mockReturnValue('yaml');
+      mockYamlLoad.mockReturnValue({
+        name: 'test',
+        description: 'desc',
+        evidence: { type: 'file' },
+        checks: [{ type: 'not_empty' }],
+      });
+
+      const { loadEval } = await getModule();
+      expect(() => loadEval('/eval.yaml')).toThrow('missing or invalid "input" field');
+    });
+
+    it('throws when input is an array instead of a map', async () => {
+      mockReadFileSync.mockReturnValue('yaml');
+      mockYamlLoad.mockReturnValue({
+        name: 'test',
+        description: 'desc',
+        evidence: { type: 'file' },
+        input: ['not', 'a', 'map'],
+        checks: [{ type: 'not_empty' }],
+      });
+
+      const { loadEval } = await getModule();
+      expect(() => loadEval('/eval.yaml')).toThrow('missing or invalid "input" field');
+    });
+
     it('throws when neither checks nor judge_prompt is present', async () => {
       mockReadFileSync.mockReturnValue('yaml');
       mockYamlLoad.mockReturnValue({
         name: 'test',
         description: 'desc',
+        input: {},
         evidence: { type: 'file' },
       });
 
@@ -116,6 +146,7 @@ describe('evalLoader', () => {
       mockYamlLoad.mockReturnValue({
         name: 'test',
         description: 'desc',
+        input: {},
         evidence: { type: 'file' },
         judge_prompt: 'Evaluate this',
       });
@@ -129,6 +160,7 @@ describe('evalLoader', () => {
       mockYamlLoad.mockReturnValue({
         name: 'test',
         description: 'desc',
+        input: {},
         evidence: { type: 'file' },
         checks: [{ type: 'bogus_check' }],
       });
@@ -142,6 +174,7 @@ describe('evalLoader', () => {
       mockYamlLoad.mockReturnValue({
         name: 'test',
         description: 'desc',
+        input: {},
         evidence: { type: 'magic_source' },
         checks: [{ type: 'not_empty' }],
       });
@@ -168,6 +201,7 @@ describe('evalLoader', () => {
       const validEval = {
         name: 'test',
         description: 'desc',
+        input: {},
         evidence: { type: 'file' },
         checks: [{ type: 'not_empty' }],
       };

@@ -3,6 +3,7 @@ import { api } from '../../utils/api';
 import {
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Shield,
   FolderOpen,
   Clock,
@@ -69,6 +70,143 @@ function SeverityBadge({ severity }) {
   );
 }
 
+function safeParseJson(val) {
+  if (!val) return null;
+  if (typeof val === 'object') return val;
+  try { return JSON.parse(val); } catch { return null; }
+}
+
+function RunDetailView({ run, onBack }) {
+  const evidence = safeParseJson(run.evidence);
+  const checkResults = safeParseJson(run.check_results);
+  const judgeVerdict = safeParseJson(run.judge_verdict);
+  const input = safeParseJson(run.input);
+
+  return (
+    <div className={styles.drillDown}>
+      <button className={styles.backButton} onClick={onBack}>
+        <ChevronLeft size={14} />
+        Back
+      </button>
+      <div className={styles.drillDownHeader}>
+        <h3 className={styles.drillDownTitle}>{run.eval_name}</h3>
+        <StatusDot result={run.state} />
+        <span className={styles.drillDownState}>{run.state}</span>
+      </div>
+      <div className={styles.drillDownMeta}>
+        {run.commit_sha && <span className={styles.batchSha}>{run.commit_sha.slice(0, 7)}</span>}
+        {run.timestamp && <span className={styles.drillDownTime}>{new Date(run.timestamp).toLocaleString()}</span>}
+        {run.duration > 0 && <span className={styles.drillDownDuration}>{(run.duration / 1000).toFixed(1)}s</span>}
+      </div>
+
+      {run.fail_reason && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Failure Reason</div>
+          <div className={styles.detailError}>{run.fail_reason}</div>
+        </div>
+      )}
+      {run.error_message && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Error</div>
+          <div className={styles.detailError}>{run.error_message}</div>
+        </div>
+      )}
+
+      {input && Object.keys(input).length > 0 && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Input</div>
+          <pre className={styles.detailPre}>{JSON.stringify(input, null, 2)}</pre>
+        </div>
+      )}
+
+      {evidence && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Evidence</div>
+          <pre className={styles.detailPre}>
+            {typeof evidence === 'string' ? evidence : JSON.stringify(evidence, null, 2)}
+          </pre>
+        </div>
+      )}
+
+      {checkResults && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Check Results</div>
+          {Array.isArray(checkResults.results) ? (
+            <div className={styles.checkList}>
+              {checkResults.results.map((cr, i) => (
+                <div key={i} className={`${styles.checkItem} ${cr.passed ? styles.checkPass : styles.checkFail}`}>
+                  <StatusDot result={cr.passed ? 'pass' : 'fail'} />
+                  <span className={styles.checkType}>{cr.type}</span>
+                  {cr.description && <span className={styles.checkDesc}>{cr.description}</span>}
+                  {cr.reason && !cr.passed && <span className={styles.checkReason}>{cr.reason}</span>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <pre className={styles.detailPre}>{JSON.stringify(checkResults, null, 2)}</pre>
+          )}
+        </div>
+      )}
+
+      {judgeVerdict && (
+        <div className={styles.detailSection}>
+          <div className={styles.detailLabel}>Judge Verdict</div>
+          <div className={styles.judgeVerdict}>
+            <div className={styles.judgeRow}>
+              <StatusDot result={judgeVerdict.pass ? 'pass' : 'fail'} />
+              <span className={styles.judgeResult}>{judgeVerdict.pass ? 'Pass' : 'Fail'}</span>
+              {judgeVerdict.confidence && (
+                <span className={styles.judgeConfidence}>{judgeVerdict.confidence} confidence</span>
+              )}
+            </div>
+            {judgeVerdict.reasoning && (
+              <div className={styles.judgeReasoning}>{judgeVerdict.reasoning}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvalHistoryView({ evalName, runs, loading: isLoading, onBack, onRunClick }) {
+  return (
+    <div className={styles.drillDown}>
+      <button className={styles.backButton} onClick={onBack}>
+        <ChevronLeft size={14} />
+        Back to folders
+      </button>
+      <div className={styles.drillDownHeader}>
+        <FileText size={16} />
+        <h3 className={styles.drillDownTitle}>{evalName}</h3>
+        <span className={styles.sectionCount}>{runs.length} run{runs.length !== 1 ? 's' : ''}</span>
+      </div>
+      {isLoading ? (
+        <div className={styles.emptySection}>Loading run history...</div>
+      ) : runs.length === 0 ? (
+        <div className={styles.emptySection}>No runs found for this eval</div>
+      ) : (
+        <div className={styles.evalRunsList}>
+          {runs.map((run, i) => (
+            <button
+              key={run.id || i}
+              className={styles.evalRunRow}
+              onClick={() => onRunClick(run)}
+            >
+              <StatusDot result={run.state} />
+              <span className={styles.evalRunState}>{run.state}</span>
+              {run.commit_sha && <span className={styles.batchSha}>{run.commit_sha.slice(0, 7)}</span>}
+              <span className={styles.evalRunTime}>{new Date(run.timestamp).toLocaleString()}</span>
+              {run.duration > 0 && <span className={styles.evalRunDuration}>{(run.duration / 1000).toFixed(1)}s</span>}
+              <ChevronRight size={12} className={styles.evalRunArrow} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusDot({ result }) {
   return (
     <span
@@ -90,6 +228,13 @@ export default function QualityTab({ sessionId }) {
   const [batchRuns, setBatchRuns] = useState({});
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Drill-down state for eval run history (item 15)
+  const [selectedEval, setSelectedEval] = useState(null); // { name, projectId }
+  const [evalRuns, setEvalRuns] = useState([]);
+  const [evalRunsLoading, setEvalRunsLoading] = useState(false);
+  // Drill-down state for single run detail (item 16)
+  const [selectedRun, setSelectedRun] = useState(null); // full run object
+  const [selectedRunLoading, setSelectedRunLoading] = useState(false);
 
   const loadProject = useCallback(async () => {
     if (!sessionId) return;
@@ -225,6 +370,47 @@ export default function QualityTab({ sessionId }) {
     setRunning(false);
   };
 
+  const handleEvalClick = async (evalName) => {
+    if (!project?.id) return;
+    setSelectedEval({ name: evalName, projectId: project.id });
+    setSelectedRun(null);
+    setEvalRunsLoading(true);
+    try {
+      const runs = await api.get(`/api/evals/eval-history/${project.id}/${encodeURIComponent(evalName)}`);
+      setEvalRuns(Array.isArray(runs) ? runs : []);
+    } catch {
+      setEvalRuns([]);
+    }
+    setEvalRunsLoading(false);
+  };
+
+  const handleRunClick = async (run) => {
+    // If the run object already has evidence/check_results, use it directly
+    if (run.evidence || run.check_results || run.judge_verdict) {
+      setSelectedRun(run);
+      return;
+    }
+    // Otherwise fetch the full run detail
+    setSelectedRunLoading(true);
+    try {
+      const full = await api.get(`/api/evals/run/${run.id}`);
+      setSelectedRun(full);
+    } catch {
+      setSelectedRun(run); // fall back to what we have
+    }
+    setSelectedRunLoading(false);
+  };
+
+  const handleBackFromRun = () => {
+    setSelectedRun(null);
+  };
+
+  const handleBackFromEval = () => {
+    setSelectedEval(null);
+    setEvalRuns([]);
+    setSelectedRun(null);
+  };
+
   const toggleFolderExpand = (path) => {
     setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   };
@@ -253,6 +439,37 @@ export default function QualityTab({ sessionId }) {
           <Shield size={24} />
           <p>No project linked to this session. Add a .mission-control.yaml to your project root.</p>
         </div>
+      </div>
+    );
+  }
+
+  // Drill-down: run detail view
+  if (selectedRun) {
+    return (
+      <div className={styles.container}>
+        {selectedRunLoading ? (
+          <div className={styles.emptyState}>Loading run details...</div>
+        ) : (
+          <RunDetailView
+            run={selectedRun}
+            onBack={handleBackFromRun}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Drill-down: eval run history view
+  if (selectedEval) {
+    return (
+      <div className={styles.container}>
+        <EvalHistoryView
+          evalName={selectedEval.name}
+          runs={evalRuns}
+          loading={evalRunsLoading}
+          onBack={handleBackFromEval}
+          onRunClick={handleRunClick}
+        />
       </div>
     );
   }
@@ -333,14 +550,19 @@ export default function QualityTab({ sessionId }) {
               {expandedFolders[folder.folder_path] && folder.evals && (
                 <div className={styles.evalList}>
                   {folder.evals.map((ev, j) => (
-                    <div key={ev.id || j} className={styles.evalItem}>
+                    <button
+                      key={ev.id || j}
+                      className={styles.evalItem}
+                      onClick={() => handleEvalClick(ev.name)}
+                    >
                       <FileText size={12} />
                       <div className={styles.evalInfo}>
                         <span className={styles.evalName}>{ev.name}</span>
                         {ev.evidence_type && <span className={styles.evalMeta}>{ev.evidence_type}</span>}
                         {ev.description && <span className={styles.evalDescription}>{ev.description}</span>}
                       </div>
-                    </div>
+                      <ChevronRight size={12} className={styles.evalRunArrow} />
+                    </button>
                   ))}
                 </div>
               )}
@@ -378,11 +600,16 @@ export default function QualityTab({ sessionId }) {
               {expandedBatches[batch.id] && batchRuns[batch.id] && (
                 <div className={styles.batchRuns}>
                   {(Array.isArray(batchRuns[batch.id]) ? batchRuns[batch.id] : []).map((run, j) => (
-                    <div key={run.id || j} className={styles.runRow}>
+                    <button
+                      key={run.id || j}
+                      className={styles.runRow}
+                      onClick={() => handleRunClick(run)}
+                    >
                       <StatusDot result={run.state} />
                       <span className={styles.runName}>{run.eval_name || run.name}</span>
                       <span className={styles.runResult}>{run.state}</span>
-                    </div>
+                      <ChevronRight size={12} className={styles.evalRunArrow} />
+                    </button>
                   ))}
                 </div>
               )}

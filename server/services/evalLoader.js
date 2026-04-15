@@ -91,6 +91,9 @@ function validate(evalDef, filePath) {
   if (!evalDef.evidence) {
     throw new Error(`${label}: missing required field "evidence"`);
   }
+  if (!evalDef.input || typeof evalDef.input !== 'object' || Array.isArray(evalDef.input)) {
+    throw new Error(`${label}: missing or invalid "input" field — must be a key-value map`);
+  }
 
   // Must have at least checks or judge_prompt
   if (!evalDef.checks && !evalDef.judge_prompt) {

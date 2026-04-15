@@ -262,6 +262,22 @@ router.get('/pr-watch/:projectId/status', async (req, res) => {
   }
 });
 
+// GET /run/:runId — single run detail
+router.get('/run/:runId', async (req, res) => {
+  try {
+    const result = await query(
+      'SELECT * FROM eval_runs WHERE id = $1',
+      [req.params.runId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Run not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /eval-history/:projectId/:evalName — last N runs for a specific eval
 router.get('/eval-history/:projectId/:evalName', async (req, res) => {
   try {

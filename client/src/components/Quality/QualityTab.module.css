@@ -478,3 +478,255 @@
   text-transform: uppercase;
   color: var(--text-muted);
 }
+
+/* Eval items and run rows — clickable buttons */
+.evalItem,
+.runRow {
+  cursor: pointer;
+  background: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+
+.evalItem:hover,
+.runRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.evalRunArrow {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Drill-down views */
+.drillDown {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 0;
+  width: fit-content;
+  transition: opacity 0.15s;
+}
+
+.backButton:hover {
+  opacity: 0.8;
+}
+
+.drillDownHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drillDownTitle {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.drillDownState {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.drillDownMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drillDownTime {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.drillDownDuration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Eval run history list */
+.evalRunsList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.evalRunRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.evalRunRow:last-child {
+  border-bottom: none;
+}
+
+.evalRunRow:hover {
+  background: var(--bg-tertiary);
+}
+
+.evalRunState {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  min-width: 36px;
+}
+
+.evalRunTime {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.evalRunDuration {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Run detail view sections */
+.detailSection {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.detailLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  letter-spacing: 0.03em;
+}
+
+.detailPre {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.detailError {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--error);
+  line-height: 1.5;
+}
+
+/* Check results list */
+.checkList {
+  display: flex;
+  flex-direction: column;
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.checkItem:last-child {
+  border-bottom: none;
+}
+
+.checkType {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.checkDesc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.checkReason {
+  font-size: 11px;
+  color: var(--error);
+  width: 100%;
+  padding-left: 16px;
+}
+
+.checkPass .checkType {
+  color: var(--success);
+}
+
+.checkFail .checkType {
+  color: var(--error);
+}
+
+/* Judge verdict */
+.judgeVerdict {
+  padding: 12px 14px;
+}
+
+.judgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.judgeResult {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.judgeConfidence {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.judgeReasoning {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
