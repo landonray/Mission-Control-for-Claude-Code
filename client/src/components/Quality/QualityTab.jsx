@@ -629,7 +629,7 @@ export default function QualityTab({ sessionId }) {
             folderName={createEvalTarget.folder_name}
             projectId={project.id}
             onComplete={(evalData, reasoning, userDescription) => {
-              setAiDraftData({ evalData, reasoning, originalDescription: userDescription || '' });
+              setAiDraftData(prev => ({ ...prev, evalData, reasoning, originalDescription: userDescription || '' }));
               setCreateEvalMode('manual');
             }}
             onCancel={() => setCreateEvalMode('choice')}
