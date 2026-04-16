@@ -6,10 +6,15 @@ const { query } = require('../database');
 const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
 const { getGitPipeline } = require('../services/fileWatcher');
 
+// Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
+function unwrapDefault(mod) {
+  return mod && mod.default && typeof mod.default === 'object' ? mod.default : mod;
+}
+
 let _worktreeCleanup;
 async function loadWorktreeCleanup() {
   if (!_worktreeCleanup) {
-    _worktreeCleanup = await import('../services/worktreeCleanup.js');
+    _worktreeCleanup = unwrapDefault(await import('../services/worktreeCleanup.js'));
   }
   return _worktreeCleanup;
 }

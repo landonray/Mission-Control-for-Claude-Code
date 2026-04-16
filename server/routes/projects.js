@@ -6,10 +6,15 @@ const { execSync } = require('child_process');
 const { query } = require('../database');
 
 // projectDiscovery is ESM — use lazy dynamic import
+// Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
+function unwrapDefault(mod) {
+  return mod && mod.default && typeof mod.default === 'object' ? mod.default : mod;
+}
+
 let _projectDiscovery;
 async function getProjectDiscovery() {
   if (!_projectDiscovery) {
-    _projectDiscovery = await import('../services/projectDiscovery.js');
+    _projectDiscovery = unwrapDefault(await import('../services/projectDiscovery.js'));
   }
   return _projectDiscovery;
 }

@@ -3,8 +3,26 @@ const { getSession, activeSessions, resumeSession, globalEvents } = require('./s
 const { watchDirectory, unwatchDirectory } = require('./services/fileWatcher');
 const { sendNotification } = require('./services/notificationService');
 
+// Module-level wss reference so broadcastToAll can be called from other modules
+let _wss = null;
+
+/**
+ * Broadcast a message to all connected WebSocket clients.
+ * Can be called from any module after setupWebSocket has been called.
+ */
+function broadcastToAll(data) {
+  if (!_wss) return;
+  const msg = JSON.stringify(data);
+  _wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(msg);
+    }
+  });
+}
+
 function setupWebSocket(server) {
   const wss = new WebSocket.Server({ server, path: '/ws' });
+  _wss = wss;
 
   wss.on('connection', (ws) => {
     // Mutable state object shared between all handlers for this connection.
@@ -100,7 +118,7 @@ function setupWebSocket(server) {
   // Listen for global session name updates and broadcast to ALL connected clients.
   // This ensures the sidebar updates even if no client is subscribed to the specific session.
   globalEvents.on('session_name_updated', (event) => {
-    broadcast(wss, event);
+    broadcastToAll(event);
   });
 
   // Heartbeat to detect broken connections
@@ -126,7 +144,7 @@ function setupWebSocket(server) {
       timestamp: new Date().toISOString()
     };
 
-    broadcast(wss, statusUpdate);
+    broadcastToAll(statusUpdate);
   }, 5000);
 
   return wss;
@@ -350,4 +368,4 @@ function broadcast(wss, data) {
   });
 }
 
-module.exports = { setupWebSocket };
+module.exports = { setupWebSocket, broadcastToAll };

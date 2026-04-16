@@ -888,3 +888,70 @@
 .newEvalBtn {
   margin: 4px 14px 8px 54px;
 }
+
+/* Draft eval styles */
+.draftItem {
+  opacity: 0.85;
+  border-left: 2px solid var(--warning, #f59e0b);
+}
+
+.draftBadge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warning, #f59e0b);
+  background: rgba(245, 158, 11, 0.12);
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.draftActions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-left: auto;
+}
+
+.draftActionBtn {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.draftActionBtn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.publishBtn {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.publishBtn:hover {
+  opacity: 0.9;
+}
+
+.deleteDraftBtn {
+  padding: 2px 6px;
+  font-size: 14px;
+  background: none;
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+}
+
+.deleteDraftBtn:hover {
+  color: var(--error, #ef4444);
+}

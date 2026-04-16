@@ -1,0 +1,88 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.backButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.backButton:hover {
+  color: var(--text-primary);
+}
+
+.heading {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.folderRef {
+  color: var(--accent);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 16px;
+}
+
+.aiButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24px 32px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 280px;
+  cursor: pointer;
+  gap: 6px;
+  transition: opacity 0.15s;
+}
+
+.aiButton:hover {
+  opacity: 0.9;
+}
+
+.aiLabel {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.aiHint {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.manualLink {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+}
+
+.manualLink:hover {
+  text-decoration: underline;
+  color: var(--text-primary);
+}

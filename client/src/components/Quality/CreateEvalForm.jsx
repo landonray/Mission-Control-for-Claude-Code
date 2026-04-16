@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ChevronLeft, Plus, Trash2, Info } from 'lucide-react';
 import styles from './CreateEvalForm.module.css';
+import { api } from '../../utils/api';
+import PreviewRunResult from './PreviewRunResult';
 
 const EVIDENCE_TYPES = [
   { value: 'log_query', label: 'Log Query' },
@@ -300,21 +302,68 @@ function InputMapEditor({ inputMap, onChange }) {
   );
 }
 
-export default function CreateEvalForm({ folderPath, folderName, onClose, onCreate }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [evidence, setEvidence] = useState({ type: '' });
-  const [inputMap, setInputMap] = useState({ key: '' });
-  const [checks, setChecks] = useState([]);
-  const [judgePrompt, setJudgePrompt] = useState('');
-  const [expected, setExpected] = useState('');
-  const [judgeModel, setJudgeModel] = useState('');
+export default function CreateEvalForm({
+  folderPath,
+  folderName,
+  onClose,
+  onCreate,
+  initialValues,
+  reasoning,
+  onRefine,
+  projectId,
+  replaceDraftPath,
+}) {
+  const [name, setName] = useState(initialValues?.name || '');
+  const [description, setDescription] = useState(initialValues?.description || '');
+  const [evidence, setEvidence] = useState(initialValues?.evidence || { type: '' });
+  const [inputMap, setInputMap] = useState(initialValues?.input || { key: '' });
+  const [checks, setChecks] = useState(initialValues?.checks || []);
+  const [judgePrompt, setJudgePrompt] = useState(initialValues?.judge_prompt || '');
+  const [expected, setExpected] = useState(initialValues?.expected || '');
+  const [judgeModel, setJudgeModel] = useState(initialValues?.judge?.model || '');
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(false);
+  const [previewResult, setPreviewResult] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const addCheck = () => setChecks([...checks, { type: '' }]);
   const updateCheck = (i, updated) => setChecks(checks.map((c, j) => j === i ? updated : c));
   const removeCheck = (i) => setChecks(checks.filter((_, j) => j !== i));
+
+  const handlePreview = async () => {
+    setError(null);
+    setPreviewing(true);
+    setPreviewResult(null);
+
+    const cleanInput = {};
+    for (const [k, v] of Object.entries(inputMap)) {
+      if (k.trim()) cleanInput[k.trim()] = v;
+    }
+
+    const evalDef = {
+      name: name.trim(),
+      description: description.trim(),
+      evidence: cleanEvidence(evidence),
+      input: cleanInput,
+    };
+    if (checks.length > 0) {
+      evalDef.checks = checks.map(cleanCheck).filter(c => c.type);
+    }
+    if (judgePrompt.trim()) {
+      evalDef.judge_prompt = judgePrompt.trim();
+      evalDef.expected = expected.trim();
+      if (judgeModel) evalDef.judge = { model: judgeModel };
+    }
+
+    try {
+      const result = await api.post(`/api/evals/folders/${projectId}/preview`, { evalDefinition: evalDef });
+      setPreviewResult(result.result);
+    } catch (err) {
+      setError(err.message || 'Preview failed');
+    }
+    setPreviewing(false);
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -359,6 +408,13 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
       if (judgeModel) evalDef.judge = { model: judgeModel };
     }
 
+    if (initialValues) {
+      evalDef.saveAsDraft = true;
+      if (replaceDraftPath) {
+        evalDef.replaceDraftPath = replaceDraftPath;
+      }
+    }
+
     setCreating(true);
     try {
       await onCreate(evalDef);
@@ -376,6 +432,21 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
         Back to folders
       </button>
       <h3 className={styles.heading}>New Eval in <span className={styles.folderRef}>{folderName}</span></h3>
+
+      {reasoning && (
+        <div className={styles.reasoningSection}>
+          <button
+            className={styles.reasoningToggle}
+            onClick={() => setShowReasoning(!showReasoning)}
+            type="button"
+          >
+            {showReasoning ? 'Hide' : 'Show'} how this eval was built
+          </button>
+          {showReasoning && (
+            <div className={styles.reasoningContent}>{reasoning}</div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className={styles.form}>
         <div className={styles.section}>
@@ -439,10 +510,34 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
 
         {error && <div className={styles.error}>{error}</div>}
 
+        {previewResult && (
+          <PreviewRunResult
+            result={previewResult}
+            onClose={() => setPreviewResult(null)}
+          />
+        )}
+
         <div className={styles.actions}>
           <button type="button" className={styles.cancelBtn} onClick={onClose}>Cancel</button>
+          {onRefine && (
+            <button type="button" className={styles.refineBtn} onClick={() => {
+              const currentState = {
+                name, description, evidence, input: inputMap, checks,
+                judge_prompt: judgePrompt, expected, judge: judgeModel ? { model: judgeModel } : undefined,
+              };
+              onRefine(currentState);
+            }}>Refine</button>
+          )}
+          <button
+            type="button"
+            className={styles.previewBtn}
+            onClick={handlePreview}
+            disabled={previewing || !name.trim() || !evidence.type}
+          >
+            {previewing ? 'Running...' : 'Preview Run'}
+          </button>
           <button type="submit" className={styles.createBtn} disabled={creating}>
-            {creating ? 'Creating...' : 'Create Eval'}
+            {creating ? 'Saving...' : (initialValues ? 'Save as Draft' : 'Create Eval')}
           </button>
         </div>
       </form>
