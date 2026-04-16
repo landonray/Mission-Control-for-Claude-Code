@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { query } = require('../database');
 
@@ -43,6 +44,13 @@ let _evalAuthoring;
 async function getEvalAuthoring() {
   if (!_evalAuthoring) _evalAuthoring = unwrapDefault(await import('../services/evalAuthoring.js'));
   return _evalAuthoring;
+}
+
+// Resolve user-supplied path and verify it's inside the project root (prevents traversal via ..)
+function isPathInsideProject(userPath, projectRootPath) {
+  const resolved = path.resolve(userPath);
+  const root = projectRootPath.endsWith('/') ? projectRootPath : projectRootPath + '/';
+  return resolved === projectRootPath || resolved.startsWith(root);
 }
 
 // Track running batches per project to prevent duplicates
@@ -158,10 +166,8 @@ router.post('/folders/:projectId/create', async (req, res) => {
     const project = await getProject(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
     const baseDir = getEvalsBaseDir(project.root_path, project.config);
-    const path = require('path');
     const folderPath = path.join(baseDir, sanitized);
-    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
-    if (!folderPath.startsWith(projectRoot) && folderPath !== project.root_path) {
+    if (!isPathInsideProject(folderPath, project.root_path)) {
       return res.status(400).json({ error: 'Folder path must be inside the project' });
     }
     const fs = require('fs');
@@ -210,8 +216,7 @@ router.post('/folders/:projectId/create-eval', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     // Path safety check — folder_path must be inside project root
-    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
-    if (!folder_path.startsWith(projectRoot) && folder_path !== project.root_path) {
+    if (!isPathInsideProject(folder_path, project.root_path)) {
       return res.status(400).json({ error: 'folder_path must be inside the project' });
     }
 
@@ -240,7 +245,6 @@ router.post('/folders/:projectId/create-eval', async (req, res) => {
     }
 
     // Sanitize eval name for filename
-    const path = require('path');
     const sanitizedName = name.trim().replace(/[^a-zA-Z0-9]+/g, '_');
     const extension = saveAsDraft ? '.yaml.draft' : '.yaml';
     const filePath = path.join(folder_path, sanitizedName + extension);
@@ -293,8 +297,7 @@ router.post('/folders/:projectId/author', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     // Path safety check
-    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
-    if (!folderPath.startsWith(projectRoot) && folderPath !== project.root_path) {
+    if (!isPathInsideProject(folderPath, project.root_path)) {
       return res.status(400).json({ error: 'folderPath must be inside the project' });
     }
 
@@ -442,8 +445,7 @@ router.post('/folders/:projectId/publish', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     // Path safety check
-    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
-    if (!draftPath.startsWith(projectRoot) && draftPath !== project.root_path) {
+    if (!isPathInsideProject(draftPath, project.root_path)) {
       return res.status(400).json({ error: 'draftPath must be inside the project' });
     }
 
@@ -456,7 +458,6 @@ router.post('/folders/:projectId/publish', async (req, res) => {
     }
 
     // Determine target path (drop .draft suffix)
-    const path = require('path');
     let targetPath = draftPath.slice(0, -'.draft'.length);
 
     // Auto-suffix if target already exists
@@ -493,8 +494,7 @@ router.delete('/folders/:projectId/draft', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     // Path safety check
-    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
-    if (!draftPath.startsWith(projectRoot) && draftPath !== project.root_path) {
+    if (!isPathInsideProject(draftPath, project.root_path)) {
       return res.status(400).json({ error: 'draftPath must be inside the project' });
     }
 

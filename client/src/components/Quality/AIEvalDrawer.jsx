@@ -57,7 +57,7 @@ export default function AIEvalDrawer({
       } else if (msg.type === 'eval_authoring_complete') {
         onComplete(msg.eval, msg.reasoning);
       } else if (msg.type === 'eval_authoring_error') {
-        setError(msg.message || 'Something went wrong. Please try again.');
+        setError(msg.error || 'Something went wrong. Please try again.');
         setStatus('error');
       }
     };
