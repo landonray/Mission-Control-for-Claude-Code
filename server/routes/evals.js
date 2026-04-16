@@ -47,7 +47,7 @@ const runningBatches = new Map();
 router.get('/folders/:projectId', async (req, res) => {
   try {
     const { getProject } = await getProjectDiscovery();
-    const { discoverEvalFolders, loadEvalFolder } = await getEvalLoader();
+    const { discoverEvalFolders, loadEvalFolder, loadDraftsFromFolder } = await getEvalLoader();
 
     const project = await getProject(req.params.projectId);
     if (!project) return res.status(404).json({ error: 'Project not found' });
@@ -102,7 +102,6 @@ router.get('/folders/:projectId', async (req, res) => {
       // Load draft evals from disk
       let drafts = [];
       try {
-        const { loadDraftsFromFolder } = await getEvalLoader();
         const loadedDrafts = loadDraftsFromFolder(fp);
         drafts = loadedDrafts.map(ev => ({
           name: ev.name,
