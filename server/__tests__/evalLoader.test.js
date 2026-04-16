@@ -262,11 +262,89 @@ describe('evalLoader', () => {
       expect(mockReadFileSync).toHaveBeenCalledTimes(2);
     });
 
+    it('excludes .yaml.draft and .yml.draft files', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        'published.yaml',
+        'also-published.yml',
+        'draft-eval.yaml.draft',
+        'another-draft.yml.draft',
+      ]);
+      mockReadFileSync.mockReturnValue('yaml');
+
+      const validEval = {
+        name: 'test',
+        description: 'desc',
+        input: {},
+        evidence: { type: 'file' },
+        checks: [{ type: 'not_empty' }],
+      };
+      mockYamlLoad.mockReturnValue(validEval);
+
+      const { loadEvalFolder } = await getModule();
+      const results = loadEvalFolder('/evals');
+
+      expect(results).toHaveLength(2);
+      // Only the two published files should have been read
+      expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+      expect(mockReadFileSync).toHaveBeenCalledWith('/evals/published.yaml', 'utf8');
+      expect(mockReadFileSync).toHaveBeenCalledWith('/evals/also-published.yml', 'utf8');
+    });
+
     it('returns empty array when folder does not exist', async () => {
       mockExistsSync.mockReturnValue(false);
 
       const { loadEvalFolder } = await getModule();
       expect(loadEvalFolder('/nonexistent')).toEqual([]);
+    });
+  });
+
+  describe('loadDraftsFromFolder', () => {
+    it('returns only draft files (.yaml.draft and .yml.draft)', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue([
+        'published.yaml',
+        'also-published.yml',
+        'draft-eval.yaml.draft',
+        'another-draft.yml.draft',
+      ]);
+      mockReadFileSync.mockReturnValue('yaml');
+
+      const validEval = {
+        name: 'test',
+        description: 'desc',
+        input: {},
+        evidence: { type: 'file' },
+        checks: [{ type: 'not_empty' }],
+      };
+      mockYamlLoad.mockReturnValue(validEval);
+
+      const { loadDraftsFromFolder } = await getModule();
+      const results = loadDraftsFromFolder('/evals');
+
+      expect(results).toHaveLength(2);
+      // Only the two draft files should have been read
+      expect(mockReadFileSync).toHaveBeenCalledTimes(2);
+      expect(mockReadFileSync).toHaveBeenCalledWith('/evals/draft-eval.yaml.draft', 'utf8');
+      expect(mockReadFileSync).toHaveBeenCalledWith('/evals/another-draft.yml.draft', 'utf8');
+    });
+
+    it('returns empty array when folder does not exist', async () => {
+      mockExistsSync.mockReturnValue(false);
+
+      const { loadDraftsFromFolder } = await getModule();
+      expect(loadDraftsFromFolder('/nonexistent')).toEqual([]);
+    });
+
+    it('returns empty array when folder has no draft files', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue(['published.yaml', 'readme.md']);
+
+      const { loadDraftsFromFolder } = await getModule();
+      const results = loadDraftsFromFolder('/evals');
+
+      expect(results).toHaveLength(0);
+      expect(mockReadFileSync).not.toHaveBeenCalled();
     });
   });
 

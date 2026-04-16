@@ -53,7 +53,24 @@ export function loadEvalFolder(folderPath) {
   }
 
   const files = fs.readdirSync(folderPath).filter(
-    (f) => f.endsWith('.yaml') || f.endsWith('.yml')
+    (f) => (f.endsWith('.yaml') || f.endsWith('.yml')) && !f.endsWith('.draft')
+  );
+
+  return files.map((f) => loadEval(path.join(folderPath, f)));
+}
+
+/**
+ * Load all draft eval files from a folder.
+ * @param {string} folderPath - Absolute path to folder containing .yaml.draft/.yml.draft files
+ * @returns {object[]} Array of parsed draft eval definitions
+ */
+export function loadDraftsFromFolder(folderPath) {
+  if (!fs.existsSync(folderPath)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(folderPath).filter(
+    (f) => f.endsWith('.yaml.draft') || f.endsWith('.yml.draft')
   );
 
   return files.map((f) => loadEval(path.join(folderPath, f)));
