@@ -155,7 +155,7 @@ async function generateSessionName(messageText) {
   try {
     autoNameLog('Generating name for:', messageText.slice(0, 80));
     const text = await chatCompletion({
-      model: 'claude-haiku-4-5',
+      model: MODEL_ROLES.fast,
       max_tokens: 30,
       system: 'You are a session naming tool. Your ONLY job is to output a concise 3-6 word title summarizing the topic of the user message. Rules: output ONLY the title, no explanation, no quotes, no punctuation except spaces, no conversational response. Do NOT answer or respond to the message content. If the message is vague, output "General Chat". Examples: "Fix Login Button Styling", "Database Migration Script", "API Rate Limiting Setup".',
       messages: [{ role: 'user', content: messageText }],
@@ -188,7 +188,7 @@ class SessionProcess {
     this.initialPrompt = options.initialPrompt || null;
     this.useWorktree = options.useWorktree || false;
     this.worktreeReady = !this.useWorktree; // non-worktree sessions are immediately ready
-    this.model = options.model || 'claude-opus-4-6';
+    this.model = options.model || DEFAULT_MODEL;
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
@@ -1869,14 +1869,13 @@ async function recoverTmuxSessions() {
 
 // --- Session CRUD ---
 
-const VALID_MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6'];
-const DEFAULT_MODEL = 'claude-opus-4-6';
+const { VALID_MODELS, DEFAULT_MODEL, MODEL_ROLES, isValidModel } = require('../config/models');
 
 async function createSession(options = {}) {
   const id = uuidv4();
   const name = options.name || 'New Session';
 
-  if (options.model && !VALID_MODELS.includes(options.model)) {
+  if (options.model && !isValidModel(options.model)) {
     throw new Error(`Invalid model "${options.model}". Must be one of: ${VALID_MODELS.join(', ')}`);
   }
   options.model = options.model || DEFAULT_MODEL;
@@ -1884,7 +1883,7 @@ async function createSession(options = {}) {
   await query(
     `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, created_at, last_activity_at)
      VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, NOW(), NOW())`,
-    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || 'claude-opus-4-6', options.useWorktree ? 1 : 0]
+    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || DEFAULT_MODEL, options.useWorktree ? 1 : 0]
   );
 
   // Link session to project if a .mission-control.yaml is found
@@ -1959,6 +1958,4 @@ module.exports = {
   activeSessions,
   globalEvents,
   tmuxAvailable,
-  VALID_MODELS,
-  DEFAULT_MODEL
 };

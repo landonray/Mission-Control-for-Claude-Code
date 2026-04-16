@@ -8,6 +8,7 @@
  */
 
 const { chatCompletion } = require('./llmGateway');
+const { MODEL_ROLES } = require('../config/models');
 const { run: cliRun } = require('./cliAgent');
 const { execFile } = require('child_process');
 const fs = require('fs');
@@ -225,7 +226,7 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[brief reason]`;
       }) || '';
     } else {
       fullText = await chatCompletion({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL_ROLES.quality,
         max_tokens: isAgent ? 1000 : 500,
         system: systemPrompt,
         messages: [{ role: 'user', content: prompt }],
@@ -293,7 +294,7 @@ QUALITY_RESULT:${rule.id}:${rule.severity}:FAIL:[count] requirements incomplete`
       }) || '';
     } else {
       fullText = await chatCompletion({
-        model: 'claude-sonnet-4-20250514',
+        model: MODEL_ROLES.quality,
         max_tokens: 1500,
         system: specSystemPrompt,
         messages: [{ role: 'user', content: prompt }],

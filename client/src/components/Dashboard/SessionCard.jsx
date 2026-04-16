@@ -22,10 +22,10 @@ export default function SessionCard({ session, onClick, onArchive }) {
     <div className={cardClass} onClick={onClick}>
       <div className={styles.header}>
         <h3 className={styles.name}>{session.name}</h3>
-        {session.model && session.model !== 'claude-opus-4-6' && (
+        {session.model && !session.model.includes('opus') && (
           <span className={`badge ${styles.modelBadge}`}>
             <Cpu size={10} />
-            {session.model.includes('sonnet') ? 'Sonnet' : session.model}
+            {session.model.includes('sonnet') ? 'Sonnet' : session.model.includes('haiku') ? 'Haiku' : session.model}
           </span>
         )}
         <span className={`badge badge-${session.archived ? 'ended' : isActive ? 'working' : session.status}`}>
