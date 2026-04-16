@@ -190,10 +190,10 @@ router.get('/rules/project/:projectId', async (req, res) => {
     // Load YAML config overrides (if project has a config)
     let yamlOverrides = {};
     try {
-      const { getProject } = await (await import('../services/projectDiscovery.js')).default || await import('../services/projectDiscovery.js');
-      const fullProject = typeof getProject === 'function'
-        ? await getProject(req.params.projectId)
-        : null;
+      const mod = await import('../services/projectDiscovery.js');
+      const pdMod = mod && mod.default && typeof mod.default === 'object' ? mod.default : mod;
+      const { getProject } = pdMod;
+      const fullProject = await getProject(req.params.projectId);
       if (fullProject && fullProject.config && fullProject.config.quality_rules) {
         const cfg = fullProject.config.quality_rules;
         if (Array.isArray(cfg.enabled)) {

@@ -4,39 +4,44 @@ const { v4: uuidv4 } = require('uuid');
 const { query } = require('../database');
 
 // ESM service loaders (lazy dynamic import for CJS compatibility)
+// Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
+function unwrapDefault(mod) {
+  return mod && mod.default && typeof mod.default === 'object' ? mod.default : mod;
+}
+
 let _projectDiscovery;
 async function getProjectDiscovery() {
-  if (!_projectDiscovery) _projectDiscovery = await import('../services/projectDiscovery.js');
+  if (!_projectDiscovery) _projectDiscovery = unwrapDefault(await import('../services/projectDiscovery.js'));
   return _projectDiscovery;
 }
 
 let _evalLoader;
 async function getEvalLoader() {
-  if (!_evalLoader) _evalLoader = await import('../services/evalLoader.js');
+  if (!_evalLoader) _evalLoader = unwrapDefault(await import('../services/evalLoader.js'));
   return _evalLoader;
 }
 
 let _evalRunner;
 async function getEvalRunner() {
-  if (!_evalRunner) _evalRunner = await import('../services/evalRunner.js');
+  if (!_evalRunner) _evalRunner = unwrapDefault(await import('../services/evalRunner.js'));
   return _evalRunner;
 }
 
 let _evalReporter;
 async function getEvalReporter() {
-  if (!_evalReporter) _evalReporter = await import('../services/evalReporter.js');
+  if (!_evalReporter) _evalReporter = unwrapDefault(await import('../services/evalReporter.js'));
   return _evalReporter;
 }
 
 let _prWatcher;
 async function getPrWatcher() {
-  if (!_prWatcher) _prWatcher = await import('../services/prWatcher.js');
+  if (!_prWatcher) _prWatcher = unwrapDefault(await import('../services/prWatcher.js'));
   return _prWatcher;
 }
 
 let _evalAuthoring;
 async function getEvalAuthoring() {
-  if (!_evalAuthoring) _evalAuthoring = await import('../services/evalAuthoring.js');
+  if (!_evalAuthoring) _evalAuthoring = unwrapDefault(await import('../services/evalAuthoring.js'));
   return _evalAuthoring;
 }
 
