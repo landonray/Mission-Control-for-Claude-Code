@@ -28,6 +28,12 @@ app.use('/api/uploads', require('./routes/uploads'));
 app.use('/api/slash-commands', require('./routes/slashCommands'));
 app.use('/api/evals', require('./routes/evals'));
 
+// Model config
+const { MODEL_OPTIONS, DEFAULT_MODEL } = require('./config/models');
+app.get('/api/models', (req, res) => {
+  res.json({ models: MODEL_OPTIONS, defaultModel: DEFAULT_MODEL });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });

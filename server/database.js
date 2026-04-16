@@ -25,7 +25,7 @@ async function initializeDb() {
       tool_call_count INTEGER DEFAULT 0, last_action_summary TEXT, last_activity_at TEXT,
       permission_mode TEXT DEFAULT 'acceptEdits', created_at TEXT DEFAULT NOW(),
       ended_at TEXT, preview_url TEXT, archived INTEGER DEFAULT 0,
-      tmux_session_name TEXT, model TEXT DEFAULT 'claude-opus-4-6',
+      tmux_session_name TEXT, model TEXT,
       use_worktree INTEGER DEFAULT 0, worktree_name TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS messages (

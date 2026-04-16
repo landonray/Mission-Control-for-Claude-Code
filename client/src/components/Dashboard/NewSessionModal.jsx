@@ -17,7 +17,8 @@ export default function NewSessionModal({ onClose }) {
   const [projects, setProjects] = useState([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [useWorktree, setUseWorktree] = useState(true);
-  const [model, setModel] = useState('claude-opus-4-6');
+  const [modelOptions, setModelOptions] = useState([]);
+  const [model, setModel] = useState('');
   const [permissionMode, setPermissionMode] = useState('auto');
   const [form, setForm] = useState({
     name: '',
@@ -25,6 +26,13 @@ export default function NewSessionModal({ onClose }) {
     initialPrompt: '',
   });
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/models').then(data => {
+      setModelOptions(data.models || []);
+      setModel(data.defaultModel || data.models?.[0]?.value || '');
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (mode === 'projects') {
@@ -138,10 +146,7 @@ export default function NewSessionModal({ onClose }) {
                 <span>Model</span>
               </label>
               <PillSelector
-                options={[
-                  { value: 'claude-opus-4-6', label: 'Opus' },
-                  { value: 'claude-sonnet-4-6', label: 'Sonnet' },
-                ]}
+                options={modelOptions}
                 value={model}
                 onChange={setModel}
               />

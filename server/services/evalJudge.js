@@ -3,12 +3,15 @@
  */
 
 import llmGateway from './llmGateway.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { MODEL_ROLES } = require('../config/models.js');
 const { chatCompletion } = llmGateway;
 
 export const MODEL_MAP = {
-  default: 'claude-sonnet-4-6',
-  fast: 'claude-haiku-4-5-20251001',
-  strong: 'claude-opus-4-6',
+  default: MODEL_ROLES.quality,
+  fast: MODEL_ROLES.fast,
+  strong: MODEL_ROLES.strong,
 };
 
 export const JUDGE_SYSTEM_PROMPT = `You are an evaluation judge. Your job is to determine whether gathered evidence satisfies an expected outcome. You will receive the expected outcome, the evidence, and specific judging criteria.
