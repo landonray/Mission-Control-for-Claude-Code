@@ -116,13 +116,15 @@ router.get('/folders/:projectId', async (req, res) => {
       let drafts = [];
       try {
         const loadedDrafts = loadDraftsFromFolder(fp);
-        drafts = loadedDrafts.map(ev => ({
-          name: ev.name,
-          description: ev.description || null,
-          evidence_type: ev.evidence?.type || null,
-          isDraft: true,
-          draftPath: ev._source,
-        }));
+        drafts = loadedDrafts.map(ev => {
+          const { _source, ...evalData } = ev;
+          return {
+            ...evalData,
+            evidence_type: ev.evidence?.type || null,
+            isDraft: true,
+            draftPath: _source,
+          };
+        });
       } catch (err) {
         console.warn(`[Evals] Failed to load drafts from ${fp}:`, err.message);
       }
@@ -308,23 +310,9 @@ router.post('/folders/:projectId/author', async (req, res) => {
     // Run authoring in background
     (async () => {
       const { broadcastToAll } = require('../websocket');
-      const timers = [];
 
       try {
-        // Send started event immediately
         broadcastToAll({ type: 'eval_authoring_started', jobId });
-
-        // Schedule progress messages at predetermined intervals
-        const progressMessages = [
-          { delay: 8000, message: 'Investigating the codebase…' },
-          { delay: 16000, message: 'Drafting the eval definition…' },
-          { delay: 30000, message: 'Finalizing and validating…' },
-        ];
-        for (const { delay, message } of progressMessages) {
-          timers.push(setTimeout(() => {
-            broadcastToAll({ type: 'eval_authoring_progress', jobId, message });
-          }, delay));
-        }
 
         const { runAuthoring } = await getEvalAuthoring();
         const result = await runAuthoring({
@@ -337,9 +325,6 @@ router.post('/folders/:projectId/author', async (req, res) => {
           hints: hints || null,
         });
 
-        // Clear progress timers
-        for (const t of timers) clearTimeout(t);
-
         if (result.error) {
           broadcastToAll({ type: 'eval_authoring_error', jobId, error: result.error });
         } else {
@@ -351,7 +336,6 @@ router.post('/folders/:projectId/author', async (req, res) => {
           });
         }
       } catch (err) {
-        for (const t of timers) clearTimeout(t);
         broadcastToAll({ type: 'eval_authoring_error', jobId, error: err.message });
       }
     })();
@@ -420,7 +404,8 @@ router.post('/folders/:projectId/preview', async (req, res) => {
     // Estimate token cost from evidence and judge_prompt
     const evidenceStr = typeof result.evidence === 'string' ? result.evidence : JSON.stringify(result.evidence || '');
     const judgePromptStr = evalDefinition.judge_prompt || '';
-    const estimatedTokenCost = Math.ceil(evidenceStr.length / 4) + Math.ceil(judgePromptStr.length / 4) + 500;
+    const rawTokens = Math.ceil(evidenceStr.length / 4) + Math.ceil(judgePromptStr.length / 4) + 500;
+    const estimatedTokenCost = `~${rawTokens.toLocaleString()} tokens`;
 
     res.json({
       success: true,

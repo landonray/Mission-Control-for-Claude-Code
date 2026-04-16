@@ -55,7 +55,7 @@ export default function AIEvalDrawer({
       if (msg.type === 'eval_authoring_progress') {
         setProgressMessage(msg.message);
       } else if (msg.type === 'eval_authoring_complete') {
-        onComplete(msg.eval, msg.reasoning);
+        onComplete(msg.eval, msg.reasoning, description);
       } else if (msg.type === 'eval_authoring_error') {
         setError(msg.error || 'Something went wrong. Please try again.');
         setStatus('error');

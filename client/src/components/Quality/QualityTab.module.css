@@ -914,6 +914,21 @@
   margin-left: auto;
 }
 
+.draftActionBtn {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.draftActionBtn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
 .publishBtn {
   padding: 2px 8px;
   font-size: 11px;

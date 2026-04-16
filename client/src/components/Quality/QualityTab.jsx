@@ -19,6 +19,7 @@ import CreateFolderModal from './CreateFolderModal';
 import CreateEvalForm from './CreateEvalForm';
 import EvalChoiceScreen from './EvalChoiceScreen';
 import AIEvalDrawer from './AIEvalDrawer';
+import PreviewRunResult from './PreviewRunResult';
 
 const severityColors = {
   high: 'var(--error)',
@@ -289,6 +290,7 @@ export default function QualityTab({ sessionId }) {
   const [createEvalTarget, setCreateEvalTarget] = useState(null);
   const [createEvalMode, setCreateEvalMode] = useState(null); // null | 'choice' | 'ai' | 'manual'
   const [aiDraftData, setAiDraftData] = useState(null); // { evalData, reasoning, originalDescription }
+  const [draftPreviewResult, setDraftPreviewResult] = useState(null);
 
   const loadProject = useCallback(async () => {
     if (!sessionId) return;
@@ -540,6 +542,23 @@ export default function QualityTab({ sessionId }) {
     }
   };
 
+  const handleEditDraft = (draft, folder) => {
+    const { isDraft, draftPath, evidence_type, ...evalData } = draft;
+    setCreateEvalTarget({ folder_path: folder.folder_path, folder_name: folder.folder_name || folder.folder_path });
+    setAiDraftData({ evalData, reasoning: null, originalDescription: '' });
+    setCreateEvalMode('manual');
+  };
+
+  const handlePreviewDraft = async (draft, folder) => {
+    try {
+      const { isDraft, draftPath, evidence_type, ...evalDef } = draft;
+      const result = await api.post(`/api/evals/folders/${project.id}/preview`, { evalDefinition: evalDef, folderPath: folder.folder_path });
+      setDraftPreviewResult(result.result);
+    } catch (err) {
+      console.error('[QualityTab] Preview failed:', err);
+    }
+  };
+
   const toggleFolderExpand = (path) => {
     setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   };
@@ -572,6 +591,18 @@ export default function QualityTab({ sessionId }) {
     );
   }
 
+  // Draft preview result
+  if (draftPreviewResult) {
+    return (
+      <div className={styles.container}>
+        <PreviewRunResult
+          result={draftPreviewResult}
+          onClose={() => setDraftPreviewResult(null)}
+        />
+      </div>
+    );
+  }
+
   // Drill-down: run detail view
   if (selectedRun) {
     return (
@@ -597,8 +628,8 @@ export default function QualityTab({ sessionId }) {
             folderPath={createEvalTarget.folder_path}
             folderName={createEvalTarget.folder_name}
             projectId={project.id}
-            onComplete={(evalData, reasoning) => {
-              setAiDraftData({ evalData, reasoning, originalDescription: '' });
+            onComplete={(evalData, reasoning, userDescription) => {
+              setAiDraftData({ evalData, reasoning, originalDescription: userDescription || '' });
               setCreateEvalMode('manual');
             }}
             onCancel={() => setCreateEvalMode('choice')}
@@ -791,6 +822,20 @@ export default function QualityTab({ sessionId }) {
                         {draft.description && <span className={styles.evalDescription}>{draft.description}</span>}
                       </div>
                       <div className={styles.draftActions}>
+                        <button
+                          className={styles.draftActionBtn}
+                          onClick={(e) => { e.stopPropagation(); handleEditDraft(draft, folder); }}
+                          title="Edit draft"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className={styles.draftActionBtn}
+                          onClick={(e) => { e.stopPropagation(); handlePreviewDraft(draft, folder); }}
+                          title="Preview run"
+                        >
+                          Preview
+                        </button>
                         <button
                           className={styles.publishBtn}
                           onClick={(e) => { e.stopPropagation(); handlePublishDraft(draft); }}

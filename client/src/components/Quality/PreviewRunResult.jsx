@@ -1,4 +1,4 @@
-import { CheckCircle, XCircle, AlertTriangle, X } from 'lucide-react';
+import { CheckCircle, XCircle, AlertTriangle, ChevronLeft } from 'lucide-react';
 import styles from './PreviewRunResult.module.css';
 
 export default function PreviewRunResult({ result, onClose }) {
@@ -26,8 +26,9 @@ export default function PreviewRunResult({ result, onClose }) {
       {/* Header */}
       <div className={styles.header}>
         <span className={styles.title}>Preview Result</span>
-        <button className={styles.closeBtn} onClick={onClose} aria-label="Close">
-          <X size={14} />
+        <button className={styles.closeBtn} onClick={onClose}>
+          <ChevronLeft size={14} />
+          Back to Form
         </button>
       </div>
 

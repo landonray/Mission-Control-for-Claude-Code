@@ -23,9 +23,11 @@
   border: none;
   color: var(--text-muted, #94a3b8);
   cursor: pointer;
-  padding: 2px;
+  padding: 2px 6px;
   display: flex;
   align-items: center;
+  gap: 4px;
+  font-size: 12px;
 }
 
 .closeBtn:hover {
