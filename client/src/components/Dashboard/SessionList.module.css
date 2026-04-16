@@ -124,7 +124,7 @@
 }
 
 .card.active {
-  background: var(--bg-tertiary);
+  background: #d0bb9c;
   border-color: var(--accent);
   box-shadow: 0 4px 16px rgba(212, 120, 48, 0.18);
 }
