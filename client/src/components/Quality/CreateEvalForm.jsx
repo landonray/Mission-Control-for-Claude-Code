@@ -16,7 +16,26 @@ const CHECK_TYPES = [
   { value: 'json_schema', label: 'JSON Schema' },
   { value: 'http_status', label: 'HTTP Status' },
   { value: 'field_exists', label: 'Field Exists' },
+  { value: 'equals', label: 'Equals' },
+  { value: 'contains', label: 'Contains' },
+  { value: 'greater_than', label: 'Greater Than' },
+  { value: 'less_than', label: 'Less Than' },
+  { value: 'numeric_score', label: 'Numeric Score' },
 ];
+
+const CHECK_HELP_TEXT = {
+  not_empty: 'Passes if the evidence contains any non-whitespace content.',
+  regex_match: 'Passes if the evidence matches the regular expression pattern you provide.',
+  json_valid: 'Passes if the evidence is valid JSON.',
+  json_schema: 'Passes if the evidence is valid JSON that conforms to the schema file you specify.',
+  http_status: 'Passes if the evidence contains the HTTP status code you specify.',
+  field_exists: 'Passes if the specified field path exists in the JSON evidence. Use dot notation for nested fields (e.g. data.user.id).',
+  equals: 'Compares the evidence (or a field extracted from JSON evidence) against the value you provide. Equals checks for an exact match, Contains checks for a substring, Greater/Less Than compare numerically.',
+  contains: 'Compares the evidence (or a field extracted from JSON evidence) against the value you provide. Equals checks for an exact match, Contains checks for a substring, Greater/Less Than compare numerically.',
+  greater_than: 'Compares the evidence (or a field extracted from JSON evidence) against the value you provide. Equals checks for an exact match, Contains checks for a substring, Greater/Less Than compare numerically.',
+  less_than: 'Compares the evidence (or a field extracted from JSON evidence) against the value you provide. Equals checks for an exact match, Contains checks for a substring, Greater/Less Than compare numerically.',
+  numeric_score: 'Checks that a numeric value falls within a range. Set a min, max, or both. Useful for scoring responses on a scale.',
+};
 
 const LOG_SOURCES = [
   { value: 'session_log', label: 'Session Log' },
@@ -54,6 +73,15 @@ function EvidenceFields({ evidence, onChange }) {
           </select>
         </div>
       </div>
+
+      {evidence.type && (
+        <div className={styles.checkHelpText}>
+          {evidence.type === 'log_query' && 'Searches through logs (session logs, build output, or PR diffs) and optionally filters lines with a regex pattern.'}
+          {evidence.type === 'file' && 'Reads the contents of a file at the path you specify.'}
+          {evidence.type === 'db_query' && 'Runs a SQL query against your database and returns the results.'}
+          {evidence.type === 'sub_agent' && 'Sends a prompt to an LLM to extract or summarize information from a context source.'}
+        </div>
+      )}
 
       {evidence.type === 'log_query' && (
         <>
@@ -140,6 +168,9 @@ function CheckEditor({ check, onChange, onRemove }) {
         </select>
         <button className={styles.removeBtn} onClick={onRemove} title="Remove check" type="button"><Trash2 size={14} /></button>
       </div>
+      {check.type && CHECK_HELP_TEXT[check.type] && (
+        <div className={styles.checkHelpText}>{CHECK_HELP_TEXT[check.type]}</div>
+      )}
       <div className={styles.field}>
         <label className={styles.label}>Description</label>
         <input className={styles.input} value={check.description || ''} onChange={(e) => update('description', e.target.value)} placeholder="What does this check verify?" />
@@ -178,6 +209,46 @@ function CheckEditor({ check, onChange, onRemove }) {
           <input className={styles.input} value={check.schema || ''} onChange={(e) => update('schema', e.target.value)} placeholder="schemas/response.json" />
         </div>
       )}
+
+      {(check.type === 'equals' || check.type === 'contains' || check.type === 'greater_than' || check.type === 'less_than') && (
+        <div className={styles.fieldRow}>
+          <div className={styles.field}>
+            <label className={styles.label}>Value *</label>
+            <input
+              className={styles.input}
+              type={check.type === 'greater_than' || check.type === 'less_than' ? 'number' : 'text'}
+              value={check.value || ''}
+              onChange={(e) => update('value', e.target.value)}
+              placeholder={check.type === 'greater_than' || check.type === 'less_than' ? 'e.g. 0.8' : 'expected value'}
+            />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>
+              <span className={styles.labelWithTooltip}>Field Path <Tooltip text="Optional. If your evidence is JSON, use dot notation to extract a specific value before comparing (e.g. data.score). Leave empty to compare against the full evidence text." /></span>
+            </label>
+            <input className={styles.input} value={check.field || ''} onChange={(e) => update('field', e.target.value)} placeholder="e.g. data.score" />
+          </div>
+        </div>
+      )}
+
+      {check.type === 'numeric_score' && (
+        <div className={styles.fieldRow}>
+          <div className={styles.fieldSmall}>
+            <label className={styles.label}>Min</label>
+            <input className={styles.input} type="number" value={check.min ?? ''} onChange={(e) => update('min', e.target.value === '' ? undefined : parseFloat(e.target.value))} placeholder="e.g. 0" />
+          </div>
+          <div className={styles.fieldSmall}>
+            <label className={styles.label}>Max</label>
+            <input className={styles.input} type="number" value={check.max ?? ''} onChange={(e) => update('max', e.target.value === '' ? undefined : parseFloat(e.target.value))} placeholder="e.g. 1" />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>
+              <span className={styles.labelWithTooltip}>Field Path <Tooltip text="Optional. If your evidence is JSON, use dot notation to extract a specific value before comparing (e.g. data.score). Leave empty to compare against the full evidence text." /></span>
+            </label>
+            <input className={styles.input} value={check.field || ''} onChange={(e) => update('field', e.target.value)} placeholder="e.g. data.score" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -210,6 +281,9 @@ function InputMapEditor({ inputMap, onChange }) {
 
   return (
     <div className={styles.subsection}>
+      {entries.length > 0 && (
+        <div className={styles.checkHelpText}>The left side is the variable name. The right side is the value — either a literal or a {'${variable}'} reference that gets filled in at runtime.</div>
+      )}
       {entries.map(([key, value], i) => (
         <div key={i} className={styles.kvRow}>
           <input className={styles.kvKey} value={key} onChange={(e) => updateKey(key, e.target.value)} placeholder="key" />
@@ -307,11 +381,13 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
 
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Evidence</div>
+          <div className={styles.sectionHint}>How the eval gathers data to check. Pick a source and configure how to collect it.</div>
           <EvidenceFields evidence={evidence} onChange={setEvidence} />
         </div>
 
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Inputs</div>
+          <div className={styles.sectionHint}>Variables passed to your eval at runtime. Use {'${key}'} in other fields to reference them.</div>
           <InputMapEditor inputMap={inputMap} onChange={setInputMap} />
         </div>
 
@@ -320,6 +396,7 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
             <span className={styles.sectionTitle}>Checks</span>
             <button type="button" className={styles.addBtn} onClick={addCheck}><Plus size={12} /> Add Check</button>
           </div>
+          <div className={styles.sectionHint}>Deterministic pass/fail rules applied to the evidence. Each check runs independently.</div>
           {checks.length === 0 && <div className={styles.hint}>No deterministic checks. Add checks or use a judge prompt below.</div>}
           {checks.map((check, i) => (
             <CheckEditor key={i} check={check} onChange={(c) => updateCheck(i, c)} onRemove={() => removeCheck(i)} />
@@ -328,18 +405,19 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
 
         <div className={styles.section}>
           <div className={styles.sectionTitle}>LLM Judge (optional)</div>
+          <div className={styles.sectionHint}>An LLM reviews the evidence and decides if the eval passes. Use this for subjective or complex judgments that can't be captured with deterministic checks.</div>
           <div className={styles.field}>
-            <label className={styles.label}>Judge Prompt</label>
+            <label className={styles.label}><span className={styles.labelWithTooltip}>Judge Prompt <Tooltip text="Instructions for the LLM judge. Tell it what to look for in the evidence, what matters, and what should cause a failure." /></span></label>
             <textarea className={styles.textarea} value={judgePrompt} onChange={(e) => setJudgePrompt(e.target.value)} placeholder="Instructions for the LLM judge to evaluate the evidence..." rows={3} />
           </div>
           {judgePrompt.trim() && (
             <>
               <div className={styles.field}>
-                <label className={styles.label}>Expected Outcome *</label>
+                <label className={styles.label}><span className={styles.labelWithTooltip}>Expected Outcome * <Tooltip text="Describe what a passing result looks like in plain English. The judge LLM uses this as its success criteria." /></span></label>
                 <textarea className={styles.textarea} value={expected} onChange={(e) => setExpected(e.target.value)} placeholder="What does a passing result look like?" rows={2} />
               </div>
               <div className={styles.fieldSmall}>
-                <label className={styles.label}>Judge Model</label>
+                <label className={styles.label}><span className={styles.labelWithTooltip}>Judge Model <Tooltip text="Which LLM to use. Default (Sonnet) is a good balance. Fast (Haiku) is cheaper but less capable. Strong (Opus) is the most capable but costs more." /></span></label>
                 <select className={styles.select} value={judgeModel} onChange={(e) => setJudgeModel(e.target.value)}>
                   {JUDGE_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
