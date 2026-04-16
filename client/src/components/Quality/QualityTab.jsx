@@ -344,8 +344,7 @@ export default function QualityTab({ sessionId }) {
   useEffect(() => {
     if (!sessionId) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname + ':3001';
-    const ws = new WebSocket(`${protocol}//${wsHost}/ws`);
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'subscribe_session', sessionId }));

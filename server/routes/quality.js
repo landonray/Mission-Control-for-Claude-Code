@@ -385,7 +385,6 @@ router.post('/rules/:ruleId/run', async (req, res) => {
   if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
 
   const cwd = sessionRows[0].working_directory || null;
-  const hasSpecFlag = !!sessionRows[0].has_spec;
 
   // Get broadcast function from the active session (if it's running)
   const { getSession } = require('../services/sessionManager');
@@ -395,36 +394,41 @@ router.post('/rules/:ruleId/run', async (req, res) => {
   // Respond immediately — the check runs in the background
   res.json({ ok: true, message: 'Quality check started' });
 
-  // Gather context (same as onSessionStop)
-  let spec = findSpecFile(cwd);
-  if (!spec.found) {
-    spec = await findSpecFromAttachments(sessionId);
-  }
+  // Background work wrapped in try/catch to prevent unhandled rejections
+  try {
+    // Gather context (same as onSessionStop)
+    let spec = findSpecFile(cwd);
+    if (!spec.found) {
+      spec = await findSpecFromAttachments(sessionId);
+    }
 
-  const gitContext = await getGitContext(cwd);
+    const gitContext = await getGitContext(cwd);
 
-  const { rows: messages } = await query(
-    'SELECT role, content FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 20',
-    [sessionId]
-  );
-  const context = messages.reverse()
-    .map(m => `${m.role}: ${m.content?.slice(0, 1000) || ''}`)
-    .join('\n\n') + gitContext;
+    const { rows: messages } = await query(
+      'SELECT role, content FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 20',
+      [sessionId]
+    );
+    const context = messages.reverse()
+      .map(m => `${m.role}: ${m.content?.slice(0, 1000) || ''}`)
+      .join('\n\n') + gitContext;
 
-  // Broadcast "running" state
-  const abortController = new AbortController();
-  broadcastRunning(sessionId, rule, broadcast, abortController);
+    // Broadcast "running" state
+    const abortController = new AbortController();
+    broadcastRunning(sessionId, rule, broadcast, abortController);
 
-  // Execute the check
-  let result;
-  if (rule.id === 'spec-compliance' && spec.found) {
-    result = await runSpecComplianceCheck(rule, spec.content, spec.path, context, { cwd, signal: abortController.signal });
-  } else {
-    result = await runQualityCheck(rule, context, { cwd, signal: abortController.signal });
-  }
+    // Execute the check
+    let result;
+    if (rule.id === 'spec-compliance' && spec.found) {
+      result = await runSpecComplianceCheck(rule, spec.content, spec.path, context, { cwd, signal: abortController.signal });
+    } else {
+      result = await runQualityCheck(rule, context, { cwd, signal: abortController.signal });
+    }
 
-  if (result) {
-    await saveAndBroadcast(sessionId, rule, result, broadcast);
+    if (result) {
+      await saveAndBroadcast(sessionId, rule, result, broadcast);
+    }
+  } catch (err) {
+    console.error(`[quality] Background rule run failed for rule ${ruleId}, session ${sessionId}:`, err);
   }
 });
 
