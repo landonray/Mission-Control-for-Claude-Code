@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import MessageList from './MessageList';
@@ -36,6 +37,7 @@ export default function ChatInterface({ sessionId }) {
   const dragCounterRef = useRef(0);
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
   const slashMenuRef = useRef(null);
+  const isMobile = useMediaQuery('(max-width: 768px)');
 
   // Restore draft when switching sessions
   useEffect(() => {
@@ -250,9 +252,19 @@ export default function ChatInterface({ sessionId }) {
       const handled = slashMenuRef.current.handleKeyDown(e);
       if (handled) return;
     }
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleSend();
+    if (e.key === 'Enter') {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        handleSend();
+        return;
+      }
+      // On desktop, plain Enter sends and Shift+Enter inserts a newline.
+      // On mobile, plain Enter inserts a newline (Cmd/Ctrl+Enter sends) so the
+      // on-screen keyboard's return key doesn't fire off half-written messages.
+      if (!isMobile && !e.shiftKey) {
+        e.preventDefault();
+        handleSend();
+      }
     }
   };
 
@@ -488,7 +500,9 @@ export default function ChatInterface({ sessionId }) {
                 ? `Error: ${errorMessage || 'unknown error'}. Send a message to retry...`
                 : isEnded
                   ? 'Type a message to resume this session...'
-                  : 'Send a message... (Enter to send, Shift+Enter for new line)'
+                  : isMobile
+                    ? 'Send a message... (Cmd+Enter to send)'
+                    : 'Send a message... (Enter to send, Shift+Enter for new line)'
             }
             rows={1}
           />
