@@ -12,8 +12,11 @@ if (process.env.HTTPS_PROXY || process.env.https_proxy) {
 const sql = neon(process.env.DATABASE_URL, { fetchOptions });
 
 async function query(text, params) {
-  const rows = await sql.query(text, params || []);
-  return { rows, rowCount: rows.length };
+  // fullResults: true returns { rows, rowCount, command, ... } — without it,
+  // sql.query returns just an array of rows with no rowCount, which silently
+  // breaks UPDATE/DELETE consumers that check result.rowCount.
+  const result = await sql.query(text, params || [], { fullResults: true });
+  return { rows: result.rows, rowCount: result.rowCount };
 }
 
 async function initializeDb() {
