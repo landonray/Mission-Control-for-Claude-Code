@@ -311,6 +311,7 @@ export default function CreateEvalForm({
   reasoning,
   onRefine,
   projectId,
+  replaceDraftPath,
 }) {
   const [name, setName] = useState(initialValues?.name || '');
   const [description, setDescription] = useState(initialValues?.description || '');
@@ -409,6 +410,9 @@ export default function CreateEvalForm({
 
     if (initialValues) {
       evalDef.saveAsDraft = true;
+      if (replaceDraftPath) {
+        evalDef.replaceDraftPath = replaceDraftPath;
+      }
     }
 
     setCreating(true);
@@ -516,7 +520,13 @@ export default function CreateEvalForm({
         <div className={styles.actions}>
           <button type="button" className={styles.cancelBtn} onClick={onClose}>Cancel</button>
           {onRefine && (
-            <button type="button" className={styles.refineBtn} onClick={onRefine}>Refine</button>
+            <button type="button" className={styles.refineBtn} onClick={() => {
+              const currentState = {
+                name, description, evidence, input: inputMap, checks,
+                judge_prompt: judgePrompt, expected, judge: judgeModel ? { model: judgeModel } : undefined,
+              };
+              onRefine(currentState);
+            }}>Refine</button>
           )}
           <button
             type="button"

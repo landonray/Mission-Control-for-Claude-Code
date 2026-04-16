@@ -545,7 +545,7 @@ export default function QualityTab({ sessionId }) {
   const handleEditDraft = (draft, folder) => {
     const { isDraft, draftPath, evidence_type, ...evalData } = draft;
     setCreateEvalTarget({ folder_path: folder.folder_path, folder_name: folder.folder_name || folder.folder_path });
-    setAiDraftData({ evalData, reasoning: null, originalDescription: '' });
+    setAiDraftData({ evalData, reasoning: null, originalDescription: '', draftPath });
     setCreateEvalMode('manual');
   };
 
@@ -653,7 +653,11 @@ export default function QualityTab({ sessionId }) {
             onCreate={handleCreateEval}
             initialValues={aiDraftData?.evalData || null}
             reasoning={aiDraftData?.reasoning || null}
-            onRefine={() => setCreateEvalMode('ai')}
+            replaceDraftPath={aiDraftData?.draftPath || null}
+            onRefine={(currentFormState) => {
+              setAiDraftData(prev => ({ ...prev, evalData: currentFormState }));
+              setCreateEvalMode('ai');
+            }}
             projectId={project.id}
           />
         </div>

@@ -86,9 +86,9 @@ export default function PreviewRunResult({ result, onClose }) {
             >
               {(result.judgeVerdict.result || '').toUpperCase()}
             </span>
-            {result.judgeVerdict.confidence != null && (
+            {result.judgeVerdict.confidence && (
               <span className={styles.judgeConfidence}>
-                {Math.round(result.judgeVerdict.confidence * 100)}% confidence
+                {result.judgeVerdict.confidence} confidence
               </span>
             )}
           </div>

@@ -186,7 +186,7 @@ router.post('/folders/:projectId/create', async (req, res) => {
 // POST /folders/:projectId/create-eval — create a new eval YAML file on disk
 router.post('/folders/:projectId/create-eval', async (req, res) => {
   try {
-    const { folder_path, name, description, evidence, input, checks, judge_prompt, expected, judge, saveAsDraft } = req.body;
+    const { folder_path, name, description, evidence, input, checks, judge_prompt, expected, judge, saveAsDraft, replaceDraftPath } = req.body;
 
     // Required field validation
     if (!folder_path || typeof folder_path !== 'string' || !folder_path.trim()) {
@@ -246,14 +246,30 @@ router.post('/folders/:projectId/create-eval', async (req, res) => {
       }
     }
 
+    // Validate replaceDraftPath if provided
+    if (replaceDraftPath) {
+      if (!isPathInsideProject(replaceDraftPath, project.root_path)) {
+        return res.status(400).json({ error: 'replaceDraftPath must be inside the project' });
+      }
+      if (!replaceDraftPath.endsWith('.draft')) {
+        return res.status(400).json({ error: 'replaceDraftPath must reference a draft file' });
+      }
+    }
+
     // Sanitize eval name for filename
     const sanitizedName = name.trim().replace(/[^a-zA-Z0-9]+/g, '_');
     const extension = saveAsDraft ? '.yaml.draft' : '.yaml';
     const filePath = path.join(folder_path, sanitizedName + extension);
 
-    // Check for existing file
-    if (fs.existsSync(filePath)) {
+    // Check for existing file (skip if we're replacing the same draft)
+    const replacingOwnPath = replaceDraftPath && path.resolve(replaceDraftPath) === path.resolve(filePath);
+    if (fs.existsSync(filePath) && !replacingOwnPath) {
       return res.status(409).json({ error: 'An eval file with that name already exists' });
+    }
+
+    // Delete old draft if replacing
+    if (replaceDraftPath && fs.existsSync(replaceDraftPath) && !replacingOwnPath) {
+      fs.unlinkSync(replaceDraftPath);
     }
 
     // Build YAML object
