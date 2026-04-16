@@ -1,0 +1,163 @@
+.container {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  background: var(--bg-secondary, #f8fafc);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.title {
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.closeBtn:hover {
+  color: var(--text-primary, #1e293b);
+}
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.state {
+  font-size: 13px;
+  font-weight: bold;
+}
+
+.pass {
+  color: var(--success, #22c55e);
+}
+
+.fail {
+  color: var(--error, #ef4444);
+}
+
+.error {
+  color: var(--warning, #f59e0b);
+}
+
+.passIcon {
+  color: var(--success, #22c55e);
+}
+
+.failIcon {
+  color: var(--error, #ef4444);
+}
+
+.errorIcon {
+  color: var(--warning, #f59e0b);
+}
+
+.duration {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.tokens {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+  margin-left: auto;
+}
+
+.section {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.pre {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary, #475569);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+.checkPass {
+  color: var(--success, #22c55e);
+  flex-shrink: 0;
+}
+
+.checkFail {
+  color: var(--error, #ef4444);
+  flex-shrink: 0;
+}
+
+.checkReason {
+  color: var(--text-muted, #94a3b8);
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.judgeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.judgeResult {
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.judgeConfidence {
+  font-size: 11px;
+  color: var(--text-muted, #94a3b8);
+}
+
+.judgeReasoning {
+  font-size: 12px;
+  color: var(--text-secondary, #475569);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.errorText {
+  font-size: 12px;
+  color: var(--error, #ef4444);
+}
