@@ -45,7 +45,7 @@ function Toggle({ on, onChange, small }) {
   );
 }
 
-function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, children }) {
+function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, bodyClassName, children }) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -56,7 +56,7 @@ function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, chi
         <span className={styles.sectionTitle}>{title}</span>
         {count != null && <span className={styles.sectionCount}>{count}</span>}
       </button>
-      {open && <div className={styles.sectionBody}>{children}</div>}
+      {open && <div className={bodyClassName || styles.sectionBody}>{children}</div>}
     </div>
   );
 }
@@ -561,7 +561,7 @@ export default function QualityTab({ sessionId }) {
         </button>
       </div>
 
-      <CollapsibleSection title="Quality Rules" icon={Shield} count={rules.length}>
+      <CollapsibleSection title="Quality Rules" icon={Shield} count={rules.length} bodyClassName={styles.rulesBody}>
         {rules.length === 0 ? (
           <div className={styles.emptySection}>No quality rules configured</div>
         ) : (

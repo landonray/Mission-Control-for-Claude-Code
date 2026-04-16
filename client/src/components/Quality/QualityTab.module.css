@@ -103,6 +103,12 @@
   border-top: 1px solid var(--border);
 }
 
+.rulesBody {
+  border-top: 1px solid var(--border);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 /* Toggle */
 .toggleBtn {
   width: 44px;
