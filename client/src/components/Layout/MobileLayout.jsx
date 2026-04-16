@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutGrid, MessageSquare, FolderOpen, Settings, Eye } from 'lucide-react';
+import { LayoutGrid, MessageSquare, FolderOpen, Settings, Eye, ShieldCheck } from 'lucide-react';
 import styles from './MobileLayout.module.css';
 
 const dashboardTabs = [
@@ -13,6 +13,7 @@ function getSessionTabs(sessionId) {
     { id: 'chat', path: `/session/${sessionId}`, icon: MessageSquare, label: 'Chat' },
     { id: 'files', path: `/session/${sessionId}/files`, icon: FolderOpen, label: 'Files' },
     { id: 'preview', path: `/session/${sessionId}/preview`, icon: Eye, label: 'Preview' },
+    { id: 'quality', path: `/session/${sessionId}/quality`, icon: ShieldCheck, label: 'Quality' },
   ];
 }
 

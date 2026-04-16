@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard/Dashboard';
 import SessionView from './components/Chat/SessionView';
 import MobileFileBrowser from './components/FileBrowser/MobileFileBrowser';
 import MobilePreview from './components/PreviewPanel/MobilePreview';
+import MobileQuality from './components/Quality/MobileQuality';
 import HistoryView from './components/History/HistoryView';
 import SettingsView from './components/Settings/SettingsView';
 import QualityHistory from './components/Quality/QualityHistory';
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/session/:id" element={<SessionView />} />
           <Route path="/session/:id/files" element={<MobileFileBrowser />} />
           <Route path="/session/:id/preview" element={<MobilePreview />} />
+          <Route path="/session/:id/quality" element={<MobileQuality />} />
           <Route path="/files" element={<MobileFileBrowser />} />
           <Route path="/history" element={<HistoryView />} />
           <Route path="/settings" element={<SettingsView />} />
