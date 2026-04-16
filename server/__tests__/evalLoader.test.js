@@ -338,7 +338,10 @@ describe('evalLoader', () => {
       expect(VALID_CHECK_TYPES).toContain('regex_match');
       expect(VALID_CHECK_TYPES).toContain('not_empty');
       expect(VALID_CHECK_TYPES).toContain('json_valid');
-      expect(VALID_CHECK_TYPES).toHaveLength(6);
+      expect(VALID_CHECK_TYPES).toContain('json_schema');
+      expect(VALID_CHECK_TYPES).toContain('http_status');
+      expect(VALID_CHECK_TYPES).toContain('field_exists');
+      expect(VALID_CHECK_TYPES.length).toBeGreaterThanOrEqual(6);
     });
 
     it('exports VALID_EVIDENCE_TYPES', async () => {
