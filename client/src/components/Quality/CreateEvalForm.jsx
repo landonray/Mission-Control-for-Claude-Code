@@ -49,12 +49,14 @@ const JUDGE_MODELS = [
   { value: 'strong', label: 'Strong (Opus)' },
 ];
 
+let tooltipCounter = 0;
 function Tooltip({ text }) {
   const [show, setShow] = useState(false);
+  const [id] = useState(() => `tooltip-${++tooltipCounter}`);
   return (
-    <span className={styles.tooltipWrap} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+    <span className={styles.tooltipWrap} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)} aria-describedby={show ? id : undefined}>
       <Info size={13} className={styles.tooltipIcon} />
-      {show && <span className={styles.tooltipPopover} role="tooltip">{text}</span>}
+      {show && <span id={id} className={styles.tooltipPopover} role="tooltip">{text}</span>}
     </span>
   );
 }
@@ -324,6 +326,15 @@ export default function CreateEvalForm({ folderPath, folderName, onClose, onCrea
     if (Object.keys(inputMap).length === 0) return setError('At least one input is required');
     if (checks.length === 0 && !judgePrompt.trim()) return setError('Add at least one check or a judge prompt');
     if (judgePrompt.trim() && !expected.trim()) return setError('Expected outcome is required when using a judge prompt');
+
+    for (const check of checks) {
+      if (['equals', 'contains', 'greater_than', 'less_than'].includes(check.type) && !check.value && check.value !== 0) {
+        return setError(`Value is required for ${check.type.replace(/_/g, ' ')} checks`);
+      }
+      if (check.type === 'numeric_score' && (check.min == null || check.min === '') && (check.max == null || check.max === '')) {
+        return setError('At least one of Min or Max is required for numeric score checks');
+      }
+    }
 
     const cleanInput = {};
     for (const [k, v] of Object.entries(inputMap)) {
