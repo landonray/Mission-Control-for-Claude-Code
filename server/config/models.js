@@ -1,6 +1,6 @@
 const MODEL_ROLES = {
   default: process.env.MODEL_DEFAULT || 'claude-opus-4-7',
-  fast:    process.env.MODEL_FAST    || 'claude-haiku-4-5-20251001',
+  fast:    process.env.MODEL_FAST    || 'claude-haiku-4-5',
   strong:  process.env.MODEL_STRONG  || 'claude-opus-4-7',
   quality: process.env.MODEL_QUALITY || 'claude-sonnet-4-6',
 };
