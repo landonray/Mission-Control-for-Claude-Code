@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { generateHooksConfig, removeHooksConfig, getHooksStatus } = require('../services/hooksGenerator');
-const { invalidateRulesCache, getRunningChecks, cancelCheck } = require('../services/qualityRunner');
+const { invalidateRulesCache, getRunningChecks, cancelCheck, runQualityCheck, runSpecComplianceCheck, broadcastRunning, saveAndBroadcast, findSpecFile, findSpecFromAttachments, getGitContext } = require('../services/qualityRunner');
 
 // ==========================================
 // RULES MANAGEMENT
@@ -363,6 +363,68 @@ router.post('/cancel/:sessionId/:ruleId', (req, res) => {
     res.json({ success: true, message: 'Quality check cancelled' });
   } else {
     res.status(404).json({ error: 'Check not found or already completed' });
+  }
+});
+
+// Run a single quality rule on demand
+router.post('/rules/:ruleId/run', async (req, res) => {
+  const { ruleId } = req.params;
+  const { sessionId } = req.body;
+
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required' });
+  }
+
+  // Look up the rule
+  const { rows: ruleRows } = await query('SELECT * FROM quality_rules WHERE id = $1', [ruleId]);
+  const rule = ruleRows[0];
+  if (!rule) return res.status(404).json({ error: 'Rule not found' });
+
+  // Look up session for working directory
+  const { rows: sessionRows } = await query('SELECT working_directory, has_spec FROM sessions WHERE id = $1', [sessionId]);
+  if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
+
+  const cwd = sessionRows[0].working_directory || null;
+  const hasSpecFlag = !!sessionRows[0].has_spec;
+
+  // Get broadcast function from the active session (if it's running)
+  const { getSession } = require('../services/sessionManager');
+  const session = getSession(sessionId);
+  const broadcast = session ? (event) => session.broadcast(event) : null;
+
+  // Respond immediately — the check runs in the background
+  res.json({ ok: true, message: 'Quality check started' });
+
+  // Gather context (same as onSessionStop)
+  let spec = findSpecFile(cwd);
+  if (!spec.found) {
+    spec = await findSpecFromAttachments(sessionId);
+  }
+
+  const gitContext = await getGitContext(cwd);
+
+  const { rows: messages } = await query(
+    'SELECT role, content FROM messages WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 20',
+    [sessionId]
+  );
+  const context = messages.reverse()
+    .map(m => `${m.role}: ${m.content?.slice(0, 1000) || ''}`)
+    .join('\n\n') + gitContext;
+
+  // Broadcast "running" state
+  const abortController = new AbortController();
+  broadcastRunning(sessionId, rule, broadcast, abortController);
+
+  // Execute the check
+  let result;
+  if (rule.id === 'spec-compliance' && spec.found) {
+    result = await runSpecComplianceCheck(rule, spec.content, spec.path, context, { cwd, signal: abortController.signal });
+  } else {
+    result = await runQualityCheck(rule, context, { cwd, signal: abortController.signal });
+  }
+
+  if (result) {
+    await saveAndBroadcast(sessionId, rule, result, broadcast);
   }
 });
 
