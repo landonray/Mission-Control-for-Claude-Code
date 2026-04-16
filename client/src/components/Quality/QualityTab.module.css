@@ -810,3 +810,37 @@
   line-height: 1.6;
   white-space: pre-wrap;
 }
+
+/* Create actions */
+.sectionActions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.newFolderBtn,
+.newEvalBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.newFolderBtn:hover,
+.newEvalBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.newEvalBtn {
+  margin: 4px 14px 8px 54px;
+}
