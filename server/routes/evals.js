@@ -115,6 +115,39 @@ router.get('/folders/:projectId', async (req, res) => {
   }
 });
 
+// POST /folders/:projectId/create — create a new eval folder on disk
+router.post('/folders/:projectId/create', async (req, res) => {
+  try {
+    const { folder_name } = req.body;
+    if (!folder_name || typeof folder_name !== 'string' || !folder_name.trim()) {
+      return res.status(400).json({ error: 'folder_name is required' });
+    }
+    const sanitized = folder_name.trim();
+    if (/[\/\\\.]+/.test(sanitized) || sanitized.includes('..')) {
+      return res.status(400).json({ error: 'Invalid folder name — no path separators or traversal allowed' });
+    }
+    const { getProject } = await getProjectDiscovery();
+    const { getEvalsBaseDir } = await getEvalLoader();
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const baseDir = getEvalsBaseDir(project.root_path, project.config);
+    const path = require('path');
+    const folderPath = path.join(baseDir, sanitized);
+    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
+    if (!folderPath.startsWith(projectRoot) && folderPath !== project.root_path) {
+      return res.status(400).json({ error: 'Folder path must be inside the project' });
+    }
+    const fs = require('fs');
+    if (fs.existsSync(folderPath)) {
+      return res.status(409).json({ error: 'Folder already exists' });
+    }
+    fs.mkdirSync(folderPath, { recursive: true });
+    res.status(201).json({ folder_path: folderPath, folder_name: sanitized });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /folders/:projectId/arm — arm a folder
 router.post('/folders/:projectId/arm', async (req, res) => {
   try {
