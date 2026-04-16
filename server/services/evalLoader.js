@@ -101,6 +101,24 @@ export function discoverEvalFolders(projectRoot, config) {
 }
 
 /**
+ * Resolve the base directory where new eval folders should be created.
+ * If config specifies eval folders, we use the parent of the first configured folder
+ * (so new folders are siblings of existing ones). Otherwise, default to evals/ at
+ * the project root.
+ *
+ * @param {string} projectRoot - Absolute path to project root
+ * @param {object} [config] - Optional project config with evals.folders array
+ * @returns {string} Absolute path to the evals base directory
+ */
+export function getEvalsBaseDir(projectRoot, config) {
+  if (config && config.evals && Array.isArray(config.evals.folders) && config.evals.folders.length > 0) {
+    const firstFolder = path.resolve(projectRoot, config.evals.folders[0]);
+    return path.dirname(firstFolder);
+  }
+  return path.join(projectRoot, 'evals');
+}
+
+/**
  * Validate an eval definition object.
  */
 function validate(evalDef, filePath) {

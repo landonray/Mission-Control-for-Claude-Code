@@ -12,8 +12,11 @@ import {
   XCircle,
   AlertTriangle,
   FileText,
+  Plus,
 } from 'lucide-react';
 import styles from './QualityTab.module.css';
+import CreateFolderModal from './CreateFolderModal';
+import CreateEvalForm from './CreateEvalForm';
 
 const severityColors = {
   high: 'var(--error)',
@@ -279,6 +282,8 @@ export default function QualityTab({ sessionId }) {
   // Drill-down state for single run detail (item 16)
   const [selectedRun, setSelectedRun] = useState(null); // full run object
   const [selectedRunLoading, setSelectedRunLoading] = useState(false);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [createEvalTarget, setCreateEvalTarget] = useState(null);
 
   const loadProject = useCallback(async () => {
     if (!sessionId) return;
@@ -455,6 +460,18 @@ export default function QualityTab({ sessionId }) {
     setSelectedRun(null);
   };
 
+  const handleCreateFolder = async (folderName) => {
+    const result = await api.post(`/api/evals/folders/${project.id}/create`, { folder_name: folderName });
+    if (result.error) throw new Error(result.error);
+    loadFolders();
+  };
+
+  const handleCreateEval = async (evalDef) => {
+    const result = await api.post(`/api/evals/folders/${project.id}/create-eval`, evalDef);
+    if (result.error) throw new Error(result.error);
+    loadFolders();
+  };
+
   const toggleFolderExpand = (path) => {
     setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   };
@@ -499,6 +516,19 @@ export default function QualityTab({ sessionId }) {
             onBack={handleBackFromRun}
           />
         )}
+      </div>
+    );
+  }
+
+  if (createEvalTarget) {
+    return (
+      <div className={styles.container}>
+        <CreateEvalForm
+          folderPath={createEvalTarget.folder_path}
+          folderName={createEvalTarget.folder_name}
+          onClose={() => setCreateEvalTarget(null)}
+          onCreate={handleCreateEval}
+        />
       </div>
     );
   }
@@ -562,6 +592,11 @@ export default function QualityTab({ sessionId }) {
       </CollapsibleSection>
 
       <CollapsibleSection title="Eval Folders" icon={FolderOpen} count={folders.length} defaultOpen>
+        <div className={styles.sectionActions}>
+          <button className={styles.newFolderBtn} onClick={() => setShowCreateFolder(true)}>
+            <Plus size={12} /> New Folder
+          </button>
+        </div>
         {folders.length === 0 ? (
           <div className={styles.emptySection}>No eval folders discovered</div>
         ) : (
@@ -626,6 +661,12 @@ export default function QualityTab({ sessionId }) {
                       <ChevronRight size={12} className={styles.evalRunArrow} />
                     </button>
                   ))}
+                  <button
+                    className={styles.newEvalBtn}
+                    onClick={() => setCreateEvalTarget({ folder_path: folder.folder_path, folder_name: folder.folder_name || folder.folder_path })}
+                  >
+                    <Plus size={12} /> New Eval
+                  </button>
                 </div>
               )}
             </div>
@@ -679,6 +720,12 @@ export default function QualityTab({ sessionId }) {
           ))
         )}
       </CollapsibleSection>
+      {showCreateFolder && (
+        <CreateFolderModal
+          onClose={() => setShowCreateFolder(false)}
+          onCreate={handleCreateFolder}
+        />
+      )}
     </div>
   );
 }

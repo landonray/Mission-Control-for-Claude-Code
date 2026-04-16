@@ -115,6 +115,139 @@ router.get('/folders/:projectId', async (req, res) => {
   }
 });
 
+// POST /folders/:projectId/create — create a new eval folder on disk
+router.post('/folders/:projectId/create', async (req, res) => {
+  try {
+    const { folder_name } = req.body;
+    if (!folder_name || typeof folder_name !== 'string' || !folder_name.trim()) {
+      return res.status(400).json({ error: 'folder_name is required' });
+    }
+    const sanitized = folder_name.trim();
+    if (/[\/\\\.]+/.test(sanitized) || sanitized.includes('..')) {
+      return res.status(400).json({ error: 'Invalid folder name — no path separators or traversal allowed' });
+    }
+    const { getProject } = await getProjectDiscovery();
+    const { getEvalsBaseDir } = await getEvalLoader();
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    const baseDir = getEvalsBaseDir(project.root_path, project.config);
+    const path = require('path');
+    const folderPath = path.join(baseDir, sanitized);
+    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
+    if (!folderPath.startsWith(projectRoot) && folderPath !== project.root_path) {
+      return res.status(400).json({ error: 'Folder path must be inside the project' });
+    }
+    const fs = require('fs');
+    if (fs.existsSync(folderPath)) {
+      return res.status(409).json({ error: 'Folder already exists' });
+    }
+    fs.mkdirSync(folderPath, { recursive: true });
+    res.status(201).json({ folder_path: folderPath, folder_name: sanitized });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /folders/:projectId/create-eval — create a new eval YAML file on disk
+router.post('/folders/:projectId/create-eval', async (req, res) => {
+  try {
+    const { folder_path, name, description, evidence, input, checks, judge_prompt, expected, judge } = req.body;
+
+    // Required field validation
+    if (!folder_path || typeof folder_path !== 'string' || !folder_path.trim()) {
+      return res.status(400).json({ error: 'folder_path is required' });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ error: 'description is required' });
+    }
+    if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
+      return res.status(400).json({ error: 'evidence is required and must be an object' });
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return res.status(400).json({ error: 'input is required and must be a key-value map' });
+    }
+    if (!checks && !judge_prompt) {
+      return res.status(400).json({ error: 'At least one of "checks" or "judge_prompt" is required' });
+    }
+    if (judge_prompt && !expected) {
+      return res.status(400).json({ error: '"expected" is required when "judge_prompt" is provided' });
+    }
+
+    const { getProject } = await getProjectDiscovery();
+    const { VALID_EVIDENCE_TYPES, VALID_CHECK_TYPES, loadEval } = await getEvalLoader();
+
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Path safety check — folder_path must be inside project root
+    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
+    if (!folder_path.startsWith(projectRoot) && folder_path !== project.root_path) {
+      return res.status(400).json({ error: 'folder_path must be inside the project' });
+    }
+
+    // Verify folder exists
+    const fs = require('fs');
+    if (!fs.existsSync(folder_path)) {
+      return res.status(400).json({ error: 'Folder does not exist' });
+    }
+
+    // Validate evidence type
+    if (!evidence.type || !VALID_EVIDENCE_TYPES.includes(evidence.type)) {
+      return res.status(400).json({
+        error: `Invalid evidence type "${evidence.type}" — must be one of ${VALID_EVIDENCE_TYPES.join(', ')}`,
+      });
+    }
+
+    // Validate check types
+    if (checks && Array.isArray(checks)) {
+      for (const check of checks) {
+        if (check.type && !VALID_CHECK_TYPES.includes(check.type)) {
+          return res.status(400).json({
+            error: `Invalid check type "${check.type}" — must be one of ${VALID_CHECK_TYPES.join(', ')}`,
+          });
+        }
+      }
+    }
+
+    // Sanitize eval name for filename
+    const path = require('path');
+    const sanitizedName = name.trim().replace(/[^a-zA-Z0-9]+/g, '_');
+    const filePath = path.join(folder_path, sanitizedName + '.yaml');
+
+    // Check for existing file
+    if (fs.existsSync(filePath)) {
+      return res.status(409).json({ error: 'An eval file with that name already exists' });
+    }
+
+    // Build YAML object
+    const evalDef = { name: name.trim(), description: description.trim(), evidence, input };
+    if (checks) evalDef.checks = checks;
+    if (judge_prompt) evalDef.judge_prompt = judge_prompt;
+    if (expected) evalDef.expected = expected;
+    if (judge) evalDef.judge = judge;
+
+    // Write YAML file
+    const jsYaml = require('js-yaml');
+    const yamlContent = jsYaml.dump(evalDef, { lineWidth: 120 });
+    fs.writeFileSync(filePath, yamlContent, 'utf8');
+
+    // Validate by loading back through loadEval — if invalid, delete and return 400
+    try {
+      loadEval(filePath);
+    } catch (validationErr) {
+      try { fs.unlinkSync(filePath); } catch (_) {}
+      return res.status(400).json({ error: `Eval validation failed: ${validationErr.message}` });
+    }
+
+    res.status(201).json({ file_path: filePath, eval_name: sanitizedName });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /folders/:projectId/arm — arm a folder
 router.post('/folders/:projectId/arm', async (req, res) => {
   try {

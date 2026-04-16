@@ -26,6 +26,7 @@ vi.mock('lucide-react', () => ({
   XCircle: (props) => React.createElement('span', { 'data-testid': 'icon-x', ...props }),
   AlertTriangle: (props) => React.createElement('span', { 'data-testid': 'icon-alert', ...props }),
   FileText: (props) => React.createElement('span', { 'data-testid': 'icon-file', ...props }),
+  Plus: (props) => React.createElement('span', { 'data-testid': 'icon-plus', ...props }),
 }));
 
 // Mock CSS modules
