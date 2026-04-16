@@ -301,3 +301,60 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+.sectionHint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -6px 0 8px 0;
+  line-height: 1.4;
+}
+
+.labelWithTooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tooltipWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
+.tooltipIcon {
+  color: var(--text-muted);
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.tooltipWrap:hover .tooltipIcon {
+  opacity: 1;
+}
+
+.tooltipPopover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  white-space: normal;
+  width: 240px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.checkHelpText {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -4px 0 8px 0;
+  line-height: 1.4;
+  font-style: italic;
+}

@@ -9,6 +9,7 @@ vi.mock('lucide-react', () => ({
   ChevronLeft: (props) => React.createElement('span', { 'data-testid': 'icon-chevron-left', ...props }),
   Plus: (props) => React.createElement('span', { 'data-testid': 'icon-plus', ...props }),
   Trash2: (props) => React.createElement('span', { 'data-testid': 'icon-trash', ...props }),
+  Info: (props) => React.createElement('span', { 'data-testid': 'icon-info', ...props }),
 }));
 
 // Mock CSS modules
@@ -105,5 +106,121 @@ describe('CreateEvalForm', () => {
     fireEvent.click(screen.getByText(/back to folders/i));
 
     expect(defaultProps.onClose).toHaveBeenCalled();
+  });
+
+  it('shows tooltip text when hovering an info icon', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    // Evidence section should have a tooltip on Max Bytes
+    const infoIcons = screen.getAllByTestId('icon-info');
+    expect(infoIcons.length).toBeGreaterThan(0);
+
+    // Hover the first info icon
+    fireEvent.mouseEnter(infoIcons[0].closest('span[class]') || infoIcons[0].parentElement);
+
+    await waitFor(() => {
+      // Check that some tooltip text becomes visible
+      const tooltipTexts = document.querySelectorAll('[role="tooltip"]');
+      expect(tooltipTexts.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows inline hint text under section titles', () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    expect(screen.getByText(/how the eval gathers data to check/i)).toBeInTheDocument();
+    expect(screen.getByText(/variables passed to your eval at runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/deterministic pass\/fail rules/i)).toBeInTheDocument();
+    expect(screen.getByText(/an llm reviews the evidence/i)).toBeInTheDocument();
+  });
+
+  it('shows all 11 check types in the dropdown', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add check/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/select check type/i)).toBeInTheDocument();
+    });
+
+    const checkSelect = screen.getAllByRole('combobox').find(
+      el => Array.from(el.options).some(opt => opt.text === 'Not Empty')
+    );
+    expect(checkSelect).toBeTruthy();
+
+    const optionLabels = Array.from(checkSelect.options).map(o => o.text).filter(t => t !== 'Select check type...');
+    expect(optionLabels).toEqual([
+      'Not Empty', 'Regex Match', 'JSON Valid', 'JSON Schema', 'HTTP Status', 'Field Exists',
+      'Equals', 'Contains', 'Greater Than', 'Less Than', 'Numeric Score',
+    ]);
+  });
+
+  it('shows Value and Field Path fields when Equals check is selected', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add check/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/select check type/i)).toBeInTheDocument();
+    });
+
+    const checkSelect = screen.getAllByRole('combobox').find(
+      el => Array.from(el.options).some(opt => opt.text === 'Not Empty')
+    );
+    fireEvent.change(checkSelect, { target: { value: 'equals' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Value *')).toBeInTheDocument();
+    });
+  });
+
+  it('shows Min, Max, and Field Path fields when Numeric Score check is selected', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add check/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/select check type/i)).toBeInTheDocument();
+    });
+
+    const checkSelect = screen.getAllByRole('combobox').find(
+      el => Array.from(el.options).some(opt => opt.text === 'Not Empty')
+    );
+    fireEvent.change(checkSelect, { target: { value: 'numeric_score' } });
+
+    await waitFor(() => {
+      expect(screen.getByText('Min')).toBeInTheDocument();
+      expect(screen.getByText('Max')).toBeInTheDocument();
+    });
+  });
+
+  it('shows help text when a check type is selected', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add check/i }));
+
+    const checkSelect = screen.getAllByRole('combobox').find(
+      el => Array.from(el.options).some(opt => opt.text === 'Not Empty')
+    );
+    fireEvent.change(checkSelect, { target: { value: 'not_empty' } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/passes if the evidence contains any non-whitespace content/i)).toBeInTheDocument();
+    });
+  });
+
+  it('shows grouped help text for comparison check types', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /add check/i }));
+
+    const checkSelect = screen.getAllByRole('combobox').find(
+      el => Array.from(el.options).some(opt => opt.text === 'Not Empty')
+    );
+    fireEvent.change(checkSelect, { target: { value: 'equals' } });
+
+    await waitFor(() => {
+      expect(screen.getByText(/compares the evidence/i)).toBeInTheDocument();
+    });
   });
 });
