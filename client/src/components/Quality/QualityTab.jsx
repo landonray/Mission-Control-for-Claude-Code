@@ -45,7 +45,7 @@ function Toggle({ on, onChange, small }) {
   );
 }
 
-function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, children }) {
+function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, bodyClassName, children }) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
@@ -56,7 +56,7 @@ function CollapsibleSection({ title, icon: Icon, defaultOpen = false, count, chi
         <span className={styles.sectionTitle}>{title}</span>
         {count != null && <span className={styles.sectionCount}>{count}</span>}
       </button>
-      {open && <div className={styles.sectionBody}>{children}</div>}
+      {open && <div className={bodyClassName || styles.sectionBody}>{children}</div>}
     </div>
   );
 }
@@ -274,6 +274,7 @@ export default function QualityTab({ sessionId }) {
   const [expandedBatches, setExpandedBatches] = useState({});
   const [batchRuns, setBatchRuns] = useState({});
   const [running, setRunning] = useState(false);
+  const [runningRules, setRunningRules] = useState({});
   const [loading, setLoading] = useState(true);
   // Drill-down state for eval run history (item 15)
   const [selectedEval, setSelectedEval] = useState(null); // { name, projectId }
@@ -340,6 +341,36 @@ export default function QualityTab({ sessionId }) {
   useEffect(() => { loadProject(); }, [loadProject]);
   useEffect(() => { if (project) { loadRules(); loadFolders(); loadHistory(); } }, [project, loadRules, loadFolders, loadHistory]);
 
+  useEffect(() => {
+    if (!sessionId) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'subscribe_session', sessionId }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'quality_result' && data.ruleId) {
+          setRunningRules(prev => {
+            if (prev[data.ruleId]) {
+              const next = { ...prev };
+              delete next[data.ruleId];
+              return next;
+            }
+            return prev;
+          });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    return () => ws.close();
+  }, [sessionId]);
+
   const handleArm = async (folder) => {
     try {
       if (folder.armed) {
@@ -404,6 +435,21 @@ export default function QualityTab({ sessionId }) {
       loadRules();
     } catch (err) {
       console.error('[QualityTab] Failed to reset rule override:', err);
+    }
+  };
+
+  const handleRunRule = async (rule) => {
+    if (!sessionId || runningRules[rule.id]) return;
+    setRunningRules(prev => ({ ...prev, [rule.id]: true }));
+    try {
+      await api.post(`/api/quality/rules/${rule.id}/run`, { sessionId });
+    } catch (err) {
+      console.error('[QualityTab] Failed to run rule:', err);
+      setRunningRules(prev => {
+        const next = { ...prev };
+        delete next[rule.id];
+        return next;
+      });
     }
   };
 
@@ -561,7 +607,7 @@ export default function QualityTab({ sessionId }) {
         </button>
       </div>
 
-      <CollapsibleSection title="Quality Rules" icon={Shield} count={rules.length}>
+      <CollapsibleSection title="Quality Rules" icon={Shield} count={rules.length} bodyClassName={styles.rulesBody}>
         {rules.length === 0 ? (
           <div className={styles.emptySection}>No quality rules configured</div>
         ) : (
@@ -584,6 +630,14 @@ export default function QualityTab({ sessionId }) {
                     &times;
                   </button>
                 )}
+                <button
+                  className={`${styles.rulePlayBtn} ${runningRules[rule.id] ? styles.rulePlayRunning : ''}`}
+                  onClick={() => handleRunRule(rule)}
+                  disabled={!sessionId || runningRules[rule.id]}
+                  title={runningRules[rule.id] ? 'Running...' : 'Run this rule now'}
+                >
+                  {runningRules[rule.id] ? <Clock size={12} className={styles.spinning} /> : <Play size={12} />}
+                </button>
               </div>
               {rule.description && <div className={styles.ruleDescription}>{rule.description}</div>}
             </div>

@@ -612,4 +612,4 @@ function cancelCheck(sessionId, ruleId, broadcast) {
   return true;
 }
 
-module.exports = { onToolUse, onSessionStop, invalidateRulesCache, getRunningChecks, cancelCheck };
+module.exports = { onToolUse, onSessionStop, invalidateRulesCache, getRunningChecks, cancelCheck, runQualityCheck, runSpecComplianceCheck, broadcastRunning, saveAndBroadcast, findSpecFile, findSpecFromAttachments, getGitContext };

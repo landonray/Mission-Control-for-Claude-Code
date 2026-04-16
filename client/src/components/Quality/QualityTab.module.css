@@ -103,6 +103,12 @@
   border-top: 1px solid var(--border);
 }
 
+.rulesBody {
+  border-top: 1px solid var(--border);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
 /* Toggle */
 .toggleBtn {
   width: 44px;
@@ -253,6 +259,44 @@
 .resetBtn:hover {
   opacity: 1;
   color: var(--error);
+}
+
+.rulePlayBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.rulePlayBtn:hover:not(:disabled) {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.rulePlayBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rulePlayRunning {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
 }
 
 /* Eval Folders */
