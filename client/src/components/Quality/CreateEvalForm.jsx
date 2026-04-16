@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Info } from 'lucide-react';
 import styles from './CreateEvalForm.module.css';
 
 const EVIDENCE_TYPES = [
@@ -29,6 +29,16 @@ const JUDGE_MODELS = [
   { value: 'fast', label: 'Fast (Haiku)' },
   { value: 'strong', label: 'Strong (Opus)' },
 ];
+
+function Tooltip({ text }) {
+  const [show, setShow] = useState(false);
+  return (
+    <span className={styles.tooltipWrap} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <Info size={13} className={styles.tooltipIcon} />
+      {show && <span className={styles.tooltipPopover} role="tooltip">{text}</span>}
+    </span>
+  );
+}
 
 function EvidenceFields({ evidence, onChange }) {
   const update = (field, value) => onChange({ ...evidence, [field]: value });
@@ -102,11 +112,15 @@ function EvidenceFields({ evidence, onChange }) {
 
       <div className={styles.fieldRow}>
         <div className={styles.fieldSmall}>
-          <label className={styles.label}>Max Bytes</label>
+          <label className={styles.label}>
+            <span className={styles.labelWithTooltip}>Max Bytes <Tooltip text="The maximum amount of data to read. 50,000 (default) is good for most cases. Increase for large files or logs, decrease if you only need a small snippet." /></span>
+          </label>
           <input className={styles.input} type="number" value={evidence.max_bytes || ''} onChange={(e) => update('max_bytes', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="50000" />
         </div>
         <div className={styles.fieldSmall}>
-          <label className={styles.label}>Timeout (ms)</label>
+          <label className={styles.label}>
+            <span className={styles.labelWithTooltip}>Timeout (ms) <Tooltip text="How long to wait before giving up, in milliseconds. 30,000 (30 seconds) is the default. Increase for slow database queries or large file reads." /></span>
+          </label>
           <input className={styles.input} type="number" value={evidence.timeout || ''} onChange={(e) => update('timeout', e.target.value ? parseInt(e.target.value) : undefined)} placeholder="30000" />
         </div>
       </div>

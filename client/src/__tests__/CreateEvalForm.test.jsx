@@ -9,6 +9,7 @@ vi.mock('lucide-react', () => ({
   ChevronLeft: (props) => React.createElement('span', { 'data-testid': 'icon-chevron-left', ...props }),
   Plus: (props) => React.createElement('span', { 'data-testid': 'icon-plus', ...props }),
   Trash2: (props) => React.createElement('span', { 'data-testid': 'icon-trash', ...props }),
+  Info: (props) => React.createElement('span', { 'data-testid': 'icon-info', ...props }),
 }));
 
 // Mock CSS modules
@@ -105,5 +106,22 @@ describe('CreateEvalForm', () => {
     fireEvent.click(screen.getByText(/back to folders/i));
 
     expect(defaultProps.onClose).toHaveBeenCalled();
+  });
+
+  it('shows tooltip text when hovering an info icon', async () => {
+    render(<CreateEvalForm {...defaultProps} />);
+
+    // Evidence section should have a tooltip on Max Bytes
+    const infoIcons = screen.getAllByTestId('icon-info');
+    expect(infoIcons.length).toBeGreaterThan(0);
+
+    // Hover the first info icon
+    fireEvent.mouseEnter(infoIcons[0].closest('span[class]') || infoIcons[0].parentElement);
+
+    await waitFor(() => {
+      // Check that some tooltip text becomes visible
+      const tooltipTexts = document.querySelectorAll('[role="tooltip"]');
+      expect(tooltipTexts.length).toBeGreaterThan(0);
+    });
   });
 });
