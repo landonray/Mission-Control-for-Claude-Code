@@ -17,6 +17,8 @@ import {
 import styles from './QualityTab.module.css';
 import CreateFolderModal from './CreateFolderModal';
 import CreateEvalForm from './CreateEvalForm';
+import EvalChoiceScreen from './EvalChoiceScreen';
+import AIEvalDrawer from './AIEvalDrawer';
 
 const severityColors = {
   high: 'var(--error)',
@@ -285,6 +287,8 @@ export default function QualityTab({ sessionId }) {
   const [selectedRunLoading, setSelectedRunLoading] = useState(false);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [createEvalTarget, setCreateEvalTarget] = useState(null);
+  const [createEvalMode, setCreateEvalMode] = useState(null); // null | 'choice' | 'ai' | 'manual'
+  const [aiDraftData, setAiDraftData] = useState(null); // { evalData, reasoning, originalDescription }
 
   const loadProject = useCallback(async () => {
     if (!sessionId) return;
@@ -518,6 +522,24 @@ export default function QualityTab({ sessionId }) {
     loadFolders();
   };
 
+  const handlePublishDraft = async (draft) => {
+    try {
+      await api.post(`/api/evals/folders/${project.id}/publish`, { draftPath: draft.draftPath });
+      loadFolders();
+    } catch (err) {
+      console.error('[QualityTab] Failed to publish draft:', err);
+    }
+  };
+
+  const handleDeleteDraft = async (draft) => {
+    try {
+      await api.delete(`/api/evals/folders/${project.id}/draft`, { draftPath: draft.draftPath });
+      loadFolders();
+    } catch (err) {
+      console.error('[QualityTab] Failed to delete draft:', err);
+    }
+  };
+
   const toggleFolderExpand = (path) => {
     setExpandedFolders(prev => ({ ...prev, [path]: !prev[path] }));
   };
@@ -567,13 +589,54 @@ export default function QualityTab({ sessionId }) {
   }
 
   if (createEvalTarget) {
+    // AI drawer mode
+    if (createEvalMode === 'ai') {
+      return (
+        <div className={styles.container}>
+          <AIEvalDrawer
+            folderPath={createEvalTarget.folder_path}
+            folderName={createEvalTarget.folder_name}
+            projectId={project.id}
+            onComplete={(evalData, reasoning) => {
+              setAiDraftData({ evalData, reasoning, originalDescription: '' });
+              setCreateEvalMode('manual');
+            }}
+            onCancel={() => setCreateEvalMode('choice')}
+            onBuildManually={() => setCreateEvalMode('manual')}
+            originalDescription={aiDraftData?.originalDescription}
+            refinementMode={!!aiDraftData}
+            currentFormState={aiDraftData?.evalData}
+          />
+        </div>
+      );
+    }
+
+    // Manual form mode (with optional AI-populated data)
+    if (createEvalMode === 'manual') {
+      return (
+        <div className={styles.container}>
+          <CreateEvalForm
+            folderPath={createEvalTarget.folder_path}
+            folderName={createEvalTarget.folder_name}
+            onClose={() => { setCreateEvalTarget(null); setCreateEvalMode(null); setAiDraftData(null); }}
+            onCreate={handleCreateEval}
+            initialValues={aiDraftData?.evalData || null}
+            reasoning={aiDraftData?.reasoning || null}
+            onRefine={() => setCreateEvalMode('ai')}
+            projectId={project.id}
+          />
+        </div>
+      );
+    }
+
+    // Default: choice screen
     return (
       <div className={styles.container}>
-        <CreateEvalForm
-          folderPath={createEvalTarget.folder_path}
+        <EvalChoiceScreen
           folderName={createEvalTarget.folder_name}
-          onClose={() => setCreateEvalTarget(null)}
-          onCreate={handleCreateEval}
+          onChooseAI={() => setCreateEvalMode('ai')}
+          onChooseManual={() => setCreateEvalMode('manual')}
+          onClose={() => { setCreateEvalTarget(null); setCreateEvalMode(null); }}
         />
       </div>
     );
@@ -698,9 +761,9 @@ export default function QualityTab({ sessionId }) {
                   </div>
                 )}
               </div>
-              {expandedFolders[folder.folder_path] && folder.evals && (
+              {expandedFolders[folder.folder_path] && (
                 <div className={styles.evalList}>
-                  {folder.evals.map((ev, j) => (
+                  {(folder.evals || []).map((ev, j) => (
                     <button
                       key={ev.id || j}
                       className={styles.evalItem}
@@ -715,9 +778,40 @@ export default function QualityTab({ sessionId }) {
                       <ChevronRight size={12} className={styles.evalRunArrow} />
                     </button>
                   ))}
+                  {/* Draft evals */}
+                  {folder.drafts && folder.drafts.map((draft, j) => (
+                    <div key={`draft-${j}`} className={`${styles.evalItem} ${styles.draftItem}`}>
+                      <FileText size={12} />
+                      <div className={styles.evalInfo}>
+                        <span className={styles.evalName}>
+                          {draft.name}
+                          <span className={styles.draftBadge}>Draft</span>
+                        </span>
+                        {draft.evidence_type && <span className={styles.evalMeta}>{draft.evidence_type}</span>}
+                        {draft.description && <span className={styles.evalDescription}>{draft.description}</span>}
+                      </div>
+                      <div className={styles.draftActions}>
+                        <button
+                          className={styles.publishBtn}
+                          onClick={(e) => { e.stopPropagation(); handlePublishDraft(draft); }}
+                        >
+                          Publish
+                        </button>
+                        <button
+                          className={styles.deleteDraftBtn}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteDraft(draft); }}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                   <button
                     className={styles.newEvalBtn}
-                    onClick={() => setCreateEvalTarget({ folder_path: folder.folder_path, folder_name: folder.folder_name || folder.folder_path })}
+                    onClick={() => {
+                      setCreateEvalTarget({ folder_path: folder.folder_path, folder_name: folder.folder_name || folder.folder_path });
+                      setCreateEvalMode('choice');
+                    }}
                   >
                     <Plus size={12} /> New Eval
                   </button>

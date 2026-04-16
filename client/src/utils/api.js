@@ -25,7 +25,7 @@ export const api = {
   get: (url) => request('GET', url),
   post: (url, body) => request('POST', url, body),
   put: (url, body) => request('PUT', url, body),
-  delete: (url) => request('DELETE', url),
+  delete: (url, body) => request('DELETE', url, body),
   uploadFiles: async (files) => {
     const formData = new FormData();
     for (const file of files) {
