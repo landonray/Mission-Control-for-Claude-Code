@@ -34,6 +34,12 @@ async function getPrWatcher() {
   return _prWatcher;
 }
 
+let _evalAuthoring;
+async function getEvalAuthoring() {
+  if (!_evalAuthoring) _evalAuthoring = await import('../services/evalAuthoring.js');
+  return _evalAuthoring;
+}
+
 // Track running batches per project to prevent duplicates
 const runningBatches = new Map();
 
@@ -93,6 +99,22 @@ router.get('/folders/:projectId', async (req, res) => {
         console.warn(`[Evals] Failed to load evals from ${fp}:`, err.message);
       }
 
+      // Load draft evals from disk
+      let drafts = [];
+      try {
+        const { loadDraftsFromFolder } = await getEvalLoader();
+        const loadedDrafts = loadDraftsFromFolder(fp);
+        drafts = loadedDrafts.map(ev => ({
+          name: ev.name,
+          description: ev.description || null,
+          evidence_type: ev.evidence?.type || null,
+          isDraft: true,
+          draftPath: ev._source,
+        }));
+      } catch (err) {
+        console.warn(`[Evals] Failed to load drafts from ${fp}:`, err.message);
+      }
+
       // Attach last-run status dots: one per eval in this folder
       const lastRuns = lastRunMap.get(fp) || [];
 
@@ -105,6 +127,7 @@ router.get('/folders/:projectId', async (req, res) => {
         id: armedRow ? armedRow.id : null,
         eval_count: evals.length,
         evals,
+        drafts,
         last_run_status: lastRuns,
       };
     });
@@ -151,7 +174,7 @@ router.post('/folders/:projectId/create', async (req, res) => {
 // POST /folders/:projectId/create-eval — create a new eval YAML file on disk
 router.post('/folders/:projectId/create-eval', async (req, res) => {
   try {
-    const { folder_path, name, description, evidence, input, checks, judge_prompt, expected, judge } = req.body;
+    const { folder_path, name, description, evidence, input, checks, judge_prompt, expected, judge, saveAsDraft } = req.body;
 
     // Required field validation
     if (!folder_path || typeof folder_path !== 'string' || !folder_path.trim()) {
@@ -215,7 +238,8 @@ router.post('/folders/:projectId/create-eval', async (req, res) => {
     // Sanitize eval name for filename
     const path = require('path');
     const sanitizedName = name.trim().replace(/[^a-zA-Z0-9]+/g, '_');
-    const filePath = path.join(folder_path, sanitizedName + '.yaml');
+    const extension = saveAsDraft ? '.yaml.draft' : '.yaml';
+    const filePath = path.join(folder_path, sanitizedName + extension);
 
     // Check for existing file
     if (fs.existsSync(filePath)) {
@@ -243,6 +267,243 @@ router.post('/folders/:projectId/create-eval', async (req, res) => {
     }
 
     res.status(201).json({ file_path: filePath, eval_name: sanitizedName });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /folders/:projectId/author — AI-authored eval (async, progress via WebSocket)
+router.post('/folders/:projectId/author', async (req, res) => {
+  try {
+    const { description, folderPath, refinement, currentFormState, hints } = req.body;
+
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ error: 'description is required' });
+    }
+    if (!folderPath || typeof folderPath !== 'string' || !folderPath.trim()) {
+      return res.status(400).json({ error: 'folderPath is required' });
+    }
+
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Path safety check
+    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
+    if (!folderPath.startsWith(projectRoot) && folderPath !== project.root_path) {
+      return res.status(400).json({ error: 'folderPath must be inside the project' });
+    }
+
+    const jobId = uuidv4();
+    // Respond immediately — authoring runs in background
+    res.json({ success: true, jobId });
+
+    // Run authoring in background
+    (async () => {
+      const { broadcastToAll } = require('../websocket');
+      const timers = [];
+
+      try {
+        // Send started event immediately
+        broadcastToAll({ type: 'eval_authoring_started', jobId });
+
+        // Schedule progress messages at predetermined intervals
+        const progressMessages = [
+          { delay: 8000, message: 'Investigating the codebase…' },
+          { delay: 16000, message: 'Drafting the eval definition…' },
+          { delay: 30000, message: 'Finalizing and validating…' },
+        ];
+        for (const { delay, message } of progressMessages) {
+          timers.push(setTimeout(() => {
+            broadcastToAll({ type: 'eval_authoring_progress', jobId, message });
+          }, delay));
+        }
+
+        const { runAuthoring } = await getEvalAuthoring();
+        const result = await runAuthoring({
+          description,
+          folderPath,
+          projectRoot: project.root_path,
+          missionControlConfig: project.config || null,
+          refinement: refinement || null,
+          currentFormState: currentFormState || null,
+          hints: hints || null,
+        });
+
+        // Clear progress timers
+        for (const t of timers) clearTimeout(t);
+
+        if (result.error) {
+          broadcastToAll({ type: 'eval_authoring_error', jobId, error: result.error });
+        } else {
+          broadcastToAll({
+            type: 'eval_authoring_complete',
+            jobId,
+            eval: result.eval,
+            reasoning: result.reasoning,
+          });
+        }
+      } catch (err) {
+        for (const t of timers) clearTimeout(t);
+        broadcastToAll({ type: 'eval_authoring_error', jobId, error: err.message });
+      }
+    })();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /folders/:projectId/preview — synchronously run a single eval definition, return result
+router.post('/folders/:projectId/preview', async (req, res) => {
+  try {
+    const { evalDefinition } = req.body;
+
+    if (!evalDefinition || typeof evalDefinition !== 'object' || Array.isArray(evalDefinition)) {
+      return res.status(400).json({ error: 'evalDefinition is required and must be an object' });
+    }
+
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const { runSingleEval } = await getEvalRunner();
+
+    // Get current commit SHA
+    let commitSha = null;
+    try {
+      const { execSync } = require('child_process');
+      commitSha = execSync('git rev-parse --short HEAD', {
+        cwd: project.root_path,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }).trim();
+    } catch (e) {}
+
+    // Build DB readonly connection factory
+    const { Client } = require('@neondatabase/serverless');
+    const context = {
+      projectRoot: project.root_path,
+      commitSha,
+      triggerSource: 'preview',
+      dbReadonlyUrl: process.env.DATABASE_URL_READONLY || null,
+      createDbConnection: async (url) => {
+        const client = new Client({ connectionString: url });
+        await client.connect();
+        return client;
+      },
+      sessionLogPath: null,
+      buildOutputPath: null,
+      prDiffPath: null,
+      variables: {
+        input: evalDefinition.input || {},
+        eval: { name: evalDefinition.name },
+        run: { commit_sha: commitSha, trigger: 'preview' },
+        project: { root: project.root_path },
+      },
+      input: evalDefinition.input || {},
+      eval: { name: evalDefinition.name },
+      run: { commit_sha: commitSha, trigger: 'preview' },
+      project: { root: project.root_path },
+    };
+
+    const startTime = Date.now();
+    const result = await runSingleEval(evalDefinition, context);
+    const duration = Date.now() - startTime;
+
+    // Estimate token cost from evidence and judge_prompt
+    const evidenceStr = typeof result.evidence === 'string' ? result.evidence : JSON.stringify(result.evidence || '');
+    const judgePromptStr = evalDefinition.judge_prompt || '';
+    const estimatedTokenCost = Math.ceil(evidenceStr.length / 4) + Math.ceil(judgePromptStr.length / 4) + 500;
+
+    res.json({
+      success: true,
+      result: { ...result, duration, estimatedTokenCost },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /folders/:projectId/publish — promote a .draft file to a live eval
+router.post('/folders/:projectId/publish', async (req, res) => {
+  try {
+    const { draftPath } = req.body;
+
+    if (!draftPath || typeof draftPath !== 'string' || !draftPath.trim()) {
+      return res.status(400).json({ error: 'draftPath is required' });
+    }
+
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Path safety check
+    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
+    if (!draftPath.startsWith(projectRoot) && draftPath !== project.root_path) {
+      return res.status(400).json({ error: 'draftPath must be inside the project' });
+    }
+
+    const fs = require('fs');
+    if (!fs.existsSync(draftPath)) {
+      return res.status(404).json({ error: 'Draft file not found' });
+    }
+    if (!draftPath.endsWith('.draft')) {
+      return res.status(400).json({ error: 'draftPath must end with .draft' });
+    }
+
+    // Determine target path (drop .draft suffix)
+    const path = require('path');
+    let targetPath = draftPath.slice(0, -'.draft'.length);
+
+    // Auto-suffix if target already exists
+    if (fs.existsSync(targetPath)) {
+      const ext = path.extname(targetPath);
+      const base = targetPath.slice(0, -ext.length);
+      let counter = 2;
+      while (fs.existsSync(`${base}-${counter}${ext}`)) {
+        counter++;
+      }
+      targetPath = `${base}-${counter}${ext}`;
+    }
+
+    fs.renameSync(draftPath, targetPath);
+
+    const evalName = path.basename(targetPath, path.extname(targetPath));
+    res.json({ success: true, publishedPath: targetPath, evalName });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /folders/:projectId/draft — delete a draft eval file
+router.delete('/folders/:projectId/draft', async (req, res) => {
+  try {
+    const { draftPath } = req.body;
+
+    if (!draftPath || typeof draftPath !== 'string' || !draftPath.trim()) {
+      return res.status(400).json({ error: 'draftPath is required' });
+    }
+
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    // Path safety check
+    const projectRoot = project.root_path.endsWith('/') ? project.root_path : project.root_path + '/';
+    if (!draftPath.startsWith(projectRoot) && draftPath !== project.root_path) {
+      return res.status(400).json({ error: 'draftPath must be inside the project' });
+    }
+
+    const fs = require('fs');
+    if (!fs.existsSync(draftPath)) {
+      return res.status(404).json({ error: 'Draft file not found' });
+    }
+    if (!draftPath.endsWith('.draft')) {
+      return res.status(400).json({ error: 'draftPath must end with .draft' });
+    }
+
+    fs.unlinkSync(draftPath);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
