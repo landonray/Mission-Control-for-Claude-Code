@@ -1166,7 +1166,7 @@ class SessionProcess {
       sessionId: this.id,
     });
     if (unresolvedFields.length > 0) {
-      console.warn(`[Session ${this.id.slice(0, 8)}] Unresolved merge fields:`, unresolvedFields.map(u => u.name).join(', '));
+      console.warn(`[Session ${this.id.slice(0, 8)}] Unresolved merge fields:`, unresolvedFields.map(u => `${u.name} (${u.reason})`).join(', '));
     }
     let prompt = resolvedText;
     if (this._compactionDetected) {
@@ -1695,6 +1695,14 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
     // Only falls back to parent dir (and updates DB) if the branch is also gone.
     const workingDir = await resolveWorktreeOnResume(sessionRow);
 
+    const { text: resolvedNewMessage, unresolved: resumeUnresolved } = await mergeFields.resolvePrompt(newMessage, {
+      workingDirectory: workingDir,
+      sessionId,
+    });
+    if (resumeUnresolved.length > 0) {
+      console.warn(`[Session ${sessionId.slice(0, 8)}] Unresolved merge fields (resume):`, resumeUnresolved.map(u => `${u.name} (${u.reason})`).join(', '));
+    }
+
     const session = new SessionProcess(sessionId, {
       workingDirectory: workingDir,
       permissionMode: sessionRow.permission_mode || 'auto',
@@ -1738,8 +1746,8 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
     });
 
     const combinedPrompt = preamble
-      ? `${preamble}\n\nUser's new message: ${newMessage}`
-      : newMessage;
+      ? `${preamble}\n\nUser's new message: ${resolvedNewMessage}`
+      : resolvedNewMessage;
 
     // Trigger auto-naming if this is the first user message (session lost memory due to server restart)
     if (sessionRow.user_message_count === 0) {
