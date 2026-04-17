@@ -1,5 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { resolvePrompt, registerField, _clearRegistryForTests } from '../mergeFields.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  resolvePrompt,
+  registerField,
+  registerBuiltInFields,
+  _clearRegistryForTests,
+  _setExecFileForTests,
+} from '../mergeFields.js';
 
 describe('mergeFields', () => {
   beforeEach(() => {
@@ -65,5 +71,53 @@ describe('mergeFields', () => {
       const fields = listFields();
       expect(fields).toEqual([{ name: 'last_pr', description: 'most recently updated open PR number' }]);
     });
+  });
+});
+
+describe('lastPr resolver', () => {
+  beforeEach(() => {
+    _clearRegistryForTests();
+    registerBuiltInFields();
+  });
+
+  afterEach(() => {
+    _setExecFileForTests(null);
+  });
+
+  it('returns the number of the most recently updated open PR', async () => {
+    _setExecFileForTests((cmd, args, opts, cb) => {
+      cb(null, JSON.stringify([
+        { number: 100, updatedAt: '2026-04-10T10:00:00Z' },
+        { number: 103, updatedAt: '2026-04-17T09:00:00Z' },
+        { number: 101, updatedAt: '2026-04-15T10:00:00Z' },
+      ]), '');
+    });
+    const result = await resolvePrompt('pr={{last_pr}}', { workingDirectory: '/fake' });
+    expect(result.text).toBe('pr=103');
+  });
+
+  it('leaves placeholder literal when gh returns no PRs', async () => {
+    _setExecFileForTests((cmd, args, opts, cb) => {
+      cb(null, '[]', '');
+    });
+    const result = await resolvePrompt('pr={{last_pr}}', { workingDirectory: '/fake' });
+    expect(result.text).toContain('{{last_pr}}');
+    expect(result.text).toContain('no open PRs');
+  });
+
+  it('leaves placeholder literal when gh is not installed', async () => {
+    _setExecFileForTests((cmd, args, opts, cb) => {
+      const err = new Error('not found');
+      err.code = 'ENOENT';
+      cb(err, '', '');
+    });
+    const result = await resolvePrompt('pr={{last_pr}}', { workingDirectory: '/fake' });
+    expect(result.text).toContain('{{last_pr}}');
+    expect(result.text).toContain('gh CLI not found');
+  });
+
+  it('leaves placeholder literal when workingDirectory is missing', async () => {
+    const result = await resolvePrompt('pr={{last_pr}}', {});
+    expect(result.text).toContain('{{last_pr}}');
   });
 });

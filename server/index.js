@@ -6,6 +6,9 @@ const path = require('path');
 const http = require('http');
 const { initializeDb } = require('./database');
 const { setupWebSocket } = require('./websocket');
+const { registerBuiltInFields } = require('./services/mergeFields');
+
+registerBuiltInFields();
 
 const app = express();
 const server = http.createServer(app);
