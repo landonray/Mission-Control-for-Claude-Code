@@ -6,7 +6,7 @@ import SlashCommandsSettings from '../SlashCommandsSettings.jsx';
 vi.mock('../../../utils/api', () => ({
   api: {
     get: vi.fn((url) => {
-      if (url === '/api/slash-commands') return Promise.resolve({ commands: [] });
+      if (url === '/api/slash-commands') return Promise.resolve({ commands: [{ id: 1, name: 'review', message: 'Please review the latest pull request.' }] });
       if (url === '/api/merge-fields') return Promise.resolve({ fields: [{ name: 'last_pr', description: 'most recently updated open PR number' }] });
       return Promise.resolve({});
     }),
@@ -26,6 +26,17 @@ describe('SlashCommandsSettings merge-field hint', () => {
     render(<SlashCommandsSettings />);
     const newBtn = await screen.findByRole('button', { name: /New Command/i });
     newBtn.click();
+    await waitFor(() => {
+      expect(screen.getByText(/Available merge fields/i)).toBeTruthy();
+      expect(screen.getByText(/\{\{last_pr\}\}/)).toBeTruthy();
+      expect(screen.getByText(/most recently updated open PR number/i)).toBeTruthy();
+    });
+  });
+
+  it('renders the available merge fields hint when editing an existing command', async () => {
+    render(<SlashCommandsSettings />);
+    const editBtn = await screen.findByTitle('Edit');
+    editBtn.click();
     await waitFor(() => {
       expect(screen.getByText(/Available merge fields/i)).toBeTruthy();
       expect(screen.getByText(/\{\{last_pr\}\}/)).toBeTruthy();
