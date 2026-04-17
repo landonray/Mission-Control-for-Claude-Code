@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import FolderPicker from '../shared/FolderPicker';
+import PillSelector from '../common/PillSelector';
 import styles from './GeneralSettings.module.css';
 
 export default function GeneralSettings() {
   const { generalSettings, loadGeneralSettings } = useApp();
   const [form, setForm] = useState({ projects_directory: '', github_username: '', setup_repo: '' });
+  const [defaultEffort, setDefaultEffort] = useState('high');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -18,15 +20,26 @@ export default function GeneralSettings() {
         github_username: generalSettings.github_username || '',
         setup_repo: generalSettings.setup_repo || '',
       });
+      setDefaultEffort(generalSettings.default_effort || 'high');
     }
   }, [generalSettings]);
+
+  const handleEffortChange = async (next) => {
+    setDefaultEffort(next);
+    try {
+      await api.put('/api/settings/general', { ...form, default_effort: next });
+      await loadGeneralSettings();
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
     setSaved(false);
     try {
-      await api.put('/api/settings/general', form);
+      await api.put('/api/settings/general', { ...form, default_effort: defaultEffort });
       await loadGeneralSettings();
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -73,6 +86,20 @@ export default function GeneralSettings() {
           placeholder="owner/repo or https://github.com/owner/repo"
           value={form.setup_repo}
           onChange={e => setForm(f => ({ ...f, setup_repo: e.target.value }))}
+        />
+      </div>
+
+      <div className={styles.field}>
+        <label>Default effort for new sessions</label>
+        <p className={styles.hint}>Applied to new sessions unless overridden. xHigh is Opus 4.7 only.</p>
+        <PillSelector
+          options={[
+            { value: 'high', label: 'High' },
+            { value: 'xhigh', label: 'xHigh' },
+            { value: 'max', label: 'Max' },
+          ]}
+          value={defaultEffort}
+          onChange={handleEffortChange}
         />
       </div>
 
