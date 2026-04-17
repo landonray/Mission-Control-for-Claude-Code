@@ -20,6 +20,10 @@ export default function NewSessionModal({ onClose }) {
   const [modelOptions, setModelOptions] = useState([]);
   const [model, setModel] = useState('');
   const [permissionMode, setPermissionMode] = useState('auto');
+  const [effortOptions, setEffortOptions] = useState([]);
+  const [effort, setEffort] = useState('high');
+  const [xhighModels, setXhighModels] = useState([]);
+  const [effortNote, setEffortNote] = useState(null);
   const [form, setForm] = useState({
     name: '',
     workingDirectory: '',
@@ -31,8 +35,23 @@ export default function NewSessionModal({ onClose }) {
     api.get('/api/models').then(data => {
       setModelOptions(data.models || []);
       setModel(data.defaultModel || data.models?.[0]?.value || '');
+      setEffortOptions((data.efforts || ['high', 'xhigh', 'max']).map(e => ({
+        value: e,
+        label: e === 'xhigh' ? 'xHigh' : e.charAt(0).toUpperCase() + e.slice(1),
+      })));
+      setEffort(data.defaultEffort || 'high');
+      setXhighModels(data.xhighSupportedModels || []);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (effort === 'xhigh' && xhighModels.length > 0 && !xhighModels.includes(model)) {
+      setEffort('high');
+      setEffortNote('Effort lowered to High — xHigh is Opus 4.7 only.');
+      const timer = setTimeout(() => setEffortNote(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [model, effort, xhighModels]);
 
   useEffect(() => {
     if (mode === 'projects') {
@@ -53,6 +72,7 @@ export default function NewSessionModal({ onClose }) {
         permissionMode,
         useWorktree,
         model,
+        effort,
       });
       await loadSessions();
       navigate(`/session/${session.id}`);
@@ -81,6 +101,7 @@ export default function NewSessionModal({ onClose }) {
         permissionMode,
         useWorktree,
         model,
+        effort,
       });
       await loadSessions();
       navigate(`/session/${session.id}`);
@@ -150,6 +171,25 @@ export default function NewSessionModal({ onClose }) {
                 value={model}
                 onChange={setModel}
               />
+            </div>
+
+            <div className={styles.modelSelector}>
+              <label className={styles.toggleLabel}>
+                <Cpu size={14} />
+                <span>Effort</span>
+              </label>
+              <PillSelector
+                options={effortOptions.map(opt => ({
+                  ...opt,
+                  disabled: opt.value === 'xhigh' && xhighModels.length > 0 && !xhighModels.includes(model),
+                  title: (opt.value === 'xhigh' && xhighModels.length > 0 && !xhighModels.includes(model))
+                    ? 'Opus 4.7 only — other models use high'
+                    : undefined,
+                }))}
+                value={effort}
+                onChange={setEffort}
+              />
+              {effortNote && <div style={{ fontSize: 11, opacity: 0.7, marginTop: 4 }}>{effortNote}</div>}
             </div>
 
             <div className={styles.modelSelector}>

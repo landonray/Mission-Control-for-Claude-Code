@@ -9,7 +9,9 @@ export default function PillSelector({ options, value, onChange }) {
           key={opt.value}
           type="button"
           className={`${styles.pill} ${value === opt.value ? styles.active : ''}`}
-          onClick={() => onChange(opt.value)}
+          onClick={() => !opt.disabled && onChange(opt.value)}
+          disabled={!!opt.disabled}
+          title={opt.title}
         >
           {opt.label}
         </button>
