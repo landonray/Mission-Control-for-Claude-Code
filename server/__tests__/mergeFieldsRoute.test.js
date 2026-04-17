@@ -3,9 +3,14 @@ import request from 'supertest';
 import express from 'express';
 import { createRequire } from 'module';
 
-// Use CommonJS require so we share one module instance with the router
-// (which also requires this service via CJS). Under Vitest, ESM `import`
-// of a CJS module produces a separate instance with its own registry.
+// This test imports BOTH a CJS router AND the CJS service it depends on.
+// Under Vitest, reaching the same CJS service via two different paths (ESM
+// import from the test + CJS require from inside the router) produces two
+// distinct module instances with separate registry Maps — the test would
+// register into one and the route would read from the other. Sibling tests
+// that only import the service directly don't hit this because they only
+// use one resolution path. Forcing CJS `require` here keeps both paths on
+// the same instance.
 const require = createRequire(import.meta.url);
 const mergeFieldsRouter = require('../routes/mergeFields');
 const { registerField, _clearRegistryForTests } = require('../services/mergeFields');
