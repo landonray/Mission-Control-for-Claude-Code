@@ -14,6 +14,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
+const mergeFields = require('./mergeFields');
 
 // Cache rules to avoid DB queries on every tool use
 let rulesCache = null;
@@ -203,7 +204,14 @@ async function runQualityCheck(rule, context, options = {}) {
       ? `\n\nYou have access to these tools: ${tools.join(', ')}. Use them to read and inspect the actual code files — do not rely solely on the conversation context. Check the real files to verify changes were made correctly.`
       : '';
 
-    const prompt = `${rule.prompt}${agentInstructions}
+    const { text: resolvedRulePrompt, unresolved } = await mergeFields.resolvePrompt(rule.prompt || '', {
+      workingDirectory: options.cwd,
+    });
+    if (unresolved.length > 0) {
+      console.warn(`[QualityRunner] Unresolved merge fields in rule ${rule.id}:`, unresolved.map(u => `${u.name} (${u.reason})`).join(', '));
+    }
+
+    const prompt = `${resolvedRulePrompt}${agentInstructions}
 
 Context about what just happened:
 ${context}

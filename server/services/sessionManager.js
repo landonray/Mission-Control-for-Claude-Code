@@ -9,6 +9,7 @@ const { query } = require('../database');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const qualityRunner = require('./qualityRunner');
+const mergeFields = require('./mergeFields');
 
 const activeSessions = new Map();
 
@@ -189,6 +190,7 @@ class SessionProcess {
     this.useWorktree = options.useWorktree || false;
     this.worktreeReady = !this.useWorktree; // non-worktree sessions are immediately ready
     this.model = options.model || DEFAULT_MODEL;
+    this.effort = options.effort || null;
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
@@ -299,6 +301,11 @@ class SessionProcess {
     // Model selection
     if (this.model) {
       args.push('--model', this.model);
+    }
+
+    // Effort level (Opus 4.7 supports 'high' | 'xhigh' | 'max'; CLI downgrades unsupported on other models)
+    if (this.effort) {
+      args.push('--effort', this.effort);
     }
 
     const mcpConfig = await this.buildMcpConfig();
@@ -1160,14 +1167,21 @@ class SessionProcess {
     // If compaction was detected (context usage dropped significantly), prepend
     // the full conversation history so Claude regains context that was lost.
     // This takes priority over the resume preamble since it's more complete.
-    let prompt = text;
+    const { text: resolvedText, unresolved: unresolvedFields } = await mergeFields.resolvePrompt(text, {
+      workingDirectory: this.workingDirectory,
+      sessionId: this.id,
+    });
+    if (unresolvedFields.length > 0) {
+      console.warn(`[Session ${this.id.slice(0, 8)}] Unresolved merge fields:`, unresolvedFields.map(u => `${u.name} (${u.reason})`).join(', '));
+    }
+    let prompt = resolvedText;
     if (this._compactionDetected) {
       this._compactionDetected = false;
       console.log(`[Compaction] Injecting conversation history for session ${this.id.slice(0,8)}`);
       try {
         const compactionPreamble = await buildCompactionPreamble(this.id);
         if (compactionPreamble) {
-          prompt = `${compactionPreamble}\n\nUser's new message: ${text}`;
+          prompt = `${compactionPreamble}\n\nUser's new message: ${resolvedText}`;
         }
       } catch (e) {
         console.error(`[Compaction] Failed to build preamble for session ${this.id.slice(0,8)}:`, e.message);
@@ -1183,7 +1197,7 @@ class SessionProcess {
       });
       const preamble = await buildContextPreamble(this.id);
       if (preamble) {
-        prompt = `${preamble}\n\nUser's new message: ${text}`;
+        prompt = `${preamble}\n\nUser's new message: ${resolvedText}`;
       }
     }
 
@@ -1687,10 +1701,19 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
     // Only falls back to parent dir (and updates DB) if the branch is also gone.
     const workingDir = await resolveWorktreeOnResume(sessionRow);
 
+    const { text: resolvedNewMessage, unresolved: resumeUnresolved } = await mergeFields.resolvePrompt(newMessage, {
+      workingDirectory: workingDir,
+      sessionId,
+    });
+    if (resumeUnresolved.length > 0) {
+      console.warn(`[Session ${sessionId.slice(0, 8)}] Unresolved merge fields (resume):`, resumeUnresolved.map(u => `${u.name} (${u.reason})`).join(', '));
+    }
+
     const session = new SessionProcess(sessionId, {
       workingDirectory: workingDir,
       permissionMode: sessionRow.permission_mode || 'auto',
       model: sessionRow.model || DEFAULT_MODEL,
+      effort: sessionRow.effort || null,
       mcpConnections: [],
       tmuxSessionName: sessionRow.tmux_session_name || null
     });
@@ -1730,8 +1753,8 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
     });
 
     const combinedPrompt = preamble
-      ? `${preamble}\n\nUser's new message: ${newMessage}`
-      : newMessage;
+      ? `${preamble}\n\nUser's new message: ${resolvedNewMessage}`
+      : resolvedNewMessage;
 
     // Trigger auto-naming if this is the first user message (session lost memory due to server restart)
     if (sessionRow.user_message_count === 0) {
@@ -1832,6 +1855,7 @@ async function recoverTmuxSessions() {
       workingDirectory: sessionRow.working_directory,
       permissionMode: sessionRow.permission_mode || 'auto',
       model: sessionRow.model || DEFAULT_MODEL,
+      effort: sessionRow.effort || null,
       mcpConnections: [],
       tmuxSessionName: tmuxName
     });
@@ -1880,10 +1904,14 @@ async function createSession(options = {}) {
   }
   options.model = options.model || DEFAULT_MODEL;
 
+  if (options.effort && !['high', 'xhigh', 'max'].includes(options.effort)) {
+    throw new Error(`Invalid effort "${options.effort}". Must be one of: high, xhigh, max`);
+  }
+
   await query(
-    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, created_at, last_activity_at)
-     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, NOW(), NOW())`,
-    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || DEFAULT_MODEL, options.useWorktree ? 1 : 0]
+    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, effort, created_at, last_activity_at)
+     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || DEFAULT_MODEL, options.useWorktree ? 1 : 0, options.effort || null]
   );
 
   // Link session to project if a .mission-control.yaml is found

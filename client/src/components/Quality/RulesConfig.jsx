@@ -58,6 +58,24 @@ const categoryLabels = {
   teams: 'Agent Teams',
 };
 
+function MergeFieldsHint({ fields }) {
+  if (!fields || fields.length === 0) return null;
+  return (
+    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+      <strong>Available merge fields</strong>
+      <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+        {fields.map(f => (
+          <li key={f.name}>
+            <code style={{ background: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: 3 }}>
+              {`{{${f.name}}}`}
+            </code> — {f.description}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function RulesConfig() {
   const [rules, setRules] = useState([]);
   const [hooksStatus, setHooksStatus] = useState(null);
@@ -66,10 +84,12 @@ export default function RulesConfig() {
   const [editForm, setEditForm] = useState({ prompt: '', script: '' });
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
+  const [mergeFieldList, setMergeFieldList] = useState([]);
 
   useEffect(() => {
     loadRules();
     loadHooksStatus();
+    api.get('/api/merge-fields').then(data => setMergeFieldList(data.fields || [])).catch(() => {});
   }, []);
 
   const loadRules = async () => {
@@ -384,6 +404,7 @@ export default function RulesConfig() {
                               onChange={e => setEditForm(f => ({ ...f, prompt: e.target.value }))}
                               rows={8}
                             />
+                            <MergeFieldsHint fields={mergeFieldList} />
                           </div>
                         )}
                         {rule.script !== null && (

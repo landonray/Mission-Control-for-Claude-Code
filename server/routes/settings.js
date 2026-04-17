@@ -5,8 +5,8 @@ const { query } = require('../database');
 // GET /api/settings/general
 router.get('/general', async (req, res) => {
   try {
-    const row = (await query('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1')).rows[0];
-    res.json(row || { projects_directory: null, github_username: null, setup_repo: null });
+    const row = (await query('SELECT projects_directory, github_username, setup_repo, default_effort FROM app_settings WHERE id = 1')).rows[0];
+    res.json(row || { projects_directory: null, github_username: null, setup_repo: null, default_effort: 'high' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -15,12 +15,15 @@ router.get('/general', async (req, res) => {
 // PUT /api/settings/general
 router.put('/general', async (req, res) => {
   try {
-    const { projects_directory, github_username, setup_repo } = req.body;
+    const { projects_directory, github_username, setup_repo, default_effort } = req.body;
+    if (default_effort !== undefined && default_effort !== null && !['high', 'xhigh', 'max'].includes(default_effort)) {
+      return res.status(400).json({ error: 'Invalid default_effort' });
+    }
     await query(
-      'UPDATE app_settings SET projects_directory = $1, github_username = $2, setup_repo = $3 WHERE id = 1',
-      [projects_directory ?? null, github_username ?? null, setup_repo ?? null]
+      'UPDATE app_settings SET projects_directory = $1, github_username = $2, setup_repo = $3, default_effort = $4 WHERE id = 1',
+      [projects_directory ?? null, github_username ?? null, setup_repo ?? null, default_effort ?? null]
     );
-    const row = (await query('SELECT projects_directory, github_username, setup_repo FROM app_settings WHERE id = 1')).rows[0];
+    const row = (await query('SELECT projects_directory, github_username, setup_repo, default_effort FROM app_settings WHERE id = 1')).rows[0];
     res.json(row);
   } catch (err) {
     res.status(500).json({ error: err.message });

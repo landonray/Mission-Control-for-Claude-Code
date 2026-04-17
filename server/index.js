@@ -6,6 +6,9 @@ const path = require('path');
 const http = require('http');
 const { initializeDb } = require('./database');
 const { setupWebSocket } = require('./websocket');
+const { registerBuiltInFields } = require('./services/mergeFields');
+
+registerBuiltInFields();
 
 const app = express();
 const server = http.createServer(app);
@@ -27,11 +30,24 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/uploads', require('./routes/uploads'));
 app.use('/api/slash-commands', require('./routes/slashCommands'));
 app.use('/api/evals', require('./routes/evals'));
+app.use('/api/merge-fields', require('./routes/mergeFields'));
 
 // Model config
 const { MODEL_OPTIONS, DEFAULT_MODEL } = require('./config/models');
-app.get('/api/models', (req, res) => {
-  res.json({ models: MODEL_OPTIONS, defaultModel: DEFAULT_MODEL });
+const { query } = require('./database');
+app.get('/api/models', async (_req, res) => {
+  let defaultEffort = 'high';
+  try {
+    const row = (await query('SELECT default_effort FROM app_settings WHERE id = 1')).rows[0];
+    if (row && row.default_effort) defaultEffort = row.default_effort;
+  } catch (_) { /* fall through to high */ }
+  res.json({
+    models: MODEL_OPTIONS,
+    defaultModel: DEFAULT_MODEL,
+    efforts: ['high', 'xhigh', 'max'],
+    defaultEffort,
+    xhighSupportedModels: ['claude-opus-4-7'],
+  });
 });
 
 // Health check

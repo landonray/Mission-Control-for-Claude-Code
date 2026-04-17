@@ -121,7 +121,11 @@ router.get('/:id', async (req, res) => {
 // Create new session
 router.post('/', async (req, res) => {
   try {
-    const { name, workingDirectory, permissionMode, initialPrompt, branch, mcpConnections, useWorktree, model } = req.body;
+    const { name, workingDirectory, permissionMode, initialPrompt, branch, mcpConnections, useWorktree, model, effort } = req.body;
+
+    if (effort && !['high', 'xhigh', 'max'].includes(effort)) {
+      return res.status(400).json({ error: 'Invalid effort' });
+    }
 
     const options = {
       name,
@@ -131,7 +135,8 @@ router.post('/', async (req, res) => {
       branch,
       mcpConnections,
       useWorktree,
-      model
+      model,
+      effort
     };
 
     const session = await createSession(options);
