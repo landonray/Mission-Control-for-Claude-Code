@@ -94,6 +94,9 @@ async function resolveLastPr(context) {
   // Lazy require so tests can replace the execFile implementation via
   // _setExecFileForTests (vi.mock of CJS built-ins is unreliable in Vitest 4).
   const execFile = _execFileImpl || require('child_process').execFile;
+  // NOTE: We intentionally do not catch rejections here. resolvePrompt wraps
+  // resolver calls in try/catch and uses the error message as the unresolved
+  // reason — that's what drives the human-readable (note: ...) block.
   return new Promise((resolve, reject) => {
     execFile('gh', [
       'pr', 'list',
@@ -122,9 +125,6 @@ async function resolveLastPr(context) {
       }
     });
   });
-  // NOTE: We intentionally do not catch rejections here. resolvePrompt wraps
-  // resolver calls in try/catch and uses the error message as the unresolved
-  // reason — that's what drives the human-readable (note: ...) block.
 }
 
 /**

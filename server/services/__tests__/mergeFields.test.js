@@ -120,4 +120,21 @@ describe('lastPr resolver', () => {
     const result = await resolvePrompt('pr={{last_pr}}', {});
     expect(result.text).toContain('{{last_pr}}');
   });
+
+  it('leaves placeholder literal when gh pr list times out', async () => {
+    // Simulate what execFile does when it hits the `timeout` option: it
+    // invokes the callback with an error whose `killed` is true, `signal`
+    // is 'SIGTERM', and `code` is null. The resolver should hit the generic
+    // "gh pr list failed" branch (not the ENOENT branch).
+    _setExecFileForTests((cmd, args, opts, cb) => {
+      const err = new Error('Command failed: gh pr list --state open --json number,updatedAt --limit 20');
+      err.killed = true;
+      err.signal = 'SIGTERM';
+      err.code = null;
+      cb(err, '', '');
+    });
+    const result = await resolvePrompt('PR: {{last_pr}}', { workingDirectory: '/fake' });
+    expect(result.text).toContain('{{last_pr}}');
+    expect(result.unresolved[0].reason).toContain('gh pr list failed');
+  });
 });
