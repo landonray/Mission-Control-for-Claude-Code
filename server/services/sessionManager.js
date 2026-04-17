@@ -9,6 +9,7 @@ const { query } = require('../database');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const qualityRunner = require('./qualityRunner');
+const mergeFields = require('./mergeFields');
 
 const activeSessions = new Map();
 
@@ -1160,14 +1161,21 @@ class SessionProcess {
     // If compaction was detected (context usage dropped significantly), prepend
     // the full conversation history so Claude regains context that was lost.
     // This takes priority over the resume preamble since it's more complete.
-    let prompt = text;
+    const { text: resolvedText, unresolved: unresolvedFields } = await mergeFields.resolvePrompt(text, {
+      workingDirectory: this.workingDirectory,
+      sessionId: this.id,
+    });
+    if (unresolvedFields.length > 0) {
+      console.warn(`[Session ${this.id.slice(0, 8)}] Unresolved merge fields:`, unresolvedFields.map(u => u.name).join(', '));
+    }
+    let prompt = resolvedText;
     if (this._compactionDetected) {
       this._compactionDetected = false;
       console.log(`[Compaction] Injecting conversation history for session ${this.id.slice(0,8)}`);
       try {
         const compactionPreamble = await buildCompactionPreamble(this.id);
         if (compactionPreamble) {
-          prompt = `${compactionPreamble}\n\nUser's new message: ${text}`;
+          prompt = `${compactionPreamble}\n\nUser's new message: ${resolvedText}`;
         }
       } catch (e) {
         console.error(`[Compaction] Failed to build preamble for session ${this.id.slice(0,8)}:`, e.message);
@@ -1183,7 +1191,7 @@ class SessionProcess {
       });
       const preamble = await buildContextPreamble(this.id);
       if (preamble) {
-        prompt = `${preamble}\n\nUser's new message: ${text}`;
+        prompt = `${preamble}\n\nUser's new message: ${resolvedText}`;
       }
     }
 
