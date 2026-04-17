@@ -24,13 +24,12 @@ vi.mock('../SlashCommandsSettings.module.css', () => ({
 describe('SlashCommandsSettings merge-field hint', () => {
   it('renders the available merge fields hint when creating a command', async () => {
     render(<SlashCommandsSettings />);
-    // Wait for loading to finish, then open the New Command form
-    const newBtn = await screen.findByText(/New Command/i);
+    const newBtn = await screen.findByRole('button', { name: /New Command/i });
     newBtn.click();
     await waitFor(() => {
-      expect(screen.getByText(/Available merge fields/i)).toBeInTheDocument();
-      expect(screen.getByText(/\{\{last_pr\}\}/)).toBeInTheDocument();
-      expect(screen.getByText(/most recently updated open PR number/i)).toBeInTheDocument();
+      expect(screen.getByText(/Available merge fields/i)).toBeTruthy();
+      expect(screen.getByText(/\{\{last_pr\}\}/)).toBeTruthy();
+      expect(screen.getByText(/most recently updated open PR number/i)).toBeTruthy();
     });
   });
 });
