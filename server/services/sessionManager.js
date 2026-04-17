@@ -190,6 +190,7 @@ class SessionProcess {
     this.useWorktree = options.useWorktree || false;
     this.worktreeReady = !this.useWorktree; // non-worktree sessions are immediately ready
     this.model = options.model || DEFAULT_MODEL;
+    this.effort = options.effort || null;
     this.pendingPermission = null;
     this.errorMessage = null;
     this.messageQueue = [];
@@ -300,6 +301,11 @@ class SessionProcess {
     // Model selection
     if (this.model) {
       args.push('--model', this.model);
+    }
+
+    // Effort level (Opus 4.7 supports 'high' | 'xhigh' | 'max'; CLI downgrades unsupported on other models)
+    if (this.effort) {
+      args.push('--effort', this.effort);
     }
 
     const mcpConfig = await this.buildMcpConfig();
@@ -1707,6 +1713,7 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
       workingDirectory: workingDir,
       permissionMode: sessionRow.permission_mode || 'auto',
       model: sessionRow.model || DEFAULT_MODEL,
+      effort: sessionRow.effort || null,
       mcpConnections: [],
       tmuxSessionName: sessionRow.tmux_session_name || null
     });
@@ -1848,6 +1855,7 @@ async function recoverTmuxSessions() {
       workingDirectory: sessionRow.working_directory,
       permissionMode: sessionRow.permission_mode || 'auto',
       model: sessionRow.model || DEFAULT_MODEL,
+      effort: sessionRow.effort || null,
       mcpConnections: [],
       tmuxSessionName: tmuxName
     });
@@ -1896,10 +1904,14 @@ async function createSession(options = {}) {
   }
   options.model = options.model || DEFAULT_MODEL;
 
+  if (options.effort && !['high', 'xhigh', 'max'].includes(options.effort)) {
+    throw new Error(`Invalid effort "${options.effort}". Must be one of: high, xhigh, max`);
+  }
+
   await query(
-    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, created_at, last_activity_at)
-     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, NOW(), NOW())`,
-    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || DEFAULT_MODEL, options.useWorktree ? 1 : 0]
+    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, effort, created_at, last_activity_at)
+     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || DEFAULT_MODEL, options.useWorktree ? 1 : 0, options.effort || null]
   );
 
   // Link session to project if a .mission-control.yaml is found
