@@ -162,6 +162,9 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS has_spec INTEGER DEFAULT 0`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS max_effort INTEGER DEFAULT 0`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES projects(id)`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS effort TEXT`,
+    `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_effort TEXT`,
+    `ALTER TABLE sessions DROP COLUMN IF EXISTS max_effort`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
