@@ -11,6 +11,7 @@ export default function SlashCommandsSettings() {
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', message: '' });
   const [error, setError] = useState('');
+  const [mergeFieldList, setMergeFieldList] = useState([]);
 
   const loadCommands = async () => {
     try {
@@ -23,7 +24,10 @@ export default function SlashCommandsSettings() {
     }
   };
 
-  useEffect(() => { loadCommands(); }, []);
+  useEffect(() => {
+    loadCommands();
+    api.get('/api/merge-fields').then(data => setMergeFieldList(data.fields || [])).catch(() => {});
+  }, []);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -117,6 +121,20 @@ export default function SlashCommandsSettings() {
                 onChange={e => setCreateForm(f => ({ ...f, message: e.target.value }))}
                 rows={3}
               />
+              {mergeFieldList.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                  <strong>Available merge fields</strong>
+                  <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+                    {mergeFieldList.map(f => (
+                      <li key={f.name}>
+                        <code style={{ background: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: 3 }}>
+                          {`{{${f.name}}}`}
+                        </code> — {f.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
           <div className={styles.formActions}>
@@ -160,6 +178,20 @@ export default function SlashCommandsSettings() {
                       onChange={e => setEditForm(f => ({ ...f, message: e.target.value }))}
                       rows={3}
                     />
+                    {mergeFieldList.length > 0 && (
+                      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.75 }}>
+                        <strong>Available merge fields</strong>
+                        <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+                          {mergeFieldList.map(f => (
+                            <li key={f.name}>
+                              <code style={{ background: 'rgba(0,0,0,0.06)', padding: '1px 4px', borderRadius: 3 }}>
+                                {`{{${f.name}}}`}
+                              </code> — {f.description}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                   <div className={styles.editActions}>
                     <button className="btn-ghost btn-icon" onClick={() => handleUpdate(cmd.id)} title="Save">
