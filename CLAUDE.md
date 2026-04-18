@@ -28,6 +28,12 @@ I am a product leader, not a developer. I understand architecture and product de
 
 # Server and Port Management
 
+## This Project's Assigned Ports
+- **Backend (API + WebSocket):** 3001 (set in `.env` as `PORT`)
+- **Frontend (Vite dev server):** 5173 (set in `.env` as `VITE_PORT`)
+
+These ports are pinned. Do not change them casually — other projects on this machine are assigned different ports to avoid conflicts. If you need to change them, update `.env` AND this CLAUDE.md together.
+
 **CRITICAL: Never kill servers belonging to other projects. This machine runs multiple projects simultaneously.**
 
 You MAY stop and restart the dev server for the project you are currently working on. That includes killing and restarting the process on this project's port — even if you didn't start it in this session. If I ask you to restart the server, or if you made backend changes that require a restart, just do it.

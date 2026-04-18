@@ -1,15 +1,21 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'node:path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, path.resolve(__dirname, '..'), '');
+  const vitePort = parseInt(env.VITE_PORT || '5173', 10);
+  const apiPort = parseInt(env.PORT || '3001', 10);
+  return {
   plugins: [react()],
   server: {
     host: '0.0.0.0',
-    port: 5178,
+    port: vitePort,
+    strictPort: true,
     proxy: {
-      '/api': 'http://localhost:3001',
+      '/api': `http://localhost:${apiPort}`,
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: `ws://localhost:${apiPort}`,
         ws: true
       }
     }
@@ -18,4 +24,5 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true
   }
+  };
 });
