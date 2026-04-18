@@ -93,6 +93,8 @@
   padding: 14px 18px;
   margin: 10px 0;
   overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
   font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, monospace;
   font-size: 13px;
   line-height: 1.5;
@@ -104,6 +106,8 @@
   border-radius: 6px;
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 0.9em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .markdown img {

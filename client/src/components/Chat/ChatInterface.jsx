@@ -501,7 +501,7 @@ export default function ChatInterface({ sessionId }) {
                 : isEnded
                   ? 'Type a message to resume this session...'
                   : isMobile
-                    ? 'Send a message... (Cmd+Enter to send)'
+                    ? 'Send a message...'
                     : 'Send a message... (Enter to send, Shift+Enter for new line)'
             }
             rows={1}
