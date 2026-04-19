@@ -9,6 +9,7 @@ import SessionControls from './SessionControls';
 import ContextIndicator from './ContextIndicator';
 import QualityScorecard from '../Quality/QualityScorecard';
 import SlashCommandMenu from './SlashCommandMenu';
+import VoiceRecorderButton from './VoiceRecorderButton';
 import { Send, Loader, RotateCcw, Pencil, Check, X, GitBranch, Paperclip, Upload, FileIcon, Image as ImageIcon, X as XIcon } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
@@ -505,6 +506,14 @@ export default function ChatInterface({ sessionId }) {
                     : 'Send a message... (Enter to send, Shift+Enter for new line)'
             }
             rows={1}
+          />
+          <VoiceRecorderButton
+            onTranscription={(text) => {
+              const sent = sendMessage(text, attachments);
+              if (sent) {
+                setAttachments([]);
+              }
+            }}
           />
           <button
             className={`btn btn-primary ${styles.sendBtn}`}
