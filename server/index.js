@@ -31,6 +31,7 @@ app.use('/api/uploads', require('./routes/uploads'));
 app.use('/api/slash-commands', require('./routes/slashCommands'));
 app.use('/api/evals', require('./routes/evals'));
 app.use('/api/merge-fields', require('./routes/mergeFields'));
+app.use('/api/transcribe', require('./routes/transcribe'));
 
 // Model config
 const { MODEL_OPTIONS, DEFAULT_MODEL } = require('./config/models');
