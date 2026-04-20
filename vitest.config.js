@@ -20,6 +20,12 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.claude/worktrees/**',
+      '**/.worktrees/**',
+    ],
     environmentMatchGlobs: [
       ['client/**/*.test.*', 'jsdom'],
     ],
