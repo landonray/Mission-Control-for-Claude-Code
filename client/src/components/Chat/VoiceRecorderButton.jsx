@@ -1,6 +1,5 @@
 import React from 'react';
-import { Mic, Square, X, Loader } from 'lucide-react';
-import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
+import { Mic, X, Loader } from 'lucide-react';
 import styles from './VoiceRecorderButton.module.css';
 
 function formatTime(seconds) {
@@ -9,9 +8,8 @@ function formatTime(seconds) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function VoiceRecorderButton({ onTranscription, disabled }) {
+export default function VoiceRecorderButton({ recorder, disabled }) {
   const supported = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
-  const recorder = useVoiceRecorder({ onTranscription });
 
   if (!supported) return null;
 
@@ -52,14 +50,6 @@ export default function VoiceRecorderButton({ onTranscription, disabled }) {
           title="Cancel"
         >
           <X size={16} />
-        </button>
-        <button
-          className={styles.stopBtn}
-          onClick={recorder.stop}
-          aria-label="Stop recording"
-          title="Stop & send"
-        >
-          <Square size={16} />
         </button>
       </div>
     );

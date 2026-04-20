@@ -10,7 +10,8 @@ import ContextIndicator from './ContextIndicator';
 import QualityScorecard from '../Quality/QualityScorecard';
 import SlashCommandMenu from './SlashCommandMenu';
 import VoiceRecorderButton from './VoiceRecorderButton';
-import { Send, Loader, RotateCcw, Pencil, Check, X, GitBranch, Paperclip, Upload, FileIcon, Image as ImageIcon, X as XIcon } from 'lucide-react';
+import { useVoiceRecorder } from '../../hooks/useVoiceRecorder';
+import { Send, Square, Loader, RotateCcw, Pencil, Check, X, GitBranch, Paperclip, Upload, FileIcon, Image as ImageIcon, X as XIcon } from 'lucide-react';
 import styles from './ChatInterface.module.css';
 
 // Module-level map to persist chat drafts across session switches
@@ -39,6 +40,16 @@ export default function ChatInterface({ sessionId }) {
   const [slashMenuVisible, setSlashMenuVisible] = useState(false);
   const slashMenuRef = useRef(null);
   const isMobile = useMediaQuery('(max-width: 768px)');
+
+  const recorder = useVoiceRecorder({
+    onTranscription: (text) => {
+      const sent = sendMessage(text, attachments);
+      if (sent) {
+        setAttachments([]);
+      }
+    },
+  });
+  const isRecording = recorder.state === 'recording' || recorder.state === 'requesting-permission';
 
   // Restore draft when switching sessions
   useEffect(() => {
@@ -507,24 +518,21 @@ export default function ChatInterface({ sessionId }) {
             }
             rows={1}
           />
-          <VoiceRecorderButton
-            onTranscription={(text) => {
-              const sent = sendMessage(text, attachments);
-              if (sent) {
-                setAttachments([]);
-              }
-            }}
-          />
+          <VoiceRecorderButton recorder={recorder} />
           <button
             className={`btn btn-primary ${styles.sendBtn}`}
-            onClick={handleSend}
-            disabled={!input.trim() && attachments.length === 0}
+            onClick={isRecording ? recorder.stop : handleSend}
+            disabled={!isRecording && !input.trim() && attachments.length === 0}
+            aria-label={isRecording ? 'Stop recording and send' : 'Send message'}
+            title={isRecording ? 'Stop & send' : undefined}
           >
-            {status === 'working' || status === 'reviewing' || resuming
-              ? <Loader size={16} className="animate-spin" />
-              : isEnded
-                ? <RotateCcw size={16} />
-                : <Send size={16} />
+            {isRecording
+              ? <Square size={16} />
+              : status === 'working' || status === 'reviewing' || resuming
+                ? <Loader size={16} className="animate-spin" />
+                : isEnded
+                  ? <RotateCcw size={16} />
+                  : <Send size={16} />
             }
           </button>
         </div>
