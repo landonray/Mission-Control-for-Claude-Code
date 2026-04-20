@@ -104,8 +104,7 @@ export function AppProvider({ children }) {
 
   const connectWebSocket = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname + ':3001';
-    const wsUrl = `${protocol}//${wsHost}/ws`;
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

@@ -37,8 +37,7 @@ export function useWebSocket(sessionId) {
 
     function connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsHost = window.location.hostname + ':3001';
-      const ws = new WebSocket(`${protocol}//${wsHost}/ws`);
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -206,8 +205,7 @@ export function useWebSocket(sessionId) {
               setStatus('ended');
               resumingRef.current = false;
               setResuming(false);
-              // Blank chat and CLI panels
-              setMessages([]);
+              // Clear CLI panel but keep messages visible so user can still read them
               setStreamEvents([]);
               clearEvents();
               break;
@@ -355,7 +353,13 @@ export function useWebSocket(sessionId) {
                   const pending = optimisticMessagesRef.current.filter(
                     opt => !dbMessages.some(db => db.role === 'user' && db.content === opt.content)
                   );
-                  setMessages([...allMessages, ...pending]);
+                  // Merge with current state instead of replacing — websocket may have
+                  // delivered messages that aren't in DB yet, and a full replace would wipe them.
+                  setMessages(prev => {
+                    const dbKeys = new Set(allMessages.map(m => `${m.role}:${m.content}`));
+                    const wsOnly = prev.filter(m => !dbKeys.has(`${m.role}:${m.content}`));
+                    return [...allMessages, ...wsOnly, ...pending];
+                  });
                 }
               }).catch(e => console.error('[WS] Failed to reload messages on reconnect:', e.message));
             }
