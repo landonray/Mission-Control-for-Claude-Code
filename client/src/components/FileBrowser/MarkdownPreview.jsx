@@ -84,6 +84,8 @@ function renderMarkdown(text) {
   // List items — tag by type so unordered and ordered lists can be wrapped separately
   html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li data-list="ul">$1</li>');
   html = html.replace(/^\d+\.\s+(.+)$/gm, '<li data-list="ol">$1</li>');
+  // Collapse blank lines between consecutive items of the same list type so they wrap into one list
+  html = html.replace(/(<li data-list="(ul|ol)">.*?<\/li>)\n\n+(?=<li data-list="\2">)/g, '$1\n');
   html = html.replace(/(<li data-list="ul">.*<\/li>\n?)+/g, (match) =>
     '<ul>' + match.replace(/ data-list="ul"/g, '') + '</ul>'
   );
