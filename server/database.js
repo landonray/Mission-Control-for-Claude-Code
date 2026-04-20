@@ -165,6 +165,9 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS effort TEXT`,
     `ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS default_effort TEXT`,
     `ALTER TABLE sessions DROP COLUMN IF EXISTS max_effort`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS railway_project_id TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS deployment_url TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

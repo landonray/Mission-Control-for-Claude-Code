@@ -5,6 +5,8 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { query } = require('../database');
 const { parseGithubRepo } = require('../utils/githubUrl');
+const { detectServers, killServer } = require('../services/projectServers');
+const { deployProjectToRailway, getGithubRepoFromGitRemote } = require('../services/railway');
 
 // projectDiscovery is ESM — use lazy dynamic import
 // Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
@@ -311,7 +313,7 @@ router.get('/by-session/:sessionId', async (req, res) => {
   }
 });
 
-// GET /api/projects/:id — get a single project with config
+// GET /api/projects/:id — get a single project with config, sessions, github repo, servers
 router.get('/:id', async (req, res) => {
   try {
     const { getProject } = await getProjectDiscovery();
@@ -319,7 +321,102 @@ router.get('/:id', async (req, res) => {
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
+
+    // Attach sessions for this project (newest first)
+    const sessionsResult = await query(
+      `SELECT id, name, status, working_directory, branch, last_activity_at,
+              archived, tmux_session_name, created_at, ended_at, preview_url
+         FROM sessions
+        WHERE project_id = $1
+        ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+    project.sessions = sessionsResult.rows.map(s => ({ ...s, archived: !!s.archived }));
+
+    // Attach GitHub repo detected from git remote (falls back to stored value)
+    project.github_repo = project.github_repo || getGithubRepoFromGitRemote(project.root_path);
+
+    // Attach current server status (detection is fast but we still tolerate errors)
+    try {
+      project.servers = detectServers(project.root_path);
+    } catch (err) {
+      project.servers = [];
+      project.servers_error = err.message;
+    }
+
     res.json(project);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:id/servers — live server status (for polling)
+router.get('/:id/servers', async (req, res) => {
+  try {
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+    res.json({ servers: detectServers(project.root_path) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/kill-server — kill a server process (project-scoped safety check)
+router.post('/:id/kill-server', async (req, res) => {
+  const { pid } = req.body || {};
+  if (pid === undefined || pid === null) {
+    return res.status(400).json({ error: 'Request body must include a pid.' });
+  }
+  try {
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const result = killServer(project.root_path, pid);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/host — deploy this project to Railway
+router.post('/:id/host', async (req, res) => {
+  try {
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    if (project.deployment_url) {
+      return res.status(400).json({
+        error: `This project is already hosted at ${project.deployment_url}. Delete the Railway project first if you want to re-host.`,
+      });
+    }
+
+    const token = process.env.RAILWAY_TOKEN;
+    if (!token) {
+      return res.status(400).json({
+        error: 'RAILWAY_TOKEN is not set. Add it to your .env file.',
+      });
+    }
+
+    const result = await deployProjectToRailway({
+      projectName: project.name,
+      projectPath: project.root_path,
+      githubRepo: project.github_repo,
+      token,
+    });
+
+    await query(
+      `UPDATE projects
+          SET railway_project_id = $1,
+              deployment_url = $2,
+              github_repo = COALESCE(github_repo, $3)
+        WHERE id = $4`,
+      [result.railwayProjectId, result.deploymentUrl, result.repo, req.params.id]
+    );
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,0 +1,326 @@
+.container {
+  padding: 28px;
+  max-width: 960px;
+  margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  flex: 1;
+  background: linear-gradient(135deg, var(--sand-light) 0%, var(--accent) 50%, var(--coral) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 28px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.metaLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.metaLink:hover {
+  text-decoration: underline;
+}
+
+.metaMuted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.metaPath {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.section {
+  margin-bottom: 32px;
+}
+
+.sectionHeader {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--driftwood);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+}
+
+.loading,
+.empty {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.errorBlock {
+  padding: 14px;
+  background: rgba(220, 60, 60, 0.1);
+  border: 1px solid rgba(220, 60, 60, 0.4);
+  border-radius: 8px;
+  color: #ff8888;
+  font-size: 13px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* Hosting */
+.hostCard,
+.deployedCard {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.deployedStatus {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.badgeLive {
+  display: inline-block;
+  padding: 2px 10px;
+  background: rgba(60, 180, 100, 0.15);
+  color: #50d080;
+  border: 1px solid rgba(60, 180, 100, 0.3);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.hostSuccess {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(60, 180, 100, 0.1);
+  border: 1px solid rgba(60, 180, 100, 0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.hostError {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(220, 60, 60, 0.1);
+  border: 1px solid rgba(220, 60, 60, 0.3);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #ff8888;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Servers */
+.serverList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.serverRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.serverInfo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.serverRole {
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 72px;
+}
+
+.serverPort {
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.serverCmd {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: var(--bg-tertiary);
+  padding: 1px 8px;
+  border-radius: 10px;
+}
+
+.badgeRunning {
+  display: inline-block;
+  padding: 2px 10px;
+  background: rgba(60, 180, 100, 0.15);
+  color: #50d080;
+  border: 1px solid rgba(60, 180, 100, 0.3);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.badgeIdle {
+  display: inline-block;
+  padding: 2px 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.foreign {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.serverActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Sessions */
+.sessionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sessionItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sessionItem:hover {
+  border-color: var(--accent);
+  background: var(--bg-tertiary);
+}
+
+.sessionName {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.sessionMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.statusBadge {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status_active,
+.status_running {
+  background: rgba(60, 180, 100, 0.15);
+  color: #50d080;
+}
+
+.status_ended {
+  background: rgba(150, 150, 150, 0.15);
+  color: var(--text-muted);
+}
+
+.sessionBranch {
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.archivedBadge {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(180, 120, 60, 0.15);
+  color: #e0a060;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media (max-width: 768px) {
+  .container {
+    padding: 16px;
+  }
+
+  .header h1 {
+    font-size: 20px;
+  }
+
+  .serverRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
