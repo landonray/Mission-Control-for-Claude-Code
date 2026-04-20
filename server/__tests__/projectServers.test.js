@@ -96,6 +96,18 @@ describe('pathIsInside', () => {
     expect(pathIsInside(null, '/foo')).toBe(false);
     expect(pathIsInside('/foo', null)).toBe(false);
   });
+
+  it.runIf(process.platform === 'darwin' || process.platform === 'win32')(
+    'matches paths that differ only in case on case-insensitive filesystems',
+    () => {
+      expect(
+        pathIsInside(
+          '/Users/me/Coding Projects/MyApp',
+          '/Users/me/coding projects/MyApp'
+        )
+      ).toBe(true);
+    }
+  );
 });
 
 describe('detectServers', () => {
