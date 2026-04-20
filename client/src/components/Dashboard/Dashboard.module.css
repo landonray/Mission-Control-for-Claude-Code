@@ -118,6 +118,25 @@
   margin-left: 4px;
 }
 
+.projectNameLink {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+
+.projectNameLink:hover {
+  color: var(--accent);
+}
+
 .section h2 {
   font-size: 13px;
   font-weight: 700;

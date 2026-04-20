@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import SessionCard from './SessionCard';
 import NewSessionModal from './NewSessionModal';
-import { Plus, RefreshCw, Filter, Rocket, Terminal, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, RefreshCw, Filter, Rocket, Terminal, Search, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import styles from './Dashboard.module.css';
 
 export default function Dashboard() {
@@ -160,6 +160,7 @@ export default function Dashboard() {
 
       {groupedSessions.map(([projectName, projectSessions]) => {
         const isCollapsed = collapsedProjects.has(projectName);
+        const projectId = projectSessions.find(s => s.project_id)?.project_id || null;
         return (
           <section key={projectName} className={styles.section}>
             <h2
@@ -169,7 +170,19 @@ export default function Dashboard() {
               <span className={styles.collapseIcon}>
                 {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
               </span>
-              {projectName}
+              {projectId ? (
+                <button
+                  type="button"
+                  className={styles.projectNameLink}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/projects/${projectId}`); }}
+                  title="Open project detail"
+                >
+                  {projectName}
+                  <ExternalLink size={11} />
+                </button>
+              ) : (
+                projectName
+              )}
               <span className={styles.sessionCount}>{projectSessions.length}</span>
             </h2>
             {!isCollapsed && (
