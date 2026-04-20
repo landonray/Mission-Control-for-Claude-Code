@@ -4,7 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
 import NewSessionModal from './NewSessionModal';
-import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import styles from './SessionList.module.css';
 
 function renderLastAction(summary) {
@@ -191,14 +191,26 @@ export default function SessionList() {
       <div className="panel-body" style={{ padding: 0 }}>
         {groupedSessions.map(([projectName, projectSessions]) => {
           const isCollapsed = collapsedProjects.has(projectName);
+          const projectId = projectSessions.find(s => s.project_id)?.project_id || null;
           return (
           <div key={projectName} className={styles.projectGroup}>
             <div className={styles.projectHeader} onClick={() => toggleProject(projectName)}>
               <span className={styles.collapseIcon}>
                 {isCollapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
               </span>
-              {projectName}
+              <span className={styles.projectName}>{projectName}</span>
               <span className={styles.sessionCount}>{projectSessions.length}</span>
+              {projectId && (
+                <button
+                  type="button"
+                  className={styles.openProjectBtn}
+                  onClick={(e) => { e.stopPropagation(); navigate(`/projects/${projectId}`); }}
+                  title="Open project page (hosting, server controls)"
+                >
+                  <ExternalLink size={11} />
+                  <span>Open</span>
+                </button>
+              )}
             </div>
             {!isCollapsed && (
             <div className={styles.projectSessions}>
