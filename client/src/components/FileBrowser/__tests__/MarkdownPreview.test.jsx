@@ -86,6 +86,53 @@ describe('MarkdownPreview', () => {
     });
   });
 
+  describe('list rendering', () => {
+    it('wraps unordered list items in <ul>', () => {
+      const md = '- apple\n- banana\n- cherry';
+      const { container } = render(<MarkdownPreview content={md} />);
+      const ul = container.querySelector('ul');
+      expect(ul).toBeTruthy();
+      expect(ul.querySelectorAll('li')).toHaveLength(3);
+      expect(container.querySelector('ol')).toBeFalsy();
+    });
+
+    it('wraps ordered list items in <ol> (not <ul>)', () => {
+      const md = '1. first\n2. second\n3. third';
+      const { container } = render(<MarkdownPreview content={md} />);
+      const ol = container.querySelector('ol');
+      expect(ol).toBeTruthy();
+      expect(ol.querySelectorAll('li')).toHaveLength(3);
+      expect(container.querySelector('ul')).toBeFalsy();
+    });
+
+    it('keeps unordered and ordered lists in separate containers', () => {
+      const md = [
+        '- bullet one',
+        '- bullet two',
+        '',
+        'Three ways forward:',
+        '',
+        '1. first option',
+        '2. second option',
+        '3. third option',
+      ].join('\n');
+      const { container } = render(<MarkdownPreview content={md} />);
+      const ul = container.querySelector('ul');
+      const ol = container.querySelector('ol');
+      expect(ul).toBeTruthy();
+      expect(ol).toBeTruthy();
+      expect(ul.querySelectorAll('li')).toHaveLength(2);
+      expect(ol.querySelectorAll('li')).toHaveLength(3);
+    });
+
+    it('does not wrap <ol> in a paragraph', () => {
+      const md = '1. first\n2. second';
+      const { container } = render(<MarkdownPreview content={md} />);
+      const ol = container.querySelector('ol');
+      expect(ol.parentElement.tagName).not.toBe('P');
+    });
+  });
+
   describe('other markdown features still work', () => {
     it('renders headers', () => {
       const { container } = render(<MarkdownPreview content="# Hello" />);

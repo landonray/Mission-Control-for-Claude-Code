@@ -81,12 +81,15 @@ function renderMarkdown(text) {
   // Blockquotes
   html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
 
-  // Unordered lists
-  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-  // Ordered lists
-  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li>$1</li>');
+  // List items — tag by type so unordered and ordered lists can be wrapped separately
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li data-list="ul">$1</li>');
+  html = html.replace(/^\d+\.\s+(.+)$/gm, '<li data-list="ol">$1</li>');
+  html = html.replace(/(<li data-list="ul">.*<\/li>\n?)+/g, (match) =>
+    '<ul>' + match.replace(/ data-list="ul"/g, '') + '</ul>'
+  );
+  html = html.replace(/(<li data-list="ol">.*<\/li>\n?)+/g, (match) =>
+    '<ol>' + match.replace(/ data-list="ol"/g, '') + '</ol>'
+  );
 
   // Links
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
@@ -114,6 +117,8 @@ function renderMarkdown(text) {
   html = html.replace(/(<\/pre>)<\/p>/g, '$1');
   html = html.replace(/<p>(<ul>)/g, '$1');
   html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+  html = html.replace(/<p>(<ol>)/g, '$1');
+  html = html.replace(/(<\/ol>)<\/p>/g, '$1');
   html = html.replace(/<p>(<blockquote>)/g, '$1');
   html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
   html = html.replace(/<p>(<hr \/>)<\/p>/g, '$1');
