@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const { query } = require('../database');
+const { parseGithubRepo } = require('../utils/githubUrl');
 
 // projectDiscovery is ESM — use lazy dynamic import
 // Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
@@ -27,6 +28,7 @@ async function getSettings() {
 function resolveHome(p) {
   return p.replace(/^~/, process.env.HOME || '');
 }
+
 
 // GET /api/projects — scan projects_directory, return subdirs
 router.get('/', async (req, res) => {
@@ -200,6 +202,87 @@ router.post('/create', async (req, res) => {
     res.json({ sessionId: session.id });
   } catch (err) {
     res.status(500).json({ error: `Project created but failed to start session: ${err.message}` });
+  }
+});
+
+// POST /api/projects/clone — clone an existing GitHub repo into projects_directory
+router.post('/clone', async (req, res) => {
+  const { url, model, autoSetup = true } = req.body;
+
+  const parsed = parseGithubRepo(url);
+  if (!parsed) {
+    return res.status(400).json({ error: 'Invalid GitHub URL. Use https://github.com/owner/repo or owner/repo.' });
+  }
+  const { owner, repo } = parsed;
+
+  const settings = await getSettings();
+  if (!settings?.projects_directory) {
+    return res.status(400).json({ error: 'Projects directory not configured. Go to Settings > General.' });
+  }
+
+  const projectsDir = resolveHome(settings.projects_directory);
+  if (!fs.existsSync(projectsDir)) {
+    try { fs.mkdirSync(projectsDir, { recursive: true }); } catch (err) {
+      return res.status(500).json({ error: `Failed to create projects directory: ${err.message}` });
+    }
+  }
+
+  const folderPath = path.join(projectsDir, repo);
+  if (fs.existsSync(folderPath)) {
+    return res.status(400).json({ error: `A folder named "${repo}" already exists in your projects directory.` });
+  }
+
+  let folderCreated = false;
+  try {
+    execSync(`gh repo clone ${owner}/${repo} "${folderPath}"`, { stdio: 'pipe' });
+    folderCreated = true;
+
+    // Add .mission-control.yaml so the project is discoverable with default config.
+    const yamlPath = path.join(folderPath, '.mission-control.yaml');
+    if (!fs.existsSync(yamlPath)) {
+      const yaml = require('js-yaml');
+      const defaultConfig = {
+        project: { name: repo },
+        evals: { folders: [] },
+        quality_rules: { enabled: [], disabled: [] }
+      };
+      fs.writeFileSync(yamlPath, yaml.dump(defaultConfig, { flowLevel: -1, lineWidth: 120 }), 'utf8');
+      try {
+        execSync('git add .mission-control.yaml', { cwd: folderPath, stdio: 'pipe' });
+        execSync('git commit -m "Add Mission Control config"', {
+          cwd: folderPath,
+          stdio: 'pipe',
+          env: { ...process.env, GIT_AUTHOR_NAME: 'Mission Control', GIT_AUTHOR_EMAIL: 'mc@local', GIT_COMMITTER_NAME: 'Mission Control', GIT_COMMITTER_EMAIL: 'mc@local' },
+        });
+      } catch {
+        // Non-fatal: the file is still on disk, just uncommitted.
+      }
+    }
+  } catch (err) {
+    if (folderCreated) {
+      try { fs.rmSync(folderPath, { recursive: true, force: true }); } catch {}
+    }
+    const msg = err.stderr?.toString() || err.message || 'Clone failed.';
+    return res.status(500).json({ error: `Clone failed: ${msg.trim()}` });
+  }
+
+  let initialPrompt;
+  if (autoSetup) {
+    initialPrompt = `This project was just cloned from https://github.com/${owner}/${repo} into ${folderPath}.\n\nRead the README and any setup docs (package.json, requirements.txt, .env.example, setup scripts, etc.) and perform whatever steps are required to prepare this project for local development — install dependencies, copy example env files (leave secret values as placeholders for the user to fill in), set up local databases if applicable, etc.\n\nDo not run or deploy the app. Stop once the project is ready for development and summarize what you did and any env vars or manual steps the user still needs to complete.`;
+  }
+
+  try {
+    const { createSession } = require('../services/sessionManager');
+    const session = await createSession({
+      name: repo,
+      workingDirectory: folderPath,
+      permissionMode: 'acceptEdits',
+      model,
+      initialPrompt,
+    });
+    res.json({ sessionId: session.id });
+  } catch (err) {
+    res.status(500).json({ error: `Project cloned but failed to start session: ${err.message}` });
   }
 });
 
