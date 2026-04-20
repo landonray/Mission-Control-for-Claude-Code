@@ -92,10 +92,16 @@ function getProcessCwd(pid) {
   return null;
 }
 
+const CASE_INSENSITIVE_FS = process.platform === 'darwin' || process.platform === 'win32';
+
 function pathIsInside(child, parent) {
   if (!child || !parent) return false;
-  const resolvedParent = path.resolve(parent);
-  const resolvedChild = path.resolve(child);
+  let resolvedParent = path.resolve(parent);
+  let resolvedChild = path.resolve(child);
+  if (CASE_INSENSITIVE_FS) {
+    resolvedParent = resolvedParent.toLowerCase();
+    resolvedChild = resolvedChild.toLowerCase();
+  }
   if (resolvedChild === resolvedParent) return true;
   const withSep = resolvedParent.endsWith(path.sep) ? resolvedParent : resolvedParent + path.sep;
   return resolvedChild.startsWith(withSep);
