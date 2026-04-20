@@ -74,6 +74,11 @@ export function useVoiceRecorder({ onTranscription }) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (cancelledRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        setState('idle');
+        return;
+      }
       streamRef.current = stream;
       const recorder = new MediaRecorder(stream);
       recorderRef.current = recorder;
