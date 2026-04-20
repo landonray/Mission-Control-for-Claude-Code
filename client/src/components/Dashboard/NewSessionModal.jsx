@@ -217,8 +217,8 @@ export default function NewSessionModal({ onClose }) {
                   disabled={loading}
                 >
                   <Plus size={24} />
-                  <span className={styles.presetName}>Create New</span>
-                  <span className={styles.presetDesc}>New folder + GitHub repo</span>
+                  <span className={styles.presetName}>Add Project</span>
+                  <span className={styles.presetDesc}>Create new or clone from GitHub</span>
                 </button>
 
                 {projectsLoading && (
