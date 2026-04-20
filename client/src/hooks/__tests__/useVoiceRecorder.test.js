@@ -145,6 +145,20 @@ describe('useVoiceRecorder', () => {
     expect(onTranscription).not.toHaveBeenCalled();
   });
 
+  it('surfaces a clear error when mediaDevices is unavailable (non-secure origin)', async () => {
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: undefined,
+      configurable: true,
+    });
+    const onTranscription = vi.fn();
+    const { result } = renderHook(() => useVoiceRecorder({ onTranscription }));
+
+    await act(async () => { await result.current.start(); });
+
+    expect(result.current.state).toBe('error');
+    expect(result.current.error).toMatch(/secure connection|localhost|https/i);
+  });
+
   it('clearError() returns to idle from error state', async () => {
     mockGetUserMedia('deny');
     const onTranscription = vi.fn();
