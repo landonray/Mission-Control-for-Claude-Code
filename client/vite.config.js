@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
     host: '0.0.0.0',
     port: vitePort,
     strictPort: true,
+    allowedHosts: ['.ts.net', 'localhost'],
     proxy: {
       '/api': `http://localhost:${apiPort}`,
       '/ws': {
