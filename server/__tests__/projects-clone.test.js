@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'module';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 const require = createRequire(import.meta.url);
 const { parseGithubRepo } = require('../utils/githubUrl');
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 describe('parseGithubRepo', () => {
   it('parses https github URLs', () => {
@@ -82,5 +88,26 @@ describe('parseGithubRepo', () => {
     expect(parseGithubRepo('-owner/repo')).toBeNull();
     expect(parseGithubRepo('owner/-repo')).toBeNull();
     expect(parseGithubRepo('owner/repo-')).toBeNull();
+  });
+});
+
+describe('clone initial prompt', () => {
+  const source = readFileSync(join(__dirname, '..', 'routes', 'projects.js'), 'utf-8');
+
+  it('tells the setup agent to check ports before picking one', () => {
+    expect(source).toMatch(/lsof -i :PORT/);
+    expect(source).toMatch(/4100.?4999/);
+  });
+
+  it('tells the setup agent to persist the chosen port', () => {
+    expect(source.toLowerCase()).toContain('persist the chosen port');
+  });
+
+  it('tells the setup agent not to touch other projects\' ports', () => {
+    expect(source).toMatch(/don't belong to this project|do not belong to this project/i);
+  });
+
+  it('tells the setup agent to report the full URL with port', () => {
+    expect(source).toMatch(/full URL/i);
   });
 });
