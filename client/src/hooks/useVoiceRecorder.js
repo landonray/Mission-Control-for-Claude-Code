@@ -66,6 +66,12 @@ export function useVoiceRecorder({ onTranscription }) {
     cancelledRef.current = false;
     setState('requesting-permission');
 
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      setError('Microphone requires a secure connection. Open this app at http://localhost (not a network IP), or use HTTPS.');
+      setState('error');
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
