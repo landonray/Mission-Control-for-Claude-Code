@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../utils/api';
-import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
@@ -190,6 +190,7 @@ export default function ProjectDetail() {
           hostError={hostError}
           onHost={handleHost}
           onRefresh={() => refreshDeploy({ background: false })}
+          onOpenFixSession={(sid) => navigate(`/session/${sid}`)}
         />
       </section>
 
@@ -257,12 +258,13 @@ const DEPLOY_STATUS_LABEL = {
   SKIPPED: 'Skipped',
 };
 
-function DeployStatus({ deploy, starting, refreshing, hostError, onHost, onRefresh }) {
+function DeployStatus({ deploy, starting, refreshing, hostError, onHost, onRefresh, onOpenFixSession }) {
   const status = deploy?.lastDeployStatus || null;
   const inProgress = deploy?.railwayServiceId && !TERMINAL_DEPLOY_STATUSES.has(status);
   const isSuccess = status === 'SUCCESS';
   const isFailure = status === 'FAILED' || status === 'CRASHED';
   const neverDeployed = !deploy?.railwayServiceId;
+  const fixSessionId = deploy?.fixSessionId || null;
   const label = DEPLOY_STATUS_LABEL[status] || status || 'Not deployed';
 
   const badgeStyle = isSuccess
@@ -289,6 +291,15 @@ function DeployStatus({ deploy, starting, refreshing, hostError, onHost, onRefre
         )}
         {inProgress && <span className={styles.deployProgressText}>Railway is building the app…</span>}
         <div className={styles.deployActions}>
+          {isFailure && fixSessionId && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => onOpenFixSession(fixSessionId)}
+              title="Open the Claude session working on the build fix"
+            >
+              <Wrench size={14} /> View Fix Session
+            </button>
+          )}
           {!neverDeployed && (
             <button
               className="btn btn-ghost btn-sm"
@@ -316,6 +327,13 @@ function DeployStatus({ deploy, starting, refreshing, hostError, onHost, onRefre
         <p className={styles.hint}>
           Deploys to Railway from your GitHub repo. Copies your local <code>.env</code>{' '}
           values up (except <code>PORT</code>, <code>VITE_PORT</code>, and <code>NODE_ENV</code>).
+        </p>
+      )}
+
+      {isFailure && fixSessionId && (
+        <p className={styles.hint}>
+          A Claude session has been started with these logs to fix the build.
+          Review its branch, merge when happy, then Re-deploy.
         </p>
       )}
 

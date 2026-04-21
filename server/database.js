@@ -175,6 +175,7 @@ async function initializeDb() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_logs TEXT`,
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_started_at TEXT`,
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_checked_at TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS fix_session_id TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

@@ -36,6 +36,7 @@ function readProjectDeployRow(project) {
     lastDeployLogs: project.last_deploy_logs || null,
     lastDeployStartedAt: project.last_deploy_started_at || null,
     lastDeployCheckedAt: project.last_deploy_checked_at || null,
+    fixSessionId: project.fix_session_id || null,
   };
 }
 
@@ -79,7 +80,8 @@ async function recordDeployStart({
             last_deploy_logs = NULL,
             last_deploy_started_at = $5,
             last_deploy_checked_at = $5,
-            deployment_url = NULL
+            deployment_url = NULL,
+            fix_session_id = NULL
       WHERE id = $6`,
     [railwayProjectId, railwayServiceId, railwayEnvironmentId, repo, nowIso(), projectId]
   );
