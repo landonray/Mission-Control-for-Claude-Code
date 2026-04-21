@@ -18,7 +18,16 @@ if [ ! -d "$SCRIPT_DIR/node_modules" ]; then
   npm install --prefix "$SCRIPT_DIR"
 fi
 
-# --- Step 2: Create .env if missing ---
+# --- Step 2: Skip Neon auto-setup when DATABASE_URL is already in the environment.
+# On managed hosts (Railway, Fly, etc.) env vars come from the platform, not a .env
+# file. Without this check setup.sh would fail on those hosts trying to read
+# ~/setup-tools/.env and make API calls it cannot make from a build container.
+if [ -n "$DATABASE_URL" ]; then
+  echo "DATABASE_URL already present in environment, skipping Neon auto-setup."
+  exit 0
+fi
+
+# --- Step 3: Create .env if missing ---
 if [ -f "$SCRIPT_DIR/.env" ]; then
   exit 0
 fi
