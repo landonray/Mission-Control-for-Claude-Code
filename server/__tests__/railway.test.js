@@ -6,6 +6,9 @@ import {
   SKIP_ENV_KEYS,
   collectEnvVars,
   deployProjectToRailway,
+  getLatestDeployment,
+  getBuildLogs,
+  stripAnsi,
 } from '../services/railway.js';
 
 describe('collectEnvVars', () => {
@@ -168,6 +171,74 @@ describe('deployProjectToRailway', () => {
     );
     expect(result.deploymentUrl).toBeNull();
     expect(result.railwayProjectId).toBe('proj-1');
+    expect(result.environmentId).toBe('env-1');
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('stripAnsi', () => {
+  it('removes ANSI color escapes', () => {
+    const sample = 'vite.config.js [33m[WARNING][0m message';
+    expect(stripAnsi(sample)).toBe('vite.config.js [WARNING] message');
+  });
+
+  it('returns empty string for null/undefined input', () => {
+    expect(stripAnsi(null)).toBe('');
+    expect(stripAnsi(undefined)).toBe('');
+    expect(stripAnsi('')).toBe('');
+  });
+
+  it('leaves text with no escapes untouched', () => {
+    expect(stripAnsi('plain text')).toBe('plain text');
+  });
+});
+
+describe('getLatestDeployment', () => {
+  it('returns the most recent deployment node', async () => {
+    const requestFn = vi.fn(async () => ({
+      service: {
+        deployments: {
+          edges: [{ node: { id: 'd-1', status: 'SUCCESS', createdAt: 'now', staticUrl: 'x.up.railway.app' } }],
+        },
+      },
+    }));
+    const result = await getLatestDeployment('svc-1', 'tok', requestFn);
+    expect(result).toEqual({ id: 'd-1', status: 'SUCCESS', createdAt: 'now', staticUrl: 'x.up.railway.app' });
+    expect(requestFn).toHaveBeenCalledOnce();
+    expect(requestFn.mock.calls[0][1]).toEqual({ id: 'svc-1' });
+  });
+
+  it('returns null when the service has no deployments', async () => {
+    const requestFn = vi.fn(async () => ({ service: { deployments: { edges: [] } } }));
+    expect(await getLatestDeployment('svc-1', 'tok', requestFn)).toBeNull();
+  });
+
+  it('returns null when the service is missing', async () => {
+    const requestFn = vi.fn(async () => ({ service: null }));
+    expect(await getLatestDeployment('svc-1', 'tok', requestFn)).toBeNull();
+  });
+});
+
+describe('getBuildLogs', () => {
+  it('concatenates messages and strips ANSI', async () => {
+    const requestFn = vi.fn(async () => ({
+      buildLogs: [
+        { message: 'line one\n', severity: 'info', timestamp: 't1' },
+        { message: '[31mERROR[0m line two\n', severity: 'error', timestamp: 't2' },
+      ],
+    }));
+    const logs = await getBuildLogs('d-1', 'tok', { requestFn });
+    expect(logs).toBe('line one\nERROR line two\n');
+  });
+
+  it('returns empty string when there are no logs', async () => {
+    const requestFn = vi.fn(async () => ({ buildLogs: [] }));
+    expect(await getBuildLogs('d-1', 'tok', { requestFn })).toBe('');
+  });
+
+  it('sends the limit parameter to Railway', async () => {
+    const requestFn = vi.fn(async () => ({ buildLogs: [] }));
+    await getBuildLogs('d-1', 'tok', { limit: 25, requestFn });
+    expect(requestFn.mock.calls[0][1]).toEqual({ id: 'd-1', limit: 25 });
   });
 });

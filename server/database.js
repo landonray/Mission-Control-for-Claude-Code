@@ -168,6 +168,13 @@ async function initializeDb() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS railway_project_id TEXT`,
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS deployment_url TEXT`,
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS github_repo TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS railway_service_id TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS railway_environment_id TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_id TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_status TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_logs TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_started_at TEXT`,
+    `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_checked_at TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

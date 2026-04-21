@@ -173,6 +173,7 @@ async function deployProjectToRailway({ projectName, projectPath, githubRepo, to
 
   return {
     railwayProjectId: projectId,
+    environmentId,
     serviceId,
     deploymentUrl,
     repo,
@@ -180,9 +181,52 @@ async function deployProjectToRailway({ projectName, projectPath, githubRepo, to
   };
 }
 
+// Terminal deployment states from Railway. Any status not in this set means
+// the build/deploy is still running and we should keep polling.
+const TERMINAL_DEPLOY_STATUSES = new Set(['SUCCESS', 'FAILED', 'CRASHED', 'REMOVED', 'SKIPPED']);
+
+async function getLatestDeployment(serviceId, token, requestFn = railwayRequest) {
+  const query = `
+    query Service($id: String!) {
+      service(id: $id) {
+        deployments(first: 1) {
+          edges { node { id status createdAt staticUrl } }
+        }
+      }
+    }
+  `;
+  const data = await requestFn(query, { id: serviceId }, token);
+  const node = data?.service?.deployments?.edges?.[0]?.node;
+  return node || null;
+}
+
+// Railway's logs come with ANSI color codes and OSC sequences. We strip them
+// so the text displays cleanly in a plain <pre> block on the frontend.
+function stripAnsi(text) {
+  if (!text) return '';
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\[[0-9;]*[A-Za-z]/g, '').replace(/\][^]*/g, '');
+}
+
+async function getBuildLogs(deploymentId, token, { limit = 500, requestFn = railwayRequest } = {}) {
+  const query = `
+    query BuildLogs($id: String!, $limit: Int) {
+      buildLogs(deploymentId: $id, limit: $limit) {
+        timestamp
+        severity
+        message
+      }
+    }
+  `;
+  const data = await requestFn(query, { id: deploymentId, limit }, token);
+  const rows = data?.buildLogs || [];
+  return rows.map(r => stripAnsi(r.message || '')).join('');
+}
+
 module.exports = {
   RAILWAY_API_URL,
   SKIP_ENV_KEYS,
+  TERMINAL_DEPLOY_STATUSES,
   railwayRequest,
   getGithubRepoFromGitRemote,
   collectEnvVars,
@@ -192,4 +236,7 @@ module.exports = {
   upsertEnvVars,
   createServiceDomain,
   deployProjectToRailway,
+  getLatestDeployment,
+  getBuildLogs,
+  stripAnsi,
 };

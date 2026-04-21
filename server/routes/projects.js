@@ -6,7 +6,8 @@ const { execSync } = require('child_process');
 const { query } = require('../database');
 const { parseGithubRepo } = require('../utils/githubUrl');
 const { detectServers, killServer } = require('../services/projectServers');
-const { deployProjectToRailway, getGithubRepoFromGitRemote } = require('../services/railway');
+const { deployProjectToRailway, deleteProject: deleteRailwayProject, getGithubRepoFromGitRemote } = require('../services/railway');
+const { recordDeployStart, refreshDeployStatus } = require('../services/deployTracker');
 
 // projectDiscovery is ESM — use lazy dynamic import
 // Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
@@ -387,9 +388,11 @@ router.post('/:id/host', async (req, res) => {
     const project = await getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    if (project.deployment_url) {
+    if (project.railway_project_id && project.last_deploy_status &&
+        !['FAILED', 'CRASHED', 'REMOVED', 'SKIPPED'].includes(project.last_deploy_status)) {
+      const liveUrl = project.deployment_url ? ` (${project.deployment_url})` : '';
       return res.status(400).json({
-        error: `This project is already hosted at ${project.deployment_url}. Delete the Railway project first if you want to re-host.`,
+        error: `This project already has an active Railway deployment${liveUrl}. Delete the Railway project first if you want to re-host.`,
       });
     }
 
@@ -400,6 +403,12 @@ router.post('/:id/host', async (req, res) => {
       });
     }
 
+    // Re-deploy: if we have a stale Railway project from a previous failed
+    // attempt, delete it first so we don't leak (the user's plan caps at 3).
+    if (project.railway_project_id) {
+      await deleteRailwayProject(project.railway_project_id, token);
+    }
+
     const result = await deployProjectToRailway({
       projectName: project.name,
       projectPath: project.root_path,
@@ -407,16 +416,31 @@ router.post('/:id/host', async (req, res) => {
       token,
     });
 
-    await query(
-      `UPDATE projects
-          SET railway_project_id = $1,
-              deployment_url = $2,
-              github_repo = COALESCE(github_repo, $3)
-        WHERE id = $4`,
-      [result.railwayProjectId, result.deploymentUrl, result.repo, req.params.id]
-    );
+    await recordDeployStart({
+      projectId: req.params.id,
+      railwayProjectId: result.railwayProjectId,
+      railwayServiceId: result.serviceId,
+      railwayEnvironmentId: result.environmentId,
+      repo: result.repo,
+    });
 
-    res.json(result);
+    res.json({ ...result, status: 'BUILDING' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:id/deploy-status — current Railway deploy status + logs
+// Transparently polls Railway (rate-limited internally) if status is not terminal.
+router.get('/:id/deploy-status', async (req, res) => {
+  try {
+    const token = process.env.RAILWAY_TOKEN;
+    if (!token) {
+      return res.status(400).json({ error: 'RAILWAY_TOKEN is not set.' });
+    }
+    const status = await refreshDeployStatus(req.params.id, token);
+    if (!status) return res.status(404).json({ error: 'Project not found' });
+    res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
