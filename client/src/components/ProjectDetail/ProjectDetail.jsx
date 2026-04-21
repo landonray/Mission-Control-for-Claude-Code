@@ -5,6 +5,8 @@ import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X } from 'l
 import styles from './ProjectDetail.module.css';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
+const DEPLOY_POLL_INTERVAL_MS = 5000;
+const TERMINAL_DEPLOY_STATUSES = new Set(['SUCCESS', 'FAILED', 'CRASHED', 'REMOVED', 'SKIPPED']);
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -14,10 +16,12 @@ export default function ProjectDetail() {
   const [error, setError] = useState(null);
   const [servers, setServers] = useState([]);
   const [killingPid, setKillingPid] = useState(null);
-  const [hostStatus, setHostStatus] = useState('idle'); // idle | deploying | success | error
   const [hostError, setHostError] = useState(null);
-  const [hostResult, setHostResult] = useState(null);
+  const [starting, setStarting] = useState(false);
+  const [deploy, setDeploy] = useState(null);
+  const [refreshingDeploy, setRefreshingDeploy] = useState(false);
   const pollRef = useRef(null);
+  const deployPollRef = useRef(null);
 
   const loadProject = useCallback(async () => {
     try {
@@ -41,14 +45,54 @@ export default function ProjectDetail() {
     }
   }, [id]);
 
+  const refreshDeploy = useCallback(async ({ background = false } = {}) => {
+    if (!background) setRefreshingDeploy(true);
+    try {
+      const data = await api.get(`/api/projects/${id}/deploy-status`);
+      setDeploy(data);
+      return data;
+    } catch (err) {
+      if (!background) setHostError(err.message);
+      return null;
+    } finally {
+      if (!background) setRefreshingDeploy(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     loadProject();
   }, [loadProject]);
 
   useEffect(() => {
+    refreshDeploy({ background: true });
+  }, [refreshDeploy]);
+
+  useEffect(() => {
     pollRef.current = setInterval(pollServers, SERVER_POLL_INTERVAL_MS);
     return () => clearInterval(pollRef.current);
   }, [pollServers]);
+
+  // Poll the deploy status only while a deploy is actually in progress. Once
+  // the status is terminal we stop hitting the endpoint so we aren't chatty
+  // with Railway for no reason.
+  useEffect(() => {
+    const status = deploy?.lastDeployStatus;
+    const inProgress = !!deploy?.railwayServiceId && !TERMINAL_DEPLOY_STATUSES.has(status);
+    if (!inProgress) {
+      if (deployPollRef.current) {
+        clearInterval(deployPollRef.current);
+        deployPollRef.current = null;
+      }
+      return undefined;
+    }
+    deployPollRef.current = setInterval(() => refreshDeploy({ background: true }), DEPLOY_POLL_INTERVAL_MS);
+    return () => {
+      if (deployPollRef.current) {
+        clearInterval(deployPollRef.current);
+        deployPollRef.current = null;
+      }
+    };
+  }, [deploy?.lastDeployStatus, deploy?.railwayServiceId, refreshDeploy]);
 
   const handleKill = async (pid) => {
     if (!confirm(`Kill process ${pid}? This will stop the server.`)) return;
@@ -65,17 +109,15 @@ export default function ProjectDetail() {
 
   const handleHost = async () => {
     if (!confirm('Deploy this project to Railway? This will copy your local .env values to the Railway project.')) return;
-    setHostStatus('deploying');
+    setStarting(true);
     setHostError(null);
-    setHostResult(null);
     try {
-      const result = await api.post(`/api/projects/${id}/host`, {});
-      setHostResult(result);
-      setHostStatus('success');
-      await loadProject();
+      await api.post(`/api/projects/${id}/host`, {});
+      await refreshDeploy({ background: false });
     } catch (err) {
       setHostError(err.message);
-      setHostStatus('error');
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -141,57 +183,14 @@ export default function ProjectDetail() {
 
       <section className={styles.section}>
         <h2 className={styles.sectionHeader}>Hosting</h2>
-        {project.deployment_url ? (
-          <div className={styles.deployedCard}>
-            <div className={styles.deployedStatus}>
-              <span className={styles.badgeLive}>Live</span>
-              <a
-                href={project.deployment_url}
-                target="_blank"
-                rel="noreferrer"
-                className={styles.metaLink}
-              >
-                {project.deployment_url} <ExternalLink size={12} />
-              </a>
-            </div>
-            <p className={styles.hint}>
-              Hosted on Railway. To update env vars or logs, open the Railway dashboard.
-            </p>
-          </div>
-        ) : (
-          <div className={styles.hostCard}>
-            <button
-              className="btn btn-primary"
-              onClick={handleHost}
-              disabled={hostStatus === 'deploying'}
-            >
-              <Rocket size={16} />
-              {hostStatus === 'deploying' ? 'Deploying…' : 'Host This Project'}
-            </button>
-            <p className={styles.hint}>
-              Deploys to Railway from your GitHub repo. Copies your local <code>.env</code>{' '}
-              values up (except <code>PORT</code>, <code>VITE_PORT</code>, and <code>NODE_ENV</code>).
-            </p>
-            {hostStatus === 'success' && hostResult && (
-              <div className={styles.hostSuccess}>
-                Deployment started.{' '}
-                {hostResult.deploymentUrl ? (
-                  <>
-                    Live URL:{' '}
-                    <a href={hostResult.deploymentUrl} target="_blank" rel="noreferrer">
-                      {hostResult.deploymentUrl}
-                    </a>
-                  </>
-                ) : (
-                  'Railway is building; the URL will appear once the first build finishes.'
-                )}
-              </div>
-            )}
-            {hostStatus === 'error' && (
-              <div className={styles.hostError}>{hostError}</div>
-            )}
-          </div>
-        )}
+        <DeployStatus
+          deploy={deploy}
+          starting={starting}
+          refreshing={refreshingDeploy}
+          hostError={hostError}
+          onHost={handleHost}
+          onRefresh={() => refreshDeploy({ background: false })}
+        />
       </section>
 
       <section className={styles.section}>
@@ -243,6 +242,99 @@ export default function ProjectDetail() {
       </section>
     </div>
   );
+}
+
+const DEPLOY_STATUS_LABEL = {
+  BUILDING: 'Building',
+  DEPLOYING: 'Deploying',
+  INITIALIZING: 'Starting',
+  QUEUED: 'Queued',
+  WAITING: 'Waiting',
+  SUCCESS: 'Live',
+  FAILED: 'Build failed',
+  CRASHED: 'Crashed',
+  REMOVED: 'Removed',
+  SKIPPED: 'Skipped',
+};
+
+function DeployStatus({ deploy, starting, refreshing, hostError, onHost, onRefresh }) {
+  const status = deploy?.lastDeployStatus || null;
+  const inProgress = deploy?.railwayServiceId && !TERMINAL_DEPLOY_STATUSES.has(status);
+  const isSuccess = status === 'SUCCESS';
+  const isFailure = status === 'FAILED' || status === 'CRASHED';
+  const neverDeployed = !deploy?.railwayServiceId;
+  const label = DEPLOY_STATUS_LABEL[status] || status || 'Not deployed';
+
+  const badgeStyle = isSuccess
+    ? styles.badgeLive
+    : isFailure
+    ? styles.badgeFailed
+    : inProgress
+    ? styles.badgeBuilding
+    : styles.badgeIdle;
+
+  return (
+    <div className={styles.deployCard}>
+      <div className={styles.deployHeader}>
+        <span className={badgeStyle}>{label}</span>
+        {isSuccess && deploy?.deploymentUrl && (
+          <a
+            href={deploy.deploymentUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={styles.metaLink}
+          >
+            {deploy.deploymentUrl} <ExternalLink size={12} />
+          </a>
+        )}
+        {inProgress && <span className={styles.deployProgressText}>Railway is building the app…</span>}
+        <div className={styles.deployActions}>
+          {!neverDeployed && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+              title="Refresh deploy status"
+            >
+              <RefreshCw size={14} /> {refreshing ? 'Checking…' : 'Refresh'}
+            </button>
+          )}
+          {(neverDeployed || isFailure || status === 'REMOVED') && (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={onHost}
+              disabled={starting || inProgress}
+            >
+              <Rocket size={14} />
+              {starting ? 'Starting…' : neverDeployed ? 'Host This Project' : 'Re-deploy'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {neverDeployed && !starting && !hostError && (
+        <p className={styles.hint}>
+          Deploys to Railway from your GitHub repo. Copies your local <code>.env</code>{' '}
+          values up (except <code>PORT</code>, <code>VITE_PORT</code>, and <code>NODE_ENV</code>).
+        </p>
+      )}
+
+      {hostError && <div className={styles.hostError}>{hostError}</div>}
+
+      {isFailure && deploy?.lastDeployLogs && (
+        <div className={styles.logBlock}>
+          <div className={styles.logLabel}>Build log (tail)</div>
+          <pre className={styles.logPre}>{tailLog(deploy.lastDeployLogs)}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function tailLog(logs, lines = 40) {
+  if (!logs) return '';
+  const all = logs.split('\n');
+  return all.slice(-lines).join('\n');
 }
 
 function ServerRow({ server, onKill, killing }) {
