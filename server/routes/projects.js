@@ -8,6 +8,7 @@ const { parseGithubRepo } = require('../utils/githubUrl');
 const { detectServers, killServer } = require('../services/projectServers');
 const { deployProjectToRailway, deleteProject: deleteRailwayProject, getGithubRepoFromGitRemote } = require('../services/railway');
 const { recordDeployStart, refreshDeployStatus } = require('../services/deployTracker');
+const { ensureFixSession, TRIGGER_STATUSES: FIX_TRIGGER_STATUSES } = require('../services/deployAutoFix');
 
 // projectDiscovery is ESM — use lazy dynamic import
 // Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
@@ -432,6 +433,8 @@ router.post('/:id/host', async (req, res) => {
 
 // GET /api/projects/:id/deploy-status — current Railway deploy status + logs
 // Transparently polls Railway (rate-limited internally) if status is not terminal.
+// When the latest poll reveals a failed build we also spin up a Claude session
+// to fix it — idempotent, so repeat polls don't spawn duplicates.
 router.get('/:id/deploy-status', async (req, res) => {
   try {
     const token = process.env.RAILWAY_TOKEN;
@@ -440,6 +443,18 @@ router.get('/:id/deploy-status', async (req, res) => {
     }
     const status = await refreshDeployStatus(req.params.id, token);
     if (!status) return res.status(404).json({ error: 'Project not found' });
+
+    if (FIX_TRIGGER_STATUSES.has(status.lastDeployStatus) && !status.fixSessionId) {
+      try {
+        const fixSessionId = await ensureFixSession(req.params.id);
+        if (fixSessionId) status.fixSessionId = fixSessionId;
+      } catch (err) {
+        // Fix session is a best-effort helper — don't fail the status call
+        // if the session can't be spawned. The user still sees the error.
+        console.error('Failed to spawn fix session for project', req.params.id, err.message);
+      }
+    }
+
     res.json(status);
   } catch (err) {
     res.status(500).json({ error: err.message });

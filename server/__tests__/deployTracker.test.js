@@ -74,6 +74,7 @@ describe('readProjectDeployRow', () => {
       last_deploy_logs: 'ok',
       last_deploy_started_at: 't1',
       last_deploy_checked_at: 't2',
+      fix_session_id: 'sess-1',
     };
     expect(readProjectDeployRow(row)).toEqual({
       projectId: 'p-1',
@@ -86,6 +87,7 @@ describe('readProjectDeployRow', () => {
       lastDeployLogs: 'ok',
       lastDeployStartedAt: 't1',
       lastDeployCheckedAt: 't2',
+      fixSessionId: 'sess-1',
     });
   });
 });
@@ -109,6 +111,7 @@ describe('recordDeployStart', () => {
     expect(sql).toMatch(/railway_project_id = \$1/);
     expect(sql).toMatch(/last_deploy_status = 'BUILDING'/);
     expect(sql).toMatch(/deployment_url = NULL/);
+    expect(sql).toMatch(/fix_session_id = NULL/);
     expect(params[0]).toBe('rp');
     expect(params[1]).toBe('rs');
     expect(params[2]).toBe('re');
