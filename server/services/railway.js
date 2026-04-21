@@ -110,6 +110,16 @@ async function upsertEnvVars({ projectId, environmentId, serviceId, variables },
   );
 }
 
+async function deleteProject(projectId, token, requestFn = railwayRequest) {
+  const query = `mutation ProjectDelete($id: String!) { projectDelete(id: $id) }`;
+  try {
+    await requestFn(query, { id: projectId }, token);
+  } catch {
+    // Cleanup is best-effort; if it fails the user will see an orphan in Railway
+    // but we don't want to mask the real error that triggered cleanup.
+  }
+}
+
 async function createServiceDomain(environmentId, serviceId, token, requestFn = railwayRequest) {
   const query = `
     mutation ServiceDomainCreate($input: ServiceDomainCreateInput!) {
@@ -146,10 +156,11 @@ async function deployProjectToRailway({ projectName, projectPath, githubRepo, to
   try {
     ({ serviceId } = await createServiceFromRepo(projectId, repo, token, requestFn));
   } catch (err) {
+    await deleteProject(projectId, token, requestFn);
     const msg = err.message || '';
     if (/github|repo|install/i.test(msg)) {
       throw new Error(
-        `Railway could not access the GitHub repo "${repo}". Install the Railway GitHub App and grant access to this repo: https://railway.app/account/tokens (or https://github.com/apps/railway). Underlying error: ${msg}`
+        `Railway could not access the GitHub repo "${repo}". Install the Railway GitHub App and grant access to this repo by going to https://railway.com/ and creating a new project from GitHub (that triggers the install flow). Underlying error: ${msg}`
       );
     }
     throw err;
@@ -177,6 +188,7 @@ module.exports = {
   collectEnvVars,
   createProject,
   createServiceFromRepo,
+  deleteProject,
   upsertEnvVars,
   createServiceDomain,
   deployProjectToRailway,
