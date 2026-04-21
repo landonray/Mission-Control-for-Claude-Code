@@ -113,9 +113,9 @@ describe('deployProjectToRailway', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('surfaces a helpful error when GitHub App is not installed', async () => {
+  it('surfaces a helpful error and cleans up the empty project when GitHub App is not installed', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-rw-'));
-    const { fn } = makeRequestFn([
+    const { fn, calls } = makeRequestFn([
       {
         name: 'ProjectCreate',
         data: {
@@ -127,6 +127,7 @@ describe('deployProjectToRailway', () => {
         },
       },
       { name: 'ServiceCreate', error: 'GitHub repo not accessible. Install the GitHub App.' },
+      { name: 'ProjectDelete', data: { projectDelete: true } },
     ]);
 
     await expect(
@@ -135,6 +136,11 @@ describe('deployProjectToRailway', () => {
         { requestFn: fn }
       )
     ).rejects.toThrow(/Railway GitHub App|Railway could not access/i);
+
+    const deleteCall = calls.find(c => c.query.includes('ProjectDelete'));
+    expect(deleteCall).toBeDefined();
+    expect(deleteCall.variables.id).toBe('proj-1');
+
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
