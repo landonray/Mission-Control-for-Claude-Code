@@ -5,7 +5,12 @@ const path = require('path');
 const { execSync } = require('child_process');
 const { query } = require('../database');
 const { parseGithubRepo } = require('../utils/githubUrl');
-const { detectServers, killServer } = require('../services/projectServers');
+const {
+  detectServers,
+  killServer,
+  detectExtras,
+  killAllProjectProcesses,
+} = require('../services/projectServers');
 const { deployProjectToRailway, deleteProject: deleteRailwayProject, getGithubRepoFromGitRemote } = require('../services/railway');
 const { recordDeployStart, refreshDeployStatus } = require('../services/deployTracker');
 const { ensureFixSession, TRIGGER_STATUSES: FIX_TRIGGER_STATUSES } = require('../services/deployAutoFix');
@@ -341,8 +346,10 @@ router.get('/:id', async (req, res) => {
     // Attach current server status (detection is fast but we still tolerate errors)
     try {
       project.servers = detectServers(project.root_path);
+      project.extra_processes = detectExtras(project.root_path);
     } catch (err) {
       project.servers = [];
+      project.extra_processes = [];
       project.servers_error = err.message;
     }
 
@@ -358,7 +365,10 @@ router.get('/:id/servers', async (req, res) => {
     const { getProject } = await getProjectDiscovery();
     const project = await getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Project not found' });
-    res.json({ servers: detectServers(project.root_path) });
+    res.json({
+      servers: detectServers(project.root_path),
+      extras: detectExtras(project.root_path),
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -379,6 +389,22 @@ router.post('/:id/kill-server', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// POST /api/projects/:id/kill-all-processes — sweep every project-owned dev
+// process (port holders + orphans + duplicate trees). Each kill runs the same
+// per-PID cwd-inside-project safety check.
+router.post('/:id/kill-all-processes', async (req, res) => {
+  try {
+    const { getProject } = await getProjectDiscovery();
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    const result = killAllProjectProcesses(project.root_path);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

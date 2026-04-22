@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../utils/api';
-import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench } from 'lucide-react';
+import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench, Trash2 } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
@@ -15,7 +15,9 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [servers, setServers] = useState([]);
+  const [extras, setExtras] = useState([]);
   const [killingPid, setKillingPid] = useState(null);
+  const [sweeping, setSweeping] = useState(false);
   const [hostError, setHostError] = useState(null);
   const [starting, setStarting] = useState(false);
   const [deploy, setDeploy] = useState(null);
@@ -29,6 +31,7 @@ export default function ProjectDetail() {
       const data = await api.get(`/api/projects/${id}`);
       setProject(data);
       setServers(data.servers || []);
+      setExtras(data.extra_processes || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -40,6 +43,7 @@ export default function ProjectDetail() {
     try {
       const data = await api.get(`/api/projects/${id}/servers`);
       setServers(data.servers || []);
+      setExtras(data.extras || []);
     } catch {
       // Silent — next poll will retry
     }
@@ -104,6 +108,30 @@ export default function ProjectDetail() {
       alert(`Failed to kill process: ${err.message}`);
     } finally {
       setKillingPid(null);
+    }
+  };
+
+  const handleKillAll = async () => {
+    const total = servers.filter((s) => s.running && s.belongsToProject).length + extras.length;
+    if (total === 0) return;
+    if (!confirm(
+      `Kill all ${total} dev process${total === 1 ? '' : 'es'} for this project? ` +
+      `This stops the running server(s) and any orphan/duplicate processes.`
+    )) return;
+    setSweeping(true);
+    try {
+      const result = await api.post(`/api/projects/${id}/kill-all-processes`, {});
+      if (result.failed && result.failed.length > 0) {
+        alert(
+          `Killed ${result.killed.length}, failed ${result.failed.length}. ` +
+          `First error: ${result.failed[0].error}`
+        );
+      }
+      await pollServers();
+    } catch (err) {
+      alert(`Failed to sweep processes: ${err.message}`);
+    } finally {
+      setSweeping(false);
     }
   };
 
@@ -195,7 +223,19 @@ export default function ProjectDetail() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionHeader}>Running Servers</h2>
+        <div className={styles.sectionHeaderRow}>
+          <h2 className={styles.sectionHeader}>Running Servers</h2>
+          {(servers.some((s) => s.running && s.belongsToProject) || extras.length > 0) && (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleKillAll}
+              disabled={sweeping}
+              title="Kill every dev process for this project, including orphans and duplicates"
+            >
+              <Trash2 size={14} /> {sweeping ? 'Killing…' : 'Kill all dev processes'}
+            </button>
+          )}
+        </div>
         <div className={styles.serverList}>
           {servers.length === 0 ? (
             <div className={styles.empty}>
@@ -214,6 +254,27 @@ export default function ProjectDetail() {
             ))
           )}
         </div>
+
+        {extras.length > 0 && (
+          <div className={styles.extrasBlock}>
+            <div className={styles.extrasHeader}>
+              Other project processes ({extras.length})
+              <span className={styles.extrasHint}>
+                — orphans, duplicate <code>npm run dev</code> trees, or background helpers
+              </span>
+            </div>
+            <div className={styles.serverList}>
+              {extras.map((p) => (
+                <ExtraRow
+                  key={p.pid}
+                  proc={p}
+                  onKill={handleKill}
+                  killing={killingPid === p.pid}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className={styles.section}>
@@ -391,6 +452,29 @@ function ServerRow({ server, onKill, killing }) {
             Another project
           </span>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ExtraRow({ proc, onKill, killing }) {
+  const { pid, ppid, command } = proc;
+  return (
+    <div className={styles.serverRow}>
+      <div className={styles.serverInfo}>
+        <span className={styles.serverRole}>PID {pid}</span>
+        <span className={styles.serverPort}>parent {ppid}</span>
+        <span className={styles.serverCmd} title={command}>{command}</span>
+      </div>
+      <div className={styles.serverActions}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => onKill(pid)}
+          disabled={killing}
+          title="Stop this process"
+        >
+          <X size={14} /> {killing ? 'Killing…' : 'Kill'}
+        </button>
       </div>
     </div>
   );

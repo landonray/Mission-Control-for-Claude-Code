@@ -157,6 +157,90 @@ function killServer(projectPath, pid, deps = {}) {
   return { killed: true, pid: numericPid };
 }
 
+// Process names we treat as "dev-server-related" when looking for orphans /
+// duplicates. Matched against the command field from `ps`, so prefixes like
+// `/path/to/.bin/vite` still match.
+const DEV_PROCESS_RE = /(^|[\/\s])(node|npm|npx|tsx|vite|concurrently|esbuild)(\s|$)/i;
+
+function listAllProcesses() {
+  let out;
+  try {
+    out = execSync('ps -axo pid=,ppid=,command=', {
+      encoding: 'utf8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch {
+    return [];
+  }
+  const procs = [];
+  for (const raw of out.split('\n')) {
+    const line = raw.replace(/^\s+/, '');
+    if (!line) continue;
+    const m = line.match(/^(\d+)\s+(\d+)\s+(.*)$/);
+    if (!m) continue;
+    procs.push({
+      pid: parseInt(m[1], 10),
+      ppid: parseInt(m[2], 10),
+      command: m[3],
+    });
+  }
+  return procs;
+}
+
+// Returns every dev-related process whose working directory is inside the
+// project. Used to find orphans, zombies, and duplicate `npm run dev` trees
+// that the port-holder view (detectServers) cannot see.
+function listProjectProcesses(projectPath, deps = {}) {
+  const listAll = deps.listAllProcesses || listAllProcesses;
+  const cwdFn = deps.getProcessCwd || getProcessCwd;
+  const ownPid = process.pid;
+
+  const candidates = listAll().filter(
+    (p) => p.pid !== ownPid && DEV_PROCESS_RE.test(p.command)
+  );
+  const inProject = [];
+  for (const p of candidates) {
+    const cwd = cwdFn(p.pid);
+    if (pathIsInside(cwd, projectPath)) {
+      inProject.push({ ...p, cwd });
+    }
+  }
+  return inProject;
+}
+
+// All project-owned dev processes that are NOT one of the pinned-port
+// listeners. These are the rows the user can prune to clean up the
+// environment.
+function detectExtras(projectPath, deps = {}) {
+  const servers = deps.detectServers
+    ? deps.detectServers(projectPath, deps)
+    : detectServers(projectPath, deps);
+  const portHolderPids = new Set(
+    servers.filter((s) => s.running && s.pid).map((s) => s.pid)
+  );
+  const all = (deps.listProjectProcesses || listProjectProcesses)(projectPath, deps);
+  return all.filter((p) => !portHolderPids.has(p.pid));
+}
+
+// Sweep every project-owned dev process (port holders + extras). Each kill
+// re-runs the same per-PID safety check killServer enforces, so a process
+// whose cwd is no longer inside the project is silently skipped.
+function killAllProjectProcesses(projectPath, deps = {}) {
+  const all = (deps.listProjectProcesses || listProjectProcesses)(projectPath, deps);
+  const killed = [];
+  const failed = [];
+  for (const p of all) {
+    try {
+      killServer(projectPath, p.pid, deps);
+      killed.push(p.pid);
+    } catch (err) {
+      failed.push({ pid: p.pid, error: err.message });
+    }
+  }
+  return { killed, failed };
+}
+
 module.exports = {
   parseEnvFile,
   readEnvFile,
@@ -166,5 +250,10 @@ module.exports = {
   pathIsInside,
   detectServers,
   killServer,
+  listAllProcesses,
+  listProjectProcesses,
+  detectExtras,
+  killAllProjectProcesses,
+  DEV_PROCESS_RE,
   ROLE_KEYS,
 };

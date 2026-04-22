@@ -69,14 +69,15 @@ describe('ProjectDetail', () => {
       expect(screen.getByText(/Running · PID 1234/)).toBeTruthy();
     });
     expect(screen.getByText('Not running')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Kill/ })).toBeTruthy();
+    // Matches the per-row "Kill" button, not the "Kill all dev processes" sweep button.
+    expect(screen.getByRole('button', { name: /^Kill$/ })).toBeTruthy();
   });
 
   it('calls kill API and refreshes server list when Kill is clicked', async () => {
     mockApi.post.mockResolvedValueOnce({ killed: true, pid: 1234 });
     renderAt('abc-123');
-    await waitFor(() => screen.getByRole('button', { name: /Kill/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Kill/ }));
+    await waitFor(() => screen.getByRole('button', { name: /^Kill$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Kill$/ }));
     await waitFor(() => {
       expect(mockApi.post).toHaveBeenCalledWith('/api/projects/abc-123/kill-server', { pid: 1234 });
     });
@@ -128,5 +129,77 @@ describe('ProjectDetail', () => {
     await waitFor(() => {
       expect(screen.getByText('Project not found')).toBeTruthy();
     });
+  });
+
+  it('renders the extras list and shows the sweep button when orphan processes exist', async () => {
+    const projectWithExtras = {
+      ...sampleProject,
+      extra_processes: [
+        { pid: 9001, ppid: 1, command: 'npm run dev', cwd: '/Users/me/projects/acme-app' },
+        { pid: 9002, ppid: 9001, command: 'concurrently node server/index.js cd client && npx vite', cwd: '/Users/me/projects/acme-app' },
+      ],
+    };
+    mockApi.get.mockImplementation((url) => {
+      if (url === '/api/projects/abc-123') return Promise.resolve(projectWithExtras);
+      if (url === '/api/projects/abc-123/servers') {
+        return Promise.resolve({ servers: sampleProject.servers, extras: projectWithExtras.extra_processes });
+      }
+      return Promise.reject(new Error(`unexpected url: ${url}`));
+    });
+    renderAt('abc-123');
+    await waitFor(() => {
+      expect(screen.getByText('Other project processes (2)')).toBeTruthy();
+    });
+    expect(screen.getByText('PID 9001')).toBeTruthy();
+    expect(screen.getByText('PID 9002')).toBeTruthy();
+    expect(screen.getByText(/concurrently node server\/index\.js/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Kill all dev processes/i })).toBeTruthy();
+  });
+
+  it('calls the sweep API when "Kill all dev processes" is clicked', async () => {
+    const projectWithExtras = {
+      ...sampleProject,
+      extra_processes: [
+        { pid: 9001, ppid: 1, command: 'npm run dev', cwd: '/Users/me/projects/acme-app' },
+      ],
+    };
+    mockApi.get.mockImplementation((url) => {
+      if (url === '/api/projects/abc-123') return Promise.resolve(projectWithExtras);
+      if (url === '/api/projects/abc-123/servers') {
+        return Promise.resolve({ servers: sampleProject.servers, extras: projectWithExtras.extra_processes });
+      }
+      return Promise.reject(new Error(`unexpected url: ${url}`));
+    });
+    mockApi.post.mockResolvedValueOnce({ killed: [1234, 9001], failed: [] });
+    renderAt('abc-123');
+    await waitFor(() => screen.getByRole('button', { name: /Kill all dev processes/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Kill all dev processes/i }));
+    await waitFor(() => {
+      expect(mockApi.post).toHaveBeenCalledWith('/api/projects/abc-123/kill-all-processes', {});
+    });
+  });
+
+  it('hides the sweep button and extras list when there are no orphans and no running servers', async () => {
+    const projectNoExtras = {
+      ...sampleProject,
+      servers: [
+        { key: 'PORT', role: 'Backend', port: 4001, running: false },
+        { key: 'VITE_PORT', role: 'Frontend', port: 5173, running: false },
+      ],
+      extra_processes: [],
+    };
+    mockApi.get.mockImplementation((url) => {
+      if (url === '/api/projects/abc-123') return Promise.resolve(projectNoExtras);
+      if (url === '/api/projects/abc-123/servers') {
+        return Promise.resolve({ servers: projectNoExtras.servers, extras: [] });
+      }
+      return Promise.reject(new Error(`unexpected url: ${url}`));
+    });
+    renderAt('abc-123');
+    await waitFor(() => {
+      expect(screen.getAllByText('Not running').length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByRole('button', { name: /Kill all dev processes/i })).toBeNull();
+    expect(screen.queryByText(/Other project processes/)).toBeNull();
   });
 });
