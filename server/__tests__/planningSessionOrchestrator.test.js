@@ -72,6 +72,22 @@ describe('buildPlanningPrompt', () => {
     expect(prompt).toContain('You are a database expert.');
     expect(prompt).not.toMatch(/senior product and architecture planning agent/);
   });
+
+  it('includes the escalation instructions and ESCALATE format', () => {
+    const prompt = orchestrator.buildPlanningPrompt({ task: 'q', contextSections: [] });
+    expect(prompt).toContain('Escalation rules');
+    expect(prompt).toMatch(/You CAN answer if/);
+    expect(prompt).toMatch(/You MUST escalate if/);
+    expect(prompt).toContain('ESCALATE');
+    expect(prompt).toContain('Question:');
+    expect(prompt).toContain('Recommendation:');
+    expect(prompt).toContain('Reason for escalation:');
+  });
+
+  it('still mentions read-only planning mode after escalation rules', () => {
+    const prompt = orchestrator.buildPlanningPrompt({ task: 'q', contextSections: [] });
+    expect(prompt).toMatch(/read-only planning mode/i);
+  });
 });
 
 describe('loadProjectContextFiles', () => {

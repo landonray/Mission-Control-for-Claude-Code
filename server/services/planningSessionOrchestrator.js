@@ -53,17 +53,47 @@ function buildPlanningPrompt({ systemPrompt, task, contextSections }) {
     parts.push(
       'You are a senior product and architecture planning agent for this project. ' +
       'Answer the question below using the project context provided. ' +
-      'Be concrete, decisive, and brief. If the project context does not give you enough information, ' +
-      'say so explicitly and recommend what would need to be checked.'
+      'Be concrete, decisive, and brief.'
     );
   }
   if (contextSections && contextSections.length > 0) {
     parts.push('\n## Project context\n\n' + contextSections.join('\n\n'));
   }
+
+  parts.push(`
+## Escalation rules
+
+After reasoning through the question, assess whether you can answer confidently or whether this needs to be escalated to the project owner.
+
+You CAN answer if:
+- The answer is clearly supported by the project's PRODUCT.md or ARCHITECTURE.md
+- The answer follows established patterns visible in the codebase
+- The question is a straightforward technical decision with a clear best practice
+- The decision is easily reversible if the owner disagrees
+
+You MUST escalate if:
+- The question requires establishing a new pattern not covered by existing documentation
+- The answer would contradict an existing documented pattern or decision
+- The question involves strategic or business direction
+- The decision involves irreversible or expensive-to-reverse changes (data model migrations, dropping features, switching core dependencies)
+- The question has external stakeholder implications
+- You genuinely don't have enough context to give a confident answer
+
+If you can answer, respond normally with your answer.
+
+If you must escalate, respond in EXACTLY this format (and nothing else after this block):
+
+ESCALATE
+Question: <restate the question clearly>
+Context: <what you know about this topic from the project documents>
+Recommendation: <what you would answer if you could, and why>
+Reason for escalation: <which category above applies>
+`);
+
   parts.push('\n## Question\n\n' + (task || '').trim());
   parts.push(
     '\nIMPORTANT: You are in read-only planning mode. Do not edit, write, or create files. ' +
-    'Reading and searching the project is fine. Respond with a clear, direct answer.'
+    'Reading and searching the project is fine. Respond with a clear, direct answer or with the ESCALATE block above.'
   );
   return parts.join('\n');
 }
