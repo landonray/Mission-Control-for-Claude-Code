@@ -61,6 +61,50 @@ router.get('/questions/:id', async (req, res) => {
   }
 });
 
+// GET /api/planning/usage?project_id=...&window=7d|30d|all
+// Returns per-session-type counts and durations for planning, extraction,
+// and eval_gatherer sessions. Replaces the old rate-limit cap with passive
+// observability — owners can see usage patterns and decide if they care.
+router.get('/usage', async (req, res) => {
+  const projectId = req.query.project_id;
+  const windowKey = req.query.window || '7d';
+  if (!projectId) return res.status(400).json({ error: 'project_id is required' });
+
+  const intervalSql = windowKey === '30d'
+    ? `AND created_at > NOW() - INTERVAL '30 days'`
+    : windowKey === 'all'
+      ? ''
+      : `AND created_at > NOW() - INTERVAL '7 days'`;
+
+  try {
+    const result = await query(
+      `SELECT
+         session_type,
+         COUNT(*) AS session_count,
+         COALESCE(SUM(EXTRACT(EPOCH FROM (COALESCE(ended_at::timestamp, NOW()) - created_at::timestamp))), 0) AS total_duration_seconds,
+         COALESCE(AVG(EXTRACT(EPOCH FROM (COALESCE(ended_at::timestamp, NOW()) - created_at::timestamp))), 0) AS avg_duration_seconds
+       FROM sessions
+       WHERE project_id = $1
+         AND session_type IN ('planning', 'extraction', 'eval_gatherer')
+         ${intervalSql}
+       GROUP BY session_type
+       ORDER BY session_type`,
+      [projectId]
+    );
+    res.json({
+      window: windowKey,
+      stats: result.rows.map((r) => ({
+        session_type: r.session_type,
+        session_count: Number(r.session_count) || 0,
+        total_duration_seconds: Math.round(Number(r.total_duration_seconds) || 0),
+        avg_duration_seconds: Math.round(Number(r.avg_duration_seconds) || 0),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/planning/decisions/:projectId — read parsed entries from
 // docs/decisions.md, useful for UI display and slice 3 testing.
 router.get('/decisions/:projectId', async (req, res) => {

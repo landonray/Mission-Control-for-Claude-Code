@@ -5,36 +5,6 @@ const { query } = require('../database');
 const sessionManager = require('./sessionManager');
 const decisionLog = require('./decisionLog');
 
-const DEFAULT_TIMEOUTS_SECONDS = {
-  planning: 180,
-  extraction: 300,
-  eval_gatherer: 300,
-  implementation: 0,
-};
-
-const RATE_LIMIT_PER_HOUR = 10;
-
-function defaultTimeoutSeconds(sessionType) {
-  if (Object.prototype.hasOwnProperty.call(DEFAULT_TIMEOUTS_SECONDS, sessionType)) {
-    return DEFAULT_TIMEOUTS_SECONDS[sessionType];
-  }
-  return DEFAULT_TIMEOUTS_SECONDS.planning;
-}
-
-async function ensureRateLimit(projectId) {
-  const result = await query(
-    `SELECT COUNT(*) AS count FROM sessions
-     WHERE project_id = $1 AND session_type = 'planning' AND created_at > NOW() - INTERVAL '1 hour'`,
-    [projectId]
-  );
-  const count = parseInt(result.rows[0]?.count || 0, 10);
-  if (count >= RATE_LIMIT_PER_HOUR) {
-    const err = new Error(`Planning-session rate limit reached for this project (${RATE_LIMIT_PER_HOUR}/hour). Try again later.`);
-    err.code = 'RATE_LIMITED';
-    throw err;
-  }
-}
-
 async function loadProjectContextFiles(projectRoot) {
   const tryPaths = [
     path.join(projectRoot, 'PRODUCT.md'),
@@ -121,8 +91,6 @@ async function startPlanningSession(opts) {
   const project = projectResult.rows[0];
   if (!project) throw new Error(`Project ${projectId} not found`);
 
-  await ensureRateLimit(projectId);
-
   const productArchSections = await loadProjectContextFiles(project.root_path);
   const extraSections = await loadExtraContextFiles(project.root_path, contextFiles);
   const contextSections = [...productArchSections, ...extraSections];
@@ -176,7 +144,7 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
   if (!sessionRow) throw new Error(`Session ${sessionId} not found`);
 
   const sessionType = sessionRow.session_type || 'implementation';
-  const timeout = (timeoutSeconds || defaultTimeoutSeconds(sessionType)) * 1000;
+  const timeoutMs = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
   const startTime = Date.now();
 
   const session = sessionManager.getSession(sessionId);
@@ -244,13 +212,13 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
     });
   });
 
-  const timeoutPromise = timeout > 0 ? new Promise((resolve) => {
+  const timeoutPromise = timeoutMs > 0 ? new Promise((resolve) => {
     setTimeout(async () => {
       if (resolved) return;
       resolved = true;
       const text = lastAssistantContent || (await fetchLastAssistantText(sessionId));
       resolve({ response: text, status: 'timed_out', durationSeconds: (Date.now() - startTime) / 1000 });
-    }, timeout);
+    }, timeoutMs);
   }) : new Promise(() => {}); // never resolves
 
   // Send the message — this triggers the working transition.
@@ -372,14 +340,10 @@ function mapSessionStatus(rawStatus) {
 }
 
 module.exports = {
-  RATE_LIMIT_PER_HOUR,
-  DEFAULT_TIMEOUTS_SECONDS,
-  defaultTimeoutSeconds,
   startPlanningSession,
   sendAndAwait,
   getStatus,
   buildPlanningPrompt,
   loadProjectContextFiles,
   loadExtraContextFiles,
-  ensureRateLimit,
 };

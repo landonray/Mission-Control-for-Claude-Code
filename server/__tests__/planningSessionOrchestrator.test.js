@@ -124,44 +124,16 @@ describe('loadExtraContextFiles', () => {
   });
 });
 
-describe('ensureRateLimit', () => {
-  beforeEach(() => {
-    mockQuery.mockReset();
-  });
-
-  it('passes when count is below the limit', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ count: '3' }], rowCount: 1 }));
-    await expect(orchestrator.ensureRateLimit('proj-A')).resolves.toBeUndefined();
-  });
-
-  it('throws RATE_LIMITED when count is at the limit', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ count: String(orchestrator.RATE_LIMIT_PER_HOUR) }], rowCount: 1 }));
-    let err;
-    try { await orchestrator.ensureRateLimit('proj-A'); } catch (e) { err = e; }
-    expect(err).toBeDefined();
-    expect(err.code).toBe('RATE_LIMITED');
-  });
-
-  it('throws RATE_LIMITED when count exceeds limit', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ count: '999' }], rowCount: 1 }));
-    let err;
-    try { await orchestrator.ensureRateLimit('proj-A'); } catch (e) { err = e; }
-    expect(err).toBeDefined();
-    expect(err.code).toBe('RATE_LIMITED');
+describe('no rate limit', () => {
+  it('does not export the legacy rate-limit helpers anymore', () => {
+    expect(orchestrator.ensureRateLimit).toBeUndefined();
+    expect(orchestrator.RATE_LIMIT_PER_HOUR).toBeUndefined();
   });
 });
 
-describe('defaultTimeoutSeconds', () => {
-  it('returns 180 for planning', () => {
-    expect(orchestrator.defaultTimeoutSeconds('planning')).toBe(180);
-  });
-  it('returns 300 for extraction', () => {
-    expect(orchestrator.defaultTimeoutSeconds('extraction')).toBe(300);
-  });
-  it('returns 0 (no timeout) for implementation', () => {
-    expect(orchestrator.defaultTimeoutSeconds('implementation')).toBe(0);
-  });
-  it('falls back to planning timeout for unknown types', () => {
-    expect(orchestrator.defaultTimeoutSeconds('unknown')).toBe(180);
+describe('no default timeouts', () => {
+  it('does not export the legacy default-timeout helpers anymore', () => {
+    expect(orchestrator.defaultTimeoutSeconds).toBeUndefined();
+    expect(orchestrator.DEFAULT_TIMEOUTS_SECONDS).toBeUndefined();
   });
 });

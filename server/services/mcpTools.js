@@ -173,7 +173,7 @@ const TOOL_DEFINITIONS = [
           items: { type: 'string' },
           description: 'Files the asking session is currently working on. Logged into docs/decisions.md so reviewers can see what code prompted the question.',
         },
-        timeout_seconds: { type: 'number', description: 'Override default per-type timeout. Planning defaults to 180s.' },
+        timeout_seconds: { type: 'number', description: 'Optional cap on how long to wait for the session to respond. Omit (or 0) to wait indefinitely (recommended).' },
       },
       required: ['project_id', 'task'],
     },
@@ -182,7 +182,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_send_message',
     description:
-      'Send a follow-up message to an existing planning session and synchronously wait for the response. Use this when the planning agent\'s first answer needs clarification ("you said X — but what about Y?"). Blocks until the session responds or times out (default 180s for planning sessions).',
+      'Send a follow-up message to an existing planning session and synchronously wait for the response. Use this when the planning agent\'s first answer needs clarification ("you said X — but what about Y?"). Blocks until the session responds. Use mc_get_session_status to poll instead if you don\'t want to block.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -190,7 +190,7 @@ const TOOL_DEFINITIONS = [
         message: { type: 'string', description: 'The follow-up question or message.' },
         asking_session_id: { type: 'string' },
         working_files: { type: 'array', items: { type: 'string' } },
-        timeout_seconds: { type: 'number' },
+        timeout_seconds: { type: 'number', description: 'Optional cap on how long to wait. Omit (or 0) to wait indefinitely (recommended).' },
       },
       required: ['session_id', 'message'],
     },
