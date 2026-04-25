@@ -1,8 +1,36 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send, X, Trash2, ArrowUp } from 'lucide-react';
+import { User, Bot, Loader, FileIcon, Download, ShieldCheck, ShieldAlert, ChevronDown, ChevronRight, Send, X, Trash2, ArrowUp, Copy, Check } from 'lucide-react';
 import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
+
+function CopyMessageButton({ content }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const text = typeof content === 'string' ? content : String(content ?? '');
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // noop
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={styles.copyBtn}
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : 'Copy message'}
+      aria-label="Copy message"
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
 
 function MessageAttachments({ attachments }) {
   if (!attachments || attachments.length === 0) return null;
@@ -230,6 +258,7 @@ export default function MessageList({ messages, loading, streamEvents, status, s
                 {msg.timestamp && (
                   <span className={styles.time}>{formatDate(msg.timestamp)}</span>
                 )}
+                {!msg.queued && msg.content && <CopyMessageButton content={msg.content} />}
               </div>
               {msg.attachments && msg.attachments.length > 0 && (
                 <MessageAttachments attachments={msg.attachments} />
