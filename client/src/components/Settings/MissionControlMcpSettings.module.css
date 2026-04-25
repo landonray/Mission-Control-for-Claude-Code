@@ -1,43 +1,30 @@
-.panel {
-  padding: 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.container {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
-.row {
+.header h2 {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
+  margin: 0 0 6px 0;
+  font-size: 18px;
 }
 
-.intro {
+.subtitle {
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--text-secondary);
+  margin: 0;
 }
 
-.intro code {
+.subtitle code {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;
   background: rgba(255, 255, 255, 0.06);
   padding: 1px 5px;
   border-radius: 3px;
-}
-
-.link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.link:hover {
-  text-decoration: underline;
 }
 
 .errorBlock {
@@ -49,8 +36,7 @@
   font-size: 12px;
 }
 
-.tokenSection,
-.activitySection {
+.section {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -69,9 +55,6 @@
   color: var(--driftwood);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .empty {
@@ -83,8 +66,7 @@
   border-radius: 6px;
 }
 
-.tokenList,
-.questionList {
+.tokenList {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -173,75 +155,61 @@
   color: var(--text-muted);
 }
 
-.questionItem {
-  padding: 10px 12px;
+.guideCard {
+  padding: 12px 14px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
   border-radius: 6px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+
+.guideTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.guideList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   font-size: 12px;
-}
-
-.questionHeader {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 11px;
-}
-
-.questionStatus {
-  text-transform: uppercase;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.q_pending {
-  background: rgba(180, 140, 80, 0.15);
-  color: var(--accent);
-}
-
-.q_answered {
-  background: rgba(80, 200, 120, 0.15);
-  color: #6ee7a4;
-}
-
-.questionTime {
-  color: var(--text-muted);
-}
-
-.questionText {
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.answerDetails summary {
-  cursor: pointer;
-  color: var(--accent);
-  font-size: 11px;
-}
-
-.answerText {
-  margin-top: 6px;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.decisionInfo {
-  font-size: 12px;
+  line-height: 1.55;
   color: var(--text-secondary);
 }
 
-.decisionInfo code {
+.guideList code {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.guideSubList {
+  margin: 4px 0 2px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  list-style: disc;
+}
+
+.guideNote {
+  font-size: 11px;
   color: var(--text-muted);
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.guideNote code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
 }

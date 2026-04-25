@@ -218,8 +218,8 @@ export default function ProjectDetail() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionHeader}>Mission Control MCP</h2>
-        <MCPPanel projectId={project.id} projectName={project.name} />
+        <h2 className={styles.sectionHeader}>Planning Activity</h2>
+        <MCPPanel projectId={project.id} />
       </section>
 
       <section className={styles.section}>

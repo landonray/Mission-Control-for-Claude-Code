@@ -1,12 +1,10 @@
 /**
  * Unit tests for the MCP server dispatcher (JSON-RPC 2.0 protocol layer).
  *
- * These tests exercise `handleRpcRequest` in isolation — the Express route is
- * a thin wrapper that does auth + call-dispatcher + return-JSON, and is best
- * validated by hitting the running server. We test the protocol shape and
- * tool dispatch wiring here.
+ * Tokens are app-wide. Tools that operate on a project (mc_start_session etc.)
+ * require an explicit project_id arg. mc_list_projects has no required args.
  *
- * The orchestrator is mocked because tool handlers call into it directly.
+ * The orchestrator and database are mocked so handlers run in isolation.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRequire } from 'module';
@@ -15,7 +13,6 @@ process.env.DATABASE_URL = 'postgresql://test:test@host.test/db';
 
 const require = createRequire(import.meta.url);
 
-// Mock the orchestrator first so the test-level require chain picks up the mock.
 const mockStartPlanningSession = vi.fn(async () => ({
   sessionId: 'test-session-id',
   status: 'started',
@@ -34,12 +31,8 @@ const mockGetStatus = vi.fn(async (sessionId) => ({
   sessionType: 'planning',
 }));
 
-// Mock the database.query so handlers that check session/project ownership
-// don't touch the real DB.
 const mockQuery = vi.fn(async () => ({ rows: [], rowCount: 0 }));
 
-// Inject mocks into Node's module cache so CJS require() picks them up.
-// vi.mock has been unreliable for our CJS chain, so we cache-poison directly.
 const path = require('path');
 const databasePath = path.resolve(__dirname, '..', 'database.js');
 const orchestratorPath = path.resolve(__dirname, '..', 'services', 'planningSessionOrchestrator.js');
@@ -85,7 +78,7 @@ describe('handleRpcRequest — protocol layer', () => {
   it('handles initialize with protocol version + capabilities', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 1, method: 'initialize' },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.jsonrpc).toBe('2.0');
     expect(res.id).toBe(1);
@@ -97,7 +90,7 @@ describe('handleRpcRequest — protocol layer', () => {
   it('handles ping', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 99, method: 'ping' },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.id).toBe(99);
     expect(res.result).toEqual({});
@@ -106,29 +99,65 @@ describe('handleRpcRequest — protocol layer', () => {
   it('returns null for notifications (no id)', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', method: 'ping' },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res).toBeNull();
   });
 
-  it('lists the three Phase 1 tools', async () => {
+  it('lists all four Phase 1 tools including mc_list_projects', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 2, method: 'tools/list' },
-      { projectId: 'proj-A' }
+      {}
     );
     const names = res.result.tools.map((t) => t.name);
+    expect(names).toContain('mc_list_projects');
     expect(names).toContain('mc_start_session');
     expect(names).toContain('mc_send_message');
     expect(names).toContain('mc_get_session_status');
   });
 
-  it('mc_start_session forwards to orchestrator with project from ctx', async () => {
+  it('mc_list_projects returns the projects array', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [
+        { id: 'p1', name: 'Alpha', root_path: '/tmp/__definitely_not_a_real_path__/alpha', github_repo: null, deployment_url: null, last_deploy_status: null },
+        { id: 'p2', name: 'Beta', root_path: '/tmp/__definitely_not_a_real_path__/beta', github_repo: 'me/beta', deployment_url: null, last_deploy_status: 'ok' },
+      ],
+      rowCount: 2,
+    }));
+    const res = await mcpServer.handleRpcRequest(
+      { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'mc_list_projects', arguments: {} } },
+      {}
+    );
+    expect(res.result.isError).toBe(false);
+    const payload = JSON.parse(res.result.content[0].text);
+    expect(payload.projects).toHaveLength(2);
+    expect(payload.projects[0].id).toBe('p1');
+    expect(payload.projects[1].github_repo).toBe('me/beta');
+    // Files don't exist on the test paths, so booleans should be false.
+    expect(payload.projects[0].product_md_exists).toBe(false);
+    expect(payload.projects[0].architecture_md_exists).toBe(false);
+  });
+
+  it('mc_start_session requires project_id explicitly', async () => {
     const res = await mcpServer.handleRpcRequest(
       {
-        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
         params: { name: 'mc_start_session', arguments: { task: 'How do we paginate?' } },
       },
-      { projectId: 'proj-A' }
+      {}
+    );
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/project_id is required/i);
+  });
+
+  it('mc_start_session forwards to orchestrator with the supplied project_id', async () => {
+    mockQuery.mockImplementationOnce(async () => ({ rows: [{ id: 'proj-A' }], rowCount: 1 }));
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 5, method: 'tools/call',
+        params: { name: 'mc_start_session', arguments: { project_id: 'proj-A', task: 'How do we paginate?' } },
+      },
+      {}
     );
     expect(res.result.isError).toBe(false);
     expect(mockStartPlanningSession).toHaveBeenCalledTimes(1);
@@ -137,41 +166,39 @@ describe('handleRpcRequest — protocol layer', () => {
     expect(res.result.content[0].text).toContain('test-session-id');
   });
 
-  it('mc_start_session returns isError when task is missing', async () => {
+  it('mc_start_session errors when project_id does not exist', async () => {
+    mockQuery.mockImplementationOnce(async () => ({ rows: [], rowCount: 0 }));
     const res = await mcpServer.handleRpcRequest(
       {
-        jsonrpc: '2.0', id: 4, method: 'tools/call',
-        params: { name: 'mc_start_session', arguments: {} },
+        jsonrpc: '2.0', id: 6, method: 'tools/call',
+        params: { name: 'mc_start_session', arguments: { project_id: 'missing', task: 't' } },
       },
-      { projectId: 'proj-A' }
+      {}
+    );
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/Project not found/);
+  });
+
+  it('mc_start_session returns isError when task is missing', async () => {
+    mockQuery.mockImplementationOnce(async () => ({ rows: [{ id: 'proj-A' }], rowCount: 1 }));
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 7, method: 'tools/call',
+        params: { name: 'mc_start_session', arguments: { project_id: 'proj-A' } },
+      },
+      {}
     );
     expect(res.result.isError).toBe(true);
     expect(res.result.content[0].text).toMatch(/task is required/);
   });
 
-  it('mc_start_session blocks cross-project explicit project_id', async () => {
-    // resolveProjectId verifies project exists; return rows so the project lookup succeeds
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ id: 'proj-X' }], rowCount: 1 }));
-    const res = await mcpServer.handleRpcRequest(
-      {
-        jsonrpc: '2.0', id: 5, method: 'tools/call',
-        params: { name: 'mc_start_session', arguments: { task: 't', project_id: 'proj-X' } },
-      },
-      { projectId: 'proj-A' }
-    );
-    expect(res.result.isError).toBe(true);
-    expect(res.result.content[0].text).toMatch(/different project/i);
-  });
-
-  it('mc_send_message routes to orchestrator.sendAndAwait', async () => {
-    // Project-scope check: load session row to compare project_id
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ project_id: 'proj-A' }], rowCount: 1 }));
+  it('mc_send_message routes to orchestrator.sendAndAwait without scoping', async () => {
     const res = await mcpServer.handleRpcRequest(
       {
         jsonrpc: '2.0', id: 8, method: 'tools/call',
         params: { name: 'mc_send_message', arguments: { session_id: 'test-session-id', message: 'follow up?' } },
       },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.result.isError).toBe(false);
     expect(mockSendAndAwait).toHaveBeenCalledWith(
@@ -181,27 +208,13 @@ describe('handleRpcRequest — protocol layer', () => {
     );
   });
 
-  it('mc_send_message blocks when session belongs to another project', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ project_id: 'proj-B' }], rowCount: 1 }));
-    const res = await mcpServer.handleRpcRequest(
-      {
-        jsonrpc: '2.0', id: 9, method: 'tools/call',
-        params: { name: 'mc_send_message', arguments: { session_id: 'sess', message: 'x' } },
-      },
-      { projectId: 'proj-A' }
-    );
-    expect(res.result.isError).toBe(true);
-    expect(res.result.content[0].text).toMatch(/different project/i);
-  });
-
   it('mc_get_session_status returns status from orchestrator', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ project_id: 'proj-A' }], rowCount: 1 }));
     const res = await mcpServer.handleRpcRequest(
       {
         jsonrpc: '2.0', id: 10, method: 'tools/call',
         params: { name: 'mc_get_session_status', arguments: { session_id: 'sess' } },
       },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.result.isError).toBe(false);
     expect(mockGetStatus).toHaveBeenCalledWith('sess');
@@ -210,7 +223,7 @@ describe('handleRpcRequest — protocol layer', () => {
   it('returns method-not-found for unknown method', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 11, method: 'no/such' },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.error.code).toBe(-32601);
   });
@@ -221,7 +234,7 @@ describe('handleRpcRequest — protocol layer', () => {
         jsonrpc: '2.0', id: 12, method: 'tools/call',
         params: { name: 'nope', arguments: {} },
       },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.error.code).toBe(-32601);
   });
@@ -229,7 +242,7 @@ describe('handleRpcRequest — protocol layer', () => {
   it('tools/call without name returns invalid-params', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 13, method: 'tools/call', params: {} },
-      { projectId: 'proj-A' }
+      {}
     );
     expect(res.error.code).toBe(-32602);
   });

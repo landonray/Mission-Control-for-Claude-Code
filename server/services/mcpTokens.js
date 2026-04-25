@@ -8,32 +8,33 @@ function generateTokenString() {
   return TOKEN_PREFIX + crypto.randomBytes(32).toString('hex');
 }
 
-async function createToken(projectId, name = 'Default') {
+// Tokens are app-wide. Claude Code calls mc_list_projects to discover
+// projects, then specifies project_id explicitly on every other tool call.
+async function createToken(name = 'Default') {
   const id = uuidv4();
   const token = generateTokenString();
   await query(
     `INSERT INTO mcp_tokens (id, project_id, token, name, created_at)
-     VALUES ($1, $2, $3, $4, NOW())`,
-    [id, projectId, token, name]
+     VALUES ($1, NULL, $2, $3, NOW())`,
+    [id, token, name]
   );
-  return { id, project_id: projectId, token, name };
+  return { id, token, name };
 }
 
-async function listTokens(projectId) {
+async function listTokens() {
   const result = await query(
-    `SELECT id, project_id, name, created_at, last_used_at, revoked_at,
+    `SELECT id, name, created_at, last_used_at, revoked_at,
             CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END AS active
-     FROM mcp_tokens WHERE project_id = $1 ORDER BY created_at DESC`,
-    [projectId]
+     FROM mcp_tokens WHERE project_id IS NULL ORDER BY created_at DESC`
   );
   return result.rows;
 }
 
-async function revokeToken(tokenId, projectId) {
+async function revokeToken(tokenId) {
   const result = await query(
     `UPDATE mcp_tokens SET revoked_at = NOW()
-     WHERE id = $1 AND project_id = $2 AND revoked_at IS NULL`,
-    [tokenId, projectId]
+     WHERE id = $1 AND revoked_at IS NULL`,
+    [tokenId]
   );
   return result.rowCount > 0;
 }

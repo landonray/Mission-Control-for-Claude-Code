@@ -2,8 +2,10 @@
  * Mission Control MCP server (JSON-RPC 2.0 over HTTP).
  *
  * Implements the minimum surface needed for Phase 1: `initialize`, `tools/list`,
- * `tools/call`, and `ping`. Each tool call is authenticated via a project-scoped
- * bearer token that is validated against the `mcp_tokens` table.
+ * `tools/call`, and `ping`. Each tool call is authenticated via an app-wide
+ * bearer token that is validated against the `mcp_tokens` table. Tools that
+ * operate on a project (mc_start_session etc.) require an explicit project_id
+ * argument; clients should call mc_list_projects first to discover projects.
  *
  * The transport is plain HTTP POST returning a JSON body — Claude Code's
  * `http` MCP transport uses this exact pattern. Streaming/SSE is not required

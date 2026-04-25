@@ -204,6 +204,7 @@ async function initializeDb() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS fix_session_id TEXT`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_type TEXT DEFAULT 'implementation'`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS asking_session_id TEXT`,
+    `ALTER TABLE mcp_tokens ALTER COLUMN project_id DROP NOT NULL`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
