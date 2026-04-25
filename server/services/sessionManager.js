@@ -546,6 +546,10 @@ class SessionProcess {
       // User interrupted — skip quality checks, go straight to idle/queue drain
       console.log(`[Session ${this.id.slice(0, 8)}] Skipping quality checks (user interrupted)`);
       this.transitionToIdle();
+    } else if (this.skipQualityChecks) {
+      // Non-implementation sessions (planning, extraction, eval_gatherer) skip the
+      // quality review loop — they're read-only and short-lived.
+      this.transitionToIdle();
     } else if (this.status !== 'error') {
       // Stay in 'reviewing' while quality checks run so the card stays green
       this.status = 'reviewing';
@@ -668,6 +672,9 @@ class SessionProcess {
           error: message,
           timestamp: new Date().toISOString()
         });
+      } else if (this.skipQualityChecks) {
+        // Non-implementation sessions skip the quality review loop.
+        this.transitionToIdle();
       } else if (this.status !== 'error') {
         // Stay in 'reviewing' while quality checks run so the card stays green
         this.status = 'reviewing';
@@ -1198,6 +1205,24 @@ class SessionProcess {
       const preamble = await buildContextPreamble(this.id);
       if (preamble) {
         prompt = `${preamble}\n\nUser's new message: ${resolvedText}`;
+      }
+    }
+
+    // First-message-only injection of the Mission Control MCP instructions.
+    // Implementation sessions get a preamble telling Claude Code to use planning
+    // sessions for product/architecture questions. Planning, extraction, and
+    // eval_gatherer sessions are exempt — they ARE the planning loop, or are
+    // narrowly scoped one-shot agents.
+    const isImplementation = (this.sessionType || 'implementation') === 'implementation';
+    if (isImplementation && msgCount && msgCount.user_message_count === 0 && !this.cliSessionId) {
+      try {
+        const sessionRow = (await query('SELECT project_id FROM sessions WHERE id = $1', [this.id])).rows[0];
+        if (sessionRow && sessionRow.project_id) {
+          const { buildInstructionPreamble } = require('./mcpInstruction');
+          prompt = `${buildInstructionPreamble()}${prompt}`;
+        }
+      } catch (e) {
+        console.error(`[MCP instruction] Failed to inject for session ${this.id.slice(0,8)}:`, e.message);
       }
     }
 
@@ -1895,6 +1920,8 @@ async function recoverTmuxSessions() {
 
 const { VALID_MODELS, DEFAULT_MODEL, MODEL_ROLES, isValidModel } = require('../config/models');
 
+const VALID_SESSION_TYPES = ['implementation', 'planning', 'extraction', 'eval_gatherer'];
+
 async function createSession(options = {}) {
   const id = uuidv4();
   const name = options.name || 'New Session';
@@ -1908,18 +1935,32 @@ async function createSession(options = {}) {
     throw new Error(`Invalid effort "${options.effort}". Must be one of: high, xhigh, max`);
   }
 
+  const sessionType = options.sessionType || 'implementation';
+  if (!VALID_SESSION_TYPES.includes(sessionType)) {
+    throw new Error(`Invalid session_type "${sessionType}". Must be one of: ${VALID_SESSION_TYPES.join(', ')}`);
+  }
+
   await query(
-    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, effort, created_at, last_activity_at)
-     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
-    [id, name, options.workingDirectory || null, options.branch || null, options.permissionMode || 'auto', options.model || DEFAULT_MODEL, options.useWorktree ? 1 : 0, options.effort || null]
+    `INSERT INTO sessions (id, name, status, working_directory, branch, permission_mode, model, use_worktree, effort, session_type, asking_session_id, created_at, last_activity_at)
+     VALUES ($1, $2, 'idle', $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+    [
+      id, name, options.workingDirectory || null, options.branch || null,
+      options.permissionMode || 'auto', options.model || DEFAULT_MODEL,
+      options.useWorktree ? 1 : 0, options.effort || null,
+      sessionType, options.askingSessionId || null,
+    ]
   );
 
-  // Link session to project if a .mission-control.yaml is found
+  // Link session to project: prefer explicit projectId, else auto-detect from .mission-control.yaml
+  let linkedProjectId = options.projectId || null;
   try {
-    if (options.workingDirectory) {
+    if (linkedProjectId) {
+      await query('UPDATE sessions SET project_id = $1 WHERE id = $2', [linkedProjectId, id]);
+    } else if (options.workingDirectory) {
       const { resolveProject } = await import('./projectDiscovery.js');
       const project = await resolveProject(options.workingDirectory);
       if (project) {
+        linkedProjectId = project.id;
         await query('UPDATE sessions SET project_id = $1 WHERE id = $2', [project.id, id]);
       }
     }
@@ -1928,11 +1969,16 @@ async function createSession(options = {}) {
     console.warn('Failed to link session to project:', err.message);
   }
 
-  const session = new SessionProcess(id, options);
+  const session = new SessionProcess(id, { ...options, sessionType });
+  session.sessionType = sessionType;
+  session.askingSessionId = options.askingSessionId || null;
+  // Planning, extraction, and eval_gatherer sessions are short-lived and read-only;
+  // skip the post-session quality review loop so they can complete predictably.
+  session.skipQualityChecks = sessionType !== 'implementation';
   activeSessions.set(id, session);
   session.start();
 
-  return { id, name, status: 'idle' };
+  return { id, name, status: 'idle', sessionType };
 }
 
 function getSession(id) {
@@ -1983,6 +2029,7 @@ module.exports = {
   endSession,
   resumeSession,
   recoverTmuxSessions,
+  VALID_SESSION_TYPES,
   activeSessions,
   globalEvents,
   tmuxAvailable,

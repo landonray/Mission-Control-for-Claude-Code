@@ -1,0 +1,235 @@
+.panel {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.intro {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.intro code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.errorBlock {
+  padding: 10px 12px;
+  background: rgba(220, 60, 60, 0.1);
+  border: 1px solid rgba(220, 60, 60, 0.4);
+  border-radius: 6px;
+  color: #ff8888;
+  font-size: 12px;
+}
+
+.tokenSection,
+.activitySection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--driftwood);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.empty {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.tokenList,
+.questionList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tokenRow {
+  display: grid;
+  grid-template-columns: 80px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.tokenStatus {
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-align: center;
+}
+
+.tokenStatus.active {
+  background: rgba(80, 200, 120, 0.15);
+  color: #6ee7a4;
+}
+
+.tokenStatus.revoked {
+  background: rgba(150, 150, 150, 0.15);
+  color: var(--text-muted);
+}
+
+.tokenName {
+  font-weight: 600;
+}
+
+.tokenMeta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.snippetBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(255, 200, 100, 0.05);
+}
+
+.snippetHeader {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.snippet {
+  margin: 0;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-x: auto;
+  color: var(--text-primary);
+}
+
+.snippetRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.snippetHint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.questionItem {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.questionHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.questionStatus {
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.q_pending {
+  background: rgba(180, 140, 80, 0.15);
+  color: var(--accent);
+}
+
+.q_answered {
+  background: rgba(80, 200, 120, 0.15);
+  color: #6ee7a4;
+}
+
+.questionTime {
+  color: var(--text-muted);
+}
+
+.questionText {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.answerDetails summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.answerText {
+  margin-top: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.decisionInfo {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.decisionInfo code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
