@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../utils/api';
 import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
+import MCPPanel from './MCPPanel';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
 const DEPLOY_POLL_INTERVAL_MS = 5000;
@@ -214,6 +215,11 @@ export default function ProjectDetail() {
             ))
           )}
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Mission Control MCP</h2>
+        <MCPPanel projectId={project.id} projectName={project.name} />
       </section>
 
       <section className={styles.section}>

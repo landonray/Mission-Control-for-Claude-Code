@@ -141,7 +141,33 @@ async function initializeDb() {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_eval_runs_batch ON eval_runs(batch_id)`,
     `CREATE INDEX IF NOT EXISTS idx_eval_runs_name ON eval_runs(eval_name)`,
-    `CREATE INDEX IF NOT EXISTS idx_eval_batches_project ON eval_batches(project_id)`
+    `CREATE INDEX IF NOT EXISTS idx_eval_batches_project ON eval_batches(project_id)`,
+    `CREATE TABLE IF NOT EXISTS mcp_tokens (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL DEFAULT 'Default',
+      created_at TEXT DEFAULT NOW(),
+      last_used_at TEXT,
+      revoked_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_mcp_tokens_project ON mcp_tokens(project_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_mcp_tokens_token ON mcp_tokens(token)`,
+    `CREATE TABLE IF NOT EXISTS planning_questions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      planning_session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      asking_session_id TEXT,
+      question TEXT NOT NULL,
+      answer TEXT,
+      working_files TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      logged_to_file INTEGER DEFAULT 0,
+      asked_at TEXT DEFAULT NOW(),
+      answered_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_planning_questions_project ON planning_questions(project_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`
   ];
 
   for (const stmt of statements) {
@@ -176,6 +202,8 @@ async function initializeDb() {
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_started_at TEXT`,
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS last_deploy_checked_at TEXT`,
     `ALTER TABLE projects ADD COLUMN IF NOT EXISTS fix_session_id TEXT`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_type TEXT DEFAULT 'implementation'`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS asking_session_id TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
