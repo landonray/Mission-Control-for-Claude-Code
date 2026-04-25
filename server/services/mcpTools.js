@@ -1,34 +1,89 @@
+const fs = require('fs');
+const path = require('path');
 const { query } = require('../database');
 const orchestrator = require('./planningSessionOrchestrator');
 
 /**
  * Tool handlers for the Mission Control MCP server (Phase 1).
  *
- * Each handler receives the tool arguments object and a context object
- * containing { projectId, tokenId } from the authenticated request.
- *
- * Handlers may throw to signal an error — the MCP server wraps the
- * thrown message into the tool result with isError: true.
+ * Tokens are app-wide: every tool call (other than mc_list_projects) requires
+ * an explicit project_id arg. Claude Code is expected to call mc_list_projects
+ * first to discover available projects.
  */
 
-async function resolveProjectId(args, ctx) {
-  const explicit = args?.project_id;
-  if (explicit) {
-    const result = await query('SELECT id FROM projects WHERE id = $1', [explicit]);
-    if (result.rows.length === 0) {
-      throw new Error(`Project not found: ${explicit}`);
-    }
-    if (ctx?.projectId && ctx.projectId !== explicit) {
-      throw new Error('Token is scoped to a different project. Cross-project session creation is not allowed via MCP.');
-    }
-    return explicit;
+async function assertProjectExists(projectId) {
+  const result = await query('SELECT id FROM projects WHERE id = $1', [projectId]);
+  if (result.rows.length === 0) {
+    throw new Error(`Project not found: ${projectId}`);
   }
-  if (ctx?.projectId) return ctx.projectId;
-  throw new Error('project_id is required');
 }
 
-async function startSessionTool(args, ctx) {
-  const projectId = await resolveProjectId(args, ctx);
+function readDescription(rootPath) {
+  if (!rootPath) return null;
+  // PRODUCT.md is the canonical project context doc (slice 3 will create
+  // these). README.md is the next best fallback. CLAUDE.md is intentionally
+  // last because it usually leads with user/instruction content rather than
+  // a description of the project itself.
+  const candidates = ['PRODUCT.md', 'README.md', 'CLAUDE.md'];
+  for (const file of candidates) {
+    try {
+      const abs = path.join(rootPath, file);
+      if (!fs.existsSync(abs)) continue;
+      const content = fs.readFileSync(abs, 'utf8');
+      // First non-heading paragraph, capped at 240 chars.
+      const lines = content.split('\n');
+      const paragraph = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          if (paragraph.length > 0) break;
+          continue;
+        }
+        if (trimmed.startsWith('#')) continue;
+        paragraph.push(trimmed);
+      }
+      if (paragraph.length === 0) continue;
+      const text = paragraph.join(' ').replace(/\s+/g, ' ');
+      return text.length > 240 ? text.slice(0, 237).trimEnd() + '…' : text;
+    } catch (_) {
+      // ignore unreadable files
+    }
+  }
+  return null;
+}
+
+async function listProjectsTool(_args, _ctx) {
+  const result = await query(
+    `SELECT id, name, root_path, github_repo, deployment_url, last_deploy_status
+     FROM projects ORDER BY name ASC`
+  );
+  return {
+    projects: result.rows.map((row) => {
+      const productMd = row.root_path ? path.join(row.root_path, 'PRODUCT.md') : null;
+      const archMd = row.root_path ? path.join(row.root_path, 'ARCHITECTURE.md') : null;
+      const decisionsMd = row.root_path ? path.join(row.root_path, 'docs', 'decisions.md') : null;
+      return {
+        id: row.id,
+        name: row.name,
+        root_path: row.root_path,
+        github_repo: row.github_repo || null,
+        deployment_url: row.deployment_url || null,
+        last_deploy_status: row.last_deploy_status || null,
+        description: readDescription(row.root_path),
+        product_md_exists: productMd ? fs.existsSync(productMd) : false,
+        architecture_md_exists: archMd ? fs.existsSync(archMd) : false,
+        decisions_md_exists: decisionsMd ? fs.existsSync(decisionsMd) : false,
+      };
+    }),
+  };
+}
+
+async function startSessionTool(args, _ctx) {
+  if (!args.project_id) {
+    throw new Error('project_id is required. Call mc_list_projects to discover available projects.');
+  }
+  await assertProjectExists(args.project_id);
+
   const sessionType = args.session_type || 'planning';
   if (!['planning', 'extraction', 'eval_gatherer'].includes(sessionType)) {
     throw new Error(`session_type must be one of: planning, extraction, eval_gatherer (got "${sessionType}")`);
@@ -38,7 +93,7 @@ async function startSessionTool(args, ctx) {
   }
 
   const result = await orchestrator.startPlanningSession({
-    projectId,
+    projectId: args.project_id,
     systemPrompt: args.system_prompt || null,
     task: args.task,
     contextFiles: args.context_files || [],
@@ -54,19 +109,9 @@ async function startSessionTool(args, ctx) {
   };
 }
 
-async function sendMessageTool(args, ctx) {
+async function sendMessageTool(args, _ctx) {
   if (!args.session_id) throw new Error('session_id is required');
   if (!args.message || !String(args.message).trim()) throw new Error('message is required');
-
-  // Authorization: tokens scoped to a project may only message sessions
-  // belonging to that project.
-  if (ctx?.projectId) {
-    const sessionRow = (await query('SELECT project_id FROM sessions WHERE id = $1', [args.session_id])).rows[0];
-    if (!sessionRow) throw new Error(`Session ${args.session_id} not found`);
-    if (sessionRow.project_id && sessionRow.project_id !== ctx.projectId) {
-      throw new Error('Token is scoped to a different project than this session.');
-    }
-  }
 
   const result = await orchestrator.sendAndAwait(args.session_id, args.message, {
     timeoutSeconds: args.timeout_seconds,
@@ -81,16 +126,10 @@ async function sendMessageTool(args, ctx) {
   };
 }
 
-async function getStatusTool(args, ctx) {
+async function getStatusTool(args, _ctx) {
   if (!args.session_id) throw new Error('session_id is required');
   const status = await orchestrator.getStatus(args.session_id);
   if (!status) throw new Error(`Session ${args.session_id} not found`);
-  if (ctx?.projectId) {
-    const row = (await query('SELECT project_id FROM sessions WHERE id = $1', [args.session_id])).rows[0];
-    if (row?.project_id && row.project_id !== ctx.projectId) {
-      throw new Error('Token is scoped to a different project than this session.');
-    }
-  }
   return {
     session_id: status.sessionId,
     status: status.status,
@@ -102,13 +141,20 @@ async function getStatusTool(args, ctx) {
 
 const TOOL_DEFINITIONS = [
   {
+    name: 'mc_list_projects',
+    description:
+      'List all projects known to Mission Control so you can pick the right one before starting a session. Each project includes its name, repo path, GitHub repo (if linked), latest deployment status, a short description pulled from CLAUDE.md or README.md, and flags showing whether PRODUCT.md, ARCHITECTURE.md, and docs/decisions.md exist. Always call this first before mc_start_session.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: listProjectsTool,
+  },
+  {
     name: 'mc_start_session',
     description:
-      'Start a new Mission Control session for a project. Use session_type="planning" to escalate a product or architectural question that PRODUCT.md and ARCHITECTURE.md don\'t answer — Mission Control will spin up a read-only planning agent that already has the project\'s context documents loaded. The session appears in the dashboard, gets logged to docs/decisions.md when answered, and the user reviews it asynchronously.',
+      'Start a new Mission Control session in a specific project. Use session_type="planning" to escalate a product or architectural question that PRODUCT.md and ARCHITECTURE.md don\'t answer — Mission Control will spin up a read-only planning agent that already has the project\'s context documents loaded. The session appears in the dashboard, gets logged to docs/decisions.md when answered, and the user reviews it asynchronously. Call mc_list_projects first if you don\'t know which project_id to use.',
     inputSchema: {
       type: 'object',
       properties: {
-        project_id: { type: 'string', description: 'Mission Control project ID. Optional if your auth token is project-scoped.' },
+        project_id: { type: 'string', description: 'Mission Control project ID. Required. Get this from mc_list_projects.' },
         session_type: {
           type: 'string',
           enum: ['planning', 'extraction', 'eval_gatherer'],
@@ -129,7 +175,7 @@ const TOOL_DEFINITIONS = [
         },
         timeout_seconds: { type: 'number', description: 'Override default per-type timeout. Planning defaults to 180s.' },
       },
-      required: ['task'],
+      required: ['project_id', 'task'],
     },
     handler: startSessionTool,
   },
@@ -170,5 +216,6 @@ module.exports = {
   startSessionTool,
   sendMessageTool,
   getStatusTool,
-  resolveProjectId,
+  listProjectsTool,
+  readDescription,
 };
