@@ -11,6 +11,7 @@ const rootNodeModules = existsSync(path.join(clientModules, 'react')) ? clientMo
 
 export default defineConfig({
   resolve: {
+    dedupe: ['react', 'react-dom'],
     alias: {
       react: path.resolve(rootNodeModules, 'react'),
       'react-dom': path.resolve(rootNodeModules, 'react-dom'),
@@ -23,8 +24,10 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
-      '**/.claude/worktrees/**',
-      '**/.worktrees/**',
+      // Anchored to project root (no leading **/) so the main repo skips its
+      // worktrees but each worktree can still run its own tests.
+      '.claude/worktrees/**',
+      '.worktrees/**',
     ],
     environmentMatchGlobs: [
       ['client/**/*.test.*', 'jsdom'],
