@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../utils/api';
 import { pushEvents, clearEvents } from './streamEventStore';
+import { applyAssistantStreamEvent } from './applyAssistantStreamEvent';
 
 let messageIdCounter = 0;
 
@@ -86,36 +87,7 @@ export function useWebSocket(sessionId) {
               });
 
               if (data.event?.type === 'assistant' && data.event?.message) {
-                let content;
-                const msg = data.event.message;
-                if (typeof msg === 'string') {
-                  content = msg;
-                } else if (msg.content && Array.isArray(msg.content)) {
-                  content = msg.content
-                    .filter(block => block.type === 'text')
-                    .map(block => block.text)
-                    .join('\n');
-                } else {
-                  content = JSON.stringify(msg);
-                }
-                if (content) {
-                  setMessages(prev => {
-                    // Deduplicate — the message may already exist from loadMessages DB fetch.
-                    // Check all messages (not just last 10) to catch duplicates from earlier
-                    // in the conversation that may have been loaded from the database.
-                    for (let i = prev.length - 1; i >= 0; i--) {
-                      if (prev[i].role === 'assistant' && prev[i].content === content) {
-                        // Update the existing message's content in place (it may have grown)
-                        return prev;
-                      }
-                    }
-                    return [...prev, {
-                      role: 'assistant',
-                      content,
-                      timestamp: data.timestamp
-                    }];
-                  });
-                }
+                setMessages(prev => applyAssistantStreamEvent(prev, data.event, data.timestamp));
               }
 
               if (data.event?.type === 'permission_request') {
