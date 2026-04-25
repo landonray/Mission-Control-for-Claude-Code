@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
 const decisionLog = require('../services/decisionLog');
+const { appendOwnerDecisionToContextDoc } = require('../services/contextDocAppender');
 
 // GET /api/planning/questions — list planning questions, optionally filtered
 //   ?project_id=...   limit by project
@@ -116,6 +117,125 @@ router.get('/decisions/:projectId', async (req, res) => {
     const content = await fs.promises.readFile(filePath, 'utf8');
     const entries = decisionLog.parseDecisions(content);
     res.json({ path: filePath, exists: true, entries });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/planning/escalations?project_id=...
+router.get('/escalations', async (req, res) => {
+  const projectId = req.query.project_id;
+  if (!projectId) return res.status(400).json({ error: 'project_id is required' });
+  try {
+    const result = await query(
+      `SELECT id, project_id, planning_session_id, asking_session_id, question,
+              escalation_recommendation, escalation_reason, escalation_context,
+              working_files, status, asked_at
+       FROM planning_questions
+       WHERE project_id = $1 AND status = 'escalated'
+       ORDER BY asked_at DESC`,
+      [projectId]
+    );
+    res.json(result.rows.map((r) => ({
+      ...r,
+      working_files: r.working_files
+        ? r.working_files.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+    })));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/planning/escalations/:id/answer
+// Body: { answer: string, addToContextDoc?: 'PRODUCT.md' | 'ARCHITECTURE.md' | 'neither' }
+router.post('/escalations/:id/answer', async (req, res) => {
+  const { id } = req.params;
+  const { answer, addToContextDoc } = req.body || {};
+  if (!answer || !String(answer).trim()) {
+    return res.status(400).json({ error: 'answer is required' });
+  }
+
+  try {
+    const lookup = await query(
+      `SELECT pq.id, pq.project_id, pq.planning_session_id, pq.asking_session_id,
+              pq.question, pq.working_files,
+              p.root_path, p.name AS project_name
+       FROM planning_questions pq
+       JOIN projects p ON pq.project_id = p.id
+       WHERE pq.id = $1 AND pq.status = 'escalated'`,
+      [id]
+    );
+    if (lookup.rows.length === 0) {
+      return res.status(404).json({ error: 'Escalation not found or already resolved' });
+    }
+    const row = lookup.rows[0];
+
+    await query(
+      `UPDATE planning_questions
+         SET status = 'answered',
+             owner_answer = $1,
+             owner_answered_at = NOW(),
+             answered_at = NOW(),
+             decided_by = 'owner'
+       WHERE id = $2`,
+      [answer, id]
+    );
+
+    // Log to docs/decisions.md as an owner decision.
+    try {
+      const decisionsPath = decisionLog.resolveDecisionFilePath(row.root_path);
+      await decisionLog.appendDecision(decisionsPath, {
+        timestamp: new Date().toISOString(),
+        askingSessionId: row.asking_session_id || 'unknown',
+        planningSessionId: row.planning_session_id,
+        workingFiles: row.working_files
+          ? row.working_files.split(',').map((s) => s.trim()).filter(Boolean)
+          : [],
+        projectName: row.project_name,
+        question: row.question,
+        answer,
+        decidedBy: 'owner',
+      });
+      await query('UPDATE planning_questions SET logged_to_file = 1 WHERE id = $1', [id]);
+    } catch (e) {
+      console.error('[escalations] Failed to append decision log:', e.message);
+    }
+
+    // Optionally append to PRODUCT.md or ARCHITECTURE.md.
+    let contextDocAppended = null;
+    if (addToContextDoc && addToContextDoc !== 'neither') {
+      try {
+        const result = await appendOwnerDecisionToContextDoc({
+          projectRoot: row.root_path,
+          doc: addToContextDoc,
+          question: row.question,
+          answer,
+          timestamp: new Date().toISOString(),
+        });
+        contextDocAppended = result.path;
+      } catch (e) {
+        console.error('[escalations] Failed to append context doc:', e.message);
+      }
+    }
+
+    res.json({ status: 'answered', contextDocAppended });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/planning/escalations/:id/dismiss
+router.post('/escalations/:id/dismiss', async (req, res) => {
+  const { id } = req.params;
+  try {
+    await query(
+      `UPDATE planning_questions
+         SET status = 'dismissed', dismissed_at = NOW()
+       WHERE id = $1`,
+      [id]
+    );
+    res.json({ status: 'dismissed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
