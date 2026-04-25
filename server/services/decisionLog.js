@@ -40,6 +40,7 @@ function formatDecisionEntry(entry) {
   const planningSession = entry.planningSessionId || 'unknown';
   const workingFiles = formatWorkingFiles(entry.workingFiles);
   const project = entry.projectName || entry.project || 'unknown';
+  const decidedBy = entry.decidedBy === 'owner' ? 'Owner' : 'Planning agent';
   const question = escapeForBlock(entry.question);
   const answer = escapeForBlock(entry.answer) || '_(no answer recorded)_';
 
@@ -51,6 +52,7 @@ function formatDecisionEntry(entry) {
     `- **Planning session:** ${planningSession}`,
     `- **Working files:** ${workingFiles}`,
     `- **Project:** ${project}`,
+    `- **Decided by:** ${decidedBy}`,
     '',
     '### Question',
     '',
@@ -119,6 +121,7 @@ function parseEntryBody(summary, rawBody) {
     planningSessionId: null,
     workingFiles: null,
     projectName: null,
+    decidedBy: null,
     question: '',
     answer: '',
   };
@@ -129,6 +132,7 @@ function parseEntryBody(summary, rawBody) {
     [/-\s+\*\*Planning session:\*\*\s+(.+)/, 'planningSessionId'],
     [/-\s+\*\*Working files:\*\*\s+(.+)/, 'workingFiles'],
     [/-\s+\*\*Project:\*\*\s+(.+)/, 'projectName'],
+    [/-\s+\*\*Decided by:\*\*\s+(.+)/, 'decidedBy'],
   ];
   for (const [pattern, key] of metaMatchers) {
     const m = body.match(pattern);

@@ -199,7 +199,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_get_session_status',
     description:
-      'Check the status of a Mission Control session — useful when polling a long-running planning session instead of blocking on mc_send_message.',
+      'Check the status of a Mission Control session. For planning sessions, status="waiting_for_owner" means the planning agent escalated the question to the project owner — keep polling. status="completed" with last_response set means an answer is available (either from the planning agent or, in the case of an escalation, from the owner). status="dismissed" means the owner closed the escalation without answering.',
     inputSchema: {
       type: 'object',
       properties: {

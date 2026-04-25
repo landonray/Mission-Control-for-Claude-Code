@@ -4,6 +4,9 @@ const { v4: uuidv4 } = require('uuid');
 const { query } = require('../database');
 const sessionManager = require('./sessionManager');
 const decisionLog = require('./decisionLog');
+const { parseEscalation } = require('./escalationParser');
+
+const ESCALATION_HOLDING_RESPONSE = 'This question has been escalated to the project owner. Continue with other work that does not depend on this answer, or call mc_get_session_status periodically to check whether an answer has arrived.';
 
 async function loadProjectContextFiles(projectRoot) {
   const tryPaths = [
@@ -194,10 +197,18 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
             resolved = true;
             const duration = Date.now() - startTime;
             const text = lastAssistantContent || (await fetchLastAssistantText(sessionId));
-            await finalizePlanningTurn({
+            const turn = await finalizePlanningTurn({
               sessionId, sessionType, planningQuestionId, message, response: text,
             });
-            resolve({ response: text, status: 'completed', durationSeconds: duration / 1000 });
+            if (turn && turn.escalated) {
+              resolve({
+                response: ESCALATION_HOLDING_RESPONSE,
+                status: 'escalated',
+                durationSeconds: duration / 1000,
+              });
+            } else {
+              resolve({ response: text, status: 'completed', durationSeconds: duration / 1000 });
+            }
           }
         } else if (event.type === 'error') {
           resolved = true;
@@ -259,12 +270,26 @@ async function fetchLastAssistantText(sessionId) {
 }
 
 async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId, message, response }) {
-  if (sessionType !== 'planning' || !planningQuestionId) return;
-  if (!response) return;
+  if (sessionType !== 'planning' || !planningQuestionId) return { escalated: false };
+  if (!response) return { escalated: false };
+
+  const escalation = parseEscalation(response);
+  if (escalation) {
+    await query(
+      `UPDATE planning_questions
+         SET status = 'escalated',
+             escalation_recommendation = $1,
+             escalation_reason = $2,
+             escalation_context = $3
+       WHERE id = $4`,
+      [escalation.recommendation, escalation.reason, escalation.context || null, planningQuestionId]
+    );
+    return { escalated: true };
+  }
 
   await query(
     `UPDATE planning_questions
-       SET answer = $1, status = 'answered', answered_at = NOW()
+       SET answer = $1, status = 'answered', answered_at = NOW(), decided_by = 'planning-agent'
      WHERE id = $2`,
     [response, planningQuestionId]
   );
@@ -275,7 +300,7 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
       'SELECT s.project_id, p.name AS project_name, p.root_path, s.asking_session_id FROM sessions s JOIN projects p ON s.project_id = p.id WHERE s.id = $1',
       [sessionId]
     )).rows[0];
-    if (!sessionRow) return;
+    if (!sessionRow) return { escalated: false };
 
     const planningQuestion = (await query(
       'SELECT working_files, asking_session_id FROM planning_questions WHERE id = $1',
@@ -293,6 +318,7 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
       projectName: sessionRow.project_name,
       question: message,
       answer: response,
+      decidedBy: 'planning-agent',
     });
     await query(
       'UPDATE planning_questions SET logged_to_file = 1 WHERE id = $1',
@@ -301,6 +327,7 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
   } catch (e) {
     console.error('[planningSessionOrchestrator] Failed to append decision log:', e.message);
   }
+  return { escalated: false };
 }
 
 async function getStatus(sessionId) {
@@ -309,12 +336,41 @@ async function getStatus(sessionId) {
     [sessionId]
   )).rows[0];
   if (!sessionRow) return null;
-  const lastResponse = await fetchLastAssistantText(sessionId);
+
+  // For planning sessions, the most recent planning_question can override
+  // the CLI session's status: an open escalation means the session is
+  // really waiting on the owner, and an owner-answered escalation means
+  // the answer Claude Code should see is the owner's text, not the
+  // planning agent's last assistant message.
+  let escalationOverride = null;
+  if (sessionRow.session_type === 'planning') {
+    const pq = (await query(
+      `SELECT id, status, owner_answer, decided_by
+       FROM planning_questions
+       WHERE planning_session_id = $1
+       ORDER BY asked_at DESC
+       LIMIT 1`,
+      [sessionId]
+    )).rows[0];
+    if (pq) {
+      if (pq.status === 'escalated') {
+        escalationOverride = { status: 'waiting_for_owner', lastResponse: null };
+      } else if (pq.status === 'answered' && pq.decided_by === 'owner' && pq.owner_answer) {
+        escalationOverride = { status: 'completed', lastResponse: pq.owner_answer };
+      } else if (pq.status === 'dismissed') {
+        escalationOverride = { status: 'dismissed', lastResponse: 'This escalation was dismissed by the project owner.' };
+      }
+    }
+  }
+
+  const lastResponse = escalationOverride
+    ? escalationOverride.lastResponse
+    : await fetchLastAssistantText(sessionId);
   const startedAt = sessionRow.created_at ? new Date(sessionRow.created_at).getTime() : Date.now();
   const endTime = sessionRow.ended_at ? new Date(sessionRow.ended_at).getTime() : Date.now();
   return {
     sessionId,
-    status: mapSessionStatus(sessionRow.status),
+    status: escalationOverride ? escalationOverride.status : mapSessionStatus(sessionRow.status),
     durationSeconds: Math.max(0, (endTime - startedAt) / 1000),
     lastResponse,
     sessionType: sessionRow.session_type || 'implementation',

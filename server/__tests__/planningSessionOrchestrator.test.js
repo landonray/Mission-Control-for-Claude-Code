@@ -137,3 +137,60 @@ describe('no default timeouts', () => {
     expect(orchestrator.DEFAULT_TIMEOUTS_SECONDS).toBeUndefined();
   });
 });
+
+describe('getStatus with planning-question overrides', () => {
+  beforeEach(() => { mockQuery.mockReset(); });
+
+  it('returns waiting_for_owner when an open escalation exists', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'escalated', owner_answer: null, decided_by: null }],
+    }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('waiting_for_owner');
+    expect(result.lastResponse).toBeNull();
+  });
+
+  it('returns completed with the owner answer once recorded', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'answered', owner_answer: 'Owner says yes.', decided_by: 'owner' }],
+    }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('completed');
+    expect(result.lastResponse).toBe('Owner says yes.');
+  });
+
+  it('falls through to last assistant text for planning-agent answers', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'answered', owner_answer: null, decided_by: 'planning-agent' }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({ rows: [{ content: 'Agent answer text.' }] }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('completed');
+    expect(result.lastResponse).toBe('Agent answer text.');
+  });
+
+  it('returns dismissed when the escalation was dismissed by the owner', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'dismissed', owner_answer: null, decided_by: null }],
+    }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('dismissed');
+    expect(result.lastResponse).toMatch(/dismissed/i);
+  });
+});
