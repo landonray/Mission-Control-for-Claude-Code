@@ -205,6 +205,13 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS session_type TEXT DEFAULT 'implementation'`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS asking_session_id TEXT`,
     `ALTER TABLE mcp_tokens ALTER COLUMN project_id DROP NOT NULL`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS escalation_recommendation TEXT`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS escalation_reason TEXT`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS escalation_context TEXT`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS owner_answer TEXT`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS owner_answered_at TEXT`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS dismissed_at TEXT`,
+    `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS decided_by TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
