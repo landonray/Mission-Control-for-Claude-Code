@@ -3,16 +3,22 @@
 // Anthropic `message.id` while their content grows — we update the existing
 // message in place so the UI renders partial content as it streams in.
 
+import { sanitizeAssistantText } from '../utils/sanitizeAssistantText';
+
 export function extractAssistantContent(message) {
   if (message == null) return '';
-  if (typeof message === 'string') return message;
-  if (Array.isArray(message.content)) {
-    return message.content
+  let text;
+  if (typeof message === 'string') {
+    text = message;
+  } else if (Array.isArray(message.content)) {
+    text = message.content
       .filter(block => block && block.type === 'text')
       .map(block => block.text)
       .join('\n');
+  } else {
+    text = JSON.stringify(message);
   }
-  return JSON.stringify(message);
+  return sanitizeAssistantText(text);
 }
 
 export function applyAssistantStreamEvent(prev, event, timestamp) {
