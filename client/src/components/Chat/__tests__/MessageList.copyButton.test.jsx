@@ -22,6 +22,10 @@ describe('MessageList copy button', () => {
   beforeEach(() => {
     writeText = vi.fn().mockResolvedValue(undefined);
     Object.assign(navigator, { clipboard: { writeText } });
+    Object.defineProperty(window, 'isSecureContext', {
+      value: true,
+      configurable: true,
+    });
   });
 
   it('renders a copy button next to a user message and copies its content', async () => {

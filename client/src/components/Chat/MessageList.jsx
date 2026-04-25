@@ -4,18 +4,47 @@ import { formatDate } from '../../utils/format';
 import MarkdownPreview from '../FileBrowser/MarkdownPreview';
 import styles from './MessageList.module.css';
 
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      // Fall through to execCommand fallback (e.g. document not focused)
+      console.warn('clipboard.writeText failed, falling back', err);
+    }
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (err) {
+    console.error('clipboard fallback failed', err);
+    return false;
+  }
+}
+
 function CopyMessageButton({ content }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = async () => {
+  const handleCopy = async (e) => {
+    e.stopPropagation();
     const text = typeof content === 'string' ? content : String(content ?? '');
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
+    const ok = await copyTextToClipboard(text);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // noop
     }
   };
 
