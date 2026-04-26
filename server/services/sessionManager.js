@@ -10,6 +10,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const qualityRunner = require('./qualityRunner');
 const mergeFields = require('./mergeFields');
+const { sanitizeAssistantText } = require('../utils/sanitizeAssistantText');
 
 const activeSessions = new Map();
 
@@ -881,6 +882,7 @@ class SessionProcess {
           } else {
             content = JSON.stringify(event.message);
           }
+          content = sanitizeAssistantText(content);
           if (content) {
             this.detectDevServerUrl(content);
             // Claude CLI emits separate assistant events per content block — each
