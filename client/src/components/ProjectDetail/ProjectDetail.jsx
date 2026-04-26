@@ -4,6 +4,7 @@ import { api } from '../../utils/api';
 import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
 import MCPPanel from './MCPPanel';
+import TestRunsPanel from './TestRunsPanel';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
 const DEPLOY_POLL_INTERVAL_MS = 5000;
@@ -215,6 +216,11 @@ export default function ProjectDetail() {
             ))
           )}
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Test Runs</h2>
+        <TestRunsPanel projectId={project.id} />
       </section>
 
       <section className={styles.section}>

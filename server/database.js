@@ -167,7 +167,25 @@ async function initializeDb() {
       answered_at TEXT
     )`,
     `CREATE INDEX IF NOT EXISTS idx_planning_questions_project ON planning_questions(project_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`
+    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`,
+    `CREATE TABLE IF NOT EXISTS test_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES sessions(id),
+      command TEXT NOT NULL,
+      framework TEXT,
+      status TEXT NOT NULL DEFAULT 'parsing',
+      total INTEGER,
+      passed INTEGER,
+      failed INTEGER,
+      failures JSONB,
+      raw_output TEXT,
+      duration_ms INTEGER,
+      created_at TEXT DEFAULT NOW(),
+      completed_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_test_runs_project ON test_runs(project_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_test_runs_session ON test_runs(session_id)`
   ];
 
   for (const stmt of statements) {

@@ -71,6 +71,11 @@ app.get('*', (req, res) => {
 // Setup WebSocket
 setupWebSocket(server);
 
+// Wire the test run recorder so it can broadcast updates to all connected clients.
+const { broadcastToAll } = require('./websocket');
+const testRunRecorder = require('./services/testRunRecorder');
+testRunRecorder.setBroadcast(broadcastToAll);
+
 // Initialize database then start server
 initializeDb().then(() => {
   // Recover tmux sessions from previous server lifetime
