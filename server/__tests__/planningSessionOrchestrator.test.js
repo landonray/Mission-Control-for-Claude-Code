@@ -72,6 +72,22 @@ describe('buildPlanningPrompt', () => {
     expect(prompt).toContain('You are a database expert.');
     expect(prompt).not.toMatch(/senior product and architecture planning agent/);
   });
+
+  it('includes the escalation instructions and ESCALATE format', () => {
+    const prompt = orchestrator.buildPlanningPrompt({ task: 'q', contextSections: [] });
+    expect(prompt).toContain('Escalation rules');
+    expect(prompt).toMatch(/You CAN answer if/);
+    expect(prompt).toMatch(/You MUST escalate if/);
+    expect(prompt).toContain('ESCALATE');
+    expect(prompt).toContain('Question:');
+    expect(prompt).toContain('Recommendation:');
+    expect(prompt).toContain('Reason for escalation:');
+  });
+
+  it('still mentions read-only planning mode after escalation rules', () => {
+    const prompt = orchestrator.buildPlanningPrompt({ task: 'q', contextSections: [] });
+    expect(prompt).toMatch(/read-only planning mode/i);
+  });
 });
 
 describe('loadProjectContextFiles', () => {
@@ -124,44 +140,73 @@ describe('loadExtraContextFiles', () => {
   });
 });
 
-describe('ensureRateLimit', () => {
-  beforeEach(() => {
-    mockQuery.mockReset();
-  });
-
-  it('passes when count is below the limit', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ count: '3' }], rowCount: 1 }));
-    await expect(orchestrator.ensureRateLimit('proj-A')).resolves.toBeUndefined();
-  });
-
-  it('throws RATE_LIMITED when count is at the limit', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ count: String(orchestrator.RATE_LIMIT_PER_HOUR) }], rowCount: 1 }));
-    let err;
-    try { await orchestrator.ensureRateLimit('proj-A'); } catch (e) { err = e; }
-    expect(err).toBeDefined();
-    expect(err.code).toBe('RATE_LIMITED');
-  });
-
-  it('throws RATE_LIMITED when count exceeds limit', async () => {
-    mockQuery.mockImplementationOnce(async () => ({ rows: [{ count: '999' }], rowCount: 1 }));
-    let err;
-    try { await orchestrator.ensureRateLimit('proj-A'); } catch (e) { err = e; }
-    expect(err).toBeDefined();
-    expect(err.code).toBe('RATE_LIMITED');
+describe('no rate limit', () => {
+  it('does not export the legacy rate-limit helpers anymore', () => {
+    expect(orchestrator.ensureRateLimit).toBeUndefined();
+    expect(orchestrator.RATE_LIMIT_PER_HOUR).toBeUndefined();
   });
 });
 
-describe('defaultTimeoutSeconds', () => {
-  it('returns 180 for planning', () => {
-    expect(orchestrator.defaultTimeoutSeconds('planning')).toBe(180);
+describe('no default timeouts', () => {
+  it('does not export the legacy default-timeout helpers anymore', () => {
+    expect(orchestrator.defaultTimeoutSeconds).toBeUndefined();
+    expect(orchestrator.DEFAULT_TIMEOUTS_SECONDS).toBeUndefined();
   });
-  it('returns 300 for extraction', () => {
-    expect(orchestrator.defaultTimeoutSeconds('extraction')).toBe(300);
+});
+
+describe('getStatus with planning-question overrides', () => {
+  beforeEach(() => { mockQuery.mockReset(); });
+
+  it('returns waiting_for_owner when an open escalation exists', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'escalated', owner_answer: null, decided_by: null }],
+    }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('waiting_for_owner');
+    expect(result.lastResponse).toBeNull();
   });
-  it('returns 0 (no timeout) for implementation', () => {
-    expect(orchestrator.defaultTimeoutSeconds('implementation')).toBe(0);
+
+  it('returns completed with the owner answer once recorded', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'answered', owner_answer: 'Owner says yes.', decided_by: 'owner' }],
+    }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('completed');
+    expect(result.lastResponse).toBe('Owner says yes.');
   });
-  it('falls back to planning timeout for unknown types', () => {
-    expect(orchestrator.defaultTimeoutSeconds('unknown')).toBe(180);
+
+  it('falls through to last assistant text for planning-agent answers', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'answered', owner_answer: null, decided_by: 'planning-agent' }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({ rows: [{ content: 'Agent answer text.' }] }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('completed');
+    expect(result.lastResponse).toBe('Agent answer text.');
+  });
+
+  it('returns dismissed when the escalation was dismissed by the owner', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'sess-1', status: 'idle', session_type: 'planning', created_at: '2026-04-25T00:00:00Z', ended_at: null }],
+    }));
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'pq-1', status: 'dismissed', owner_answer: null, decided_by: null }],
+    }));
+
+    const result = await orchestrator.getStatus('sess-1');
+    expect(result.status).toBe('dismissed');
+    expect(result.lastResponse).toMatch(/dismissed/i);
   });
 });
