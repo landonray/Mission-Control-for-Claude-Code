@@ -30,6 +30,7 @@ const database = require('../database');
 const githubPrFetcher = require('./githubPrFetcher');
 const contextDocExtractor = require('./contextDocExtractor');
 const contextDocRollup = require('./contextDocRollup');
+const { getGithubRepoFromGitRemote } = require('./railway');
 
 // --- test seams --------------------------------------------------------------
 
@@ -40,6 +41,7 @@ let _extractPR = (...args) => contextDocExtractor.extractPullRequest(...args);
 let _rollupBatch = (...args) => contextDocRollup.rollupBatch(...args);
 let _rollupFinal = (...args) => contextDocRollup.rollupFinal(...args);
 let _writeFile = (filePath, content) => fs.promises.writeFile(filePath, content, 'utf8');
+let _detectGithubRepoFromGit = (projectPath) => getGithubRepoFromGitRemote(projectPath);
 
 function _setForTests(overrides = {}) {
   if (overrides.query) _query = overrides.query;
@@ -49,6 +51,7 @@ function _setForTests(overrides = {}) {
   if (overrides.rollupBatch) _rollupBatch = overrides.rollupBatch;
   if (overrides.rollupFinal) _rollupFinal = overrides.rollupFinal;
   if (overrides.writeFile) _writeFile = overrides.writeFile;
+  if (overrides.detectGithubRepoFromGit) _detectGithubRepoFromGit = overrides.detectGithubRepoFromGit;
 }
 
 function _resetForTests() {
@@ -59,6 +62,7 @@ function _resetForTests() {
   _rollupBatch = (...args) => contextDocRollup.rollupBatch(...args);
   _rollupFinal = (...args) => contextDocRollup.rollupFinal(...args);
   _writeFile = (filePath, content) => fs.promises.writeFile(filePath, content, 'utf8');
+  _detectGithubRepoFromGit = (projectPath) => getGithubRepoFromGitRemote(projectPath);
 }
 
 // --- broadcast ---------------------------------------------------------------
@@ -140,6 +144,10 @@ async function startGeneration(projectId) {
     const err = new Error(`Project ${projectId} not found`);
     err.code = 'PROJECT_NOT_FOUND';
     throw err;
+  }
+  if (!project.github_repo && project.root_path) {
+    const detected = _detectGithubRepoFromGit(project.root_path);
+    if (detected) project.github_repo = detected;
   }
   if (!project.github_repo) {
     const err = new Error(`Project ${project.name} has no github_repo set — cannot fetch PRs`);
