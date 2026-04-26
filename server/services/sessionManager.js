@@ -2052,7 +2052,17 @@ async function recoverTmuxSessions() {
 
 const { VALID_MODELS, DEFAULT_MODEL, MODEL_ROLES, isValidModel } = require('../config/models');
 
-const VALID_SESSION_TYPES = ['implementation', 'planning', 'extraction', 'eval_gatherer'];
+const VALID_SESSION_TYPES = [
+  'implementation',
+  'planning',
+  'extraction',
+  'eval_gatherer',
+  'spec_refinement',
+  'qa_design',
+  'implementation_planning',
+  'qa_execution',
+  'code_review',
+];
 
 async function createSession(options = {}) {
   const id = uuidv4();
