@@ -1,25 +1,21 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import * as dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
 import { createRequire } from 'module';
 
-const require = createRequire(import.meta.url);
-
-// Load DATABASE_URL from the main repo .env if not already set.
-// The worktree does not have its own .env so we fall back to the parent.
-if (!process.env.DATABASE_URL) {
-  const fs = require('fs');
-  const path = require('path');
-  const envPath = path.resolve('/Users/landonray/Coding Projects/Command Center/.env');
-  if (fs.existsSync(envPath)) {
-    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
-    for (const line of lines) {
-      const match = line.match(/^([^#=\s][^=]*)=(.*)$/);
-      if (match && !process.env[match[1]]) {
-        process.env[match[1]] = match[2].trim();
-      }
-    }
-  }
+// Load .env before importing modules that read it.
+// server/services/__tests__ → walk up to find the .env (5 or 6 levels depending on
+// whether we're running from the worktree or the main repo).
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+let envPath = path.resolve(__dirname, '../../../../../../.env');
+if (!existsSync(envPath)) {
+  envPath = path.resolve(__dirname, '../../../../../.env');
 }
+dotenv.config({ path: envPath, override: true });
 
+const require = createRequire(import.meta.url);
 const crypto = require('crypto');
 
 let query, initializeDb, repo;
