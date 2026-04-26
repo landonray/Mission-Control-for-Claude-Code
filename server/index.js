@@ -98,6 +98,10 @@ initializeDb().then(async () => {
     console.error('Failed to recover interrupted context-doc runs:', err.message);
   }
 
+  // Start the pipeline orchestration runtime (listens for session_complete events)
+  const pipelineRuntime = require('./services/pipelineRuntime');
+  pipelineRuntime.start();
+
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Mission Control server running on http://0.0.0.0:${PORT}`);
   });
