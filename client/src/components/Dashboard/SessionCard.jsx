@@ -1,5 +1,6 @@
 import React from 'react';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
+import { colorForSessionType, badgeForSessionType, labelForSessionType } from '../../utils/sessionColors';
 import { GitBranch, Clock, Activity, Cpu, Archive, ArchiveRestore, Plus, Minus } from 'lucide-react';
 import QualityScorecard from '../Quality/QualityScorecard';
 import styles from './SessionCard.module.css';
@@ -21,6 +22,12 @@ export default function SessionCard({ session, onClick, onArchive }) {
   return (
     <div className={cardClass} onClick={onClick}>
       <div className={styles.header}>
+        <span
+          className={`session-badge color-${colorForSessionType(session.session_type)}`}
+          title={labelForSessionType(session.session_type)}
+        >
+          {badgeForSessionType(session.session_type)}
+        </span>
         <h3 className={styles.name}>{session.name}</h3>
         {session.model && !session.model.includes('opus') && (
           <span className={`badge ${styles.modelBadge}`}>
