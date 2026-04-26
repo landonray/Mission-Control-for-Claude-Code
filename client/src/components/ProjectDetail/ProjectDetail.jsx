@@ -4,6 +4,7 @@ import { api } from '../../utils/api';
 import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench, AlertTriangle } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
 import MCPPanel from './MCPPanel';
+import TestRunsPanel from './TestRunsPanel';
 import DecisionsNeeded from './DecisionsNeeded';
 import UsageCard from './UsageCard';
 
@@ -235,6 +236,11 @@ export default function ProjectDetail() {
             ))
           )}
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Test Runs</h2>
+        <TestRunsPanel projectId={project.id} />
       </section>
 
       <section className={styles.section}>

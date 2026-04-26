@@ -461,6 +461,44 @@ router.get('/:id/deploy-status', async (req, res) => {
   }
 });
 
+// GET /api/projects/:id/test-runs — recorded test runs for this project (newest first)
+router.get('/:id/test-runs', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const result = await query(
+      `SELECT id, project_id, session_id, command, framework, status,
+              total, passed, failed, failures, duration_ms, created_at, completed_at
+         FROM test_runs
+        WHERE project_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2`,
+      [req.params.id, limit]
+    );
+    res.json({ runs: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:id/test-runs/:runId — full detail for a single run, including raw output
+router.get('/:id/test-runs/:runId', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, project_id, session_id, command, framework, status,
+              total, passed, failed, failures, raw_output, duration_ms, created_at, completed_at
+         FROM test_runs
+        WHERE project_id = $1 AND id = $2`,
+      [req.params.id, req.params.runId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Test run not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/projects/:id/settings — update project settings
 router.put('/:id/settings', async (req, res) => {
   try {

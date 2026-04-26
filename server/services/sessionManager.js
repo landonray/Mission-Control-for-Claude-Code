@@ -10,6 +10,7 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const qualityRunner = require('./qualityRunner');
 const mergeFields = require('./mergeFields');
+const testRunRecorder = require('./testRunRecorder');
 const { sanitizeAssistantText } = require('../utils/sanitizeAssistantText');
 const queuedMessages = require('./queuedMessages');
 
@@ -860,6 +861,12 @@ class SessionProcess {
                   }
                 }).catch(e =>
                   console.error('[QualityRunner] onToolUse error:', e.message));
+
+                // Track Bash test commands so we can record their results when they finish
+                if ((toolName === 'Bash' || toolName === 'bash') && block.id) {
+                  try { testRunRecorder.onBashToolUse(this.id, block.id, input); }
+                  catch (e) { console.error('[TestRunRecorder] onBashToolUse error:', e.message); }
+                }
               }
             }
             if (totalAdded > 0 || totalRemoved > 0) {
@@ -915,6 +922,30 @@ class SessionProcess {
             ? event.content
             : JSON.stringify(event.content);
           this.detectDevServerUrl(text);
+        }
+        // Older standalone tool_result format — pass straight through to the recorder
+        if (event.tool_use_id) {
+          testRunRecorder.onToolResult(this.id, {
+            type: 'tool_result',
+            tool_use_id: event.tool_use_id,
+            content: event.content,
+            is_error: event.is_error,
+          }).catch(e => console.error('[TestRunRecorder] onToolResult error:', e.message));
+        }
+        break;
+
+      case 'user':
+        // User events carry tool_result blocks for tools the assistant just ran.
+        // We don't persist user events as messages here (the message_send path does
+        // that), but we DO inspect them for tool_result blocks so the test recorder
+        // can pair Bash test runs with their output.
+        if (event.message && Array.isArray(event.message.content)) {
+          for (const block of event.message.content) {
+            if (block && block.type === 'tool_result') {
+              testRunRecorder.onToolResult(this.id, block)
+                .catch(e => console.error('[TestRunRecorder] onToolResult error:', e.message));
+            }
+          }
         }
         break;
 
