@@ -16,29 +16,43 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockQuery = vi.fn();
 
-// Replicate the relevant branch of sendMessage that decides whether to INSERT.
-// Returns the count of messages-table INSERTs the call would have produced.
-async function sendMessageInsertCount({ status, hasProcess, fromQueue }) {
+// Replicate the relevant branch of sendMessage. Mirrors the real method's
+// decision tree for: (a) whether to INSERT into messages, and (b) whether to
+// re-enqueue when a drained message arrives during a fresh working turn.
+async function callSendMessage(session, { status, hasProcess, fromQueue, content = 'msg' }) {
   let inserts = 0;
 
   // Queueing branch (process running, status === 'working')
   if (hasProcess && status === 'working') {
-    if (!fromQueue) {
-      // First-time queue: insert into messages so the chat shows it as queued
-      await mockQuery(`INSERT INTO messages …`);
-      inserts++;
+    if (fromQueue) {
+      // Race: the drain shifted us out of the queue and removed the persisted
+      // row, but a brand-new process started in the 100ms gap. Re-persist and
+      // re-push so the message isn't silently lost. No messages-table INSERT
+      // (the chat row already exists from the original queue).
+      const persisted = await session.queuedMessages.enqueue(session.id, content);
+      session.messageQueue.push({ content, attachments: null, queueId: persisted.id });
+      return { inserts };
     }
-    return inserts;
+    // First-time queue: insert into messages so the chat shows it as queued
+    await mockQuery(`INSERT INTO messages …`);
+    inserts++;
+    return { inserts };
   }
 
   // Spawn-new-process branch (no process or different status)
   if (!fromQueue) {
-    // Fresh user message — insert into messages
     await mockQuery(`INSERT INTO messages …`);
     inserts++;
   }
-  // (sendMessage continues with spawnProcess, not modeled here)
-  return inserts;
+  return { inserts };
+}
+
+function makeSession() {
+  return {
+    id: 'sess-1',
+    messageQueue: [],
+    queuedMessages: { enqueue: vi.fn().mockResolvedValue({ id: 999 }) },
+  };
 }
 
 describe('sendMessage fromQueue flag', () => {
@@ -47,7 +61,8 @@ describe('sendMessage fromQueue flag', () => {
   });
 
   it('inserts on a fresh user message when nothing is running', async () => {
-    const inserts = await sendMessageInsertCount({
+    const session = makeSession();
+    const { inserts } = await callSendMessage(session, {
       status: 'idle',
       hasProcess: false,
       fromQueue: false,
@@ -56,7 +71,8 @@ describe('sendMessage fromQueue flag', () => {
   });
 
   it('inserts when queueing a fresh user message during a working turn', async () => {
-    const inserts = await sendMessageInsertCount({
+    const session = makeSession();
+    const { inserts } = await callSendMessage(session, {
       status: 'working',
       hasProcess: true,
       fromQueue: false,
@@ -65,11 +81,11 @@ describe('sendMessage fromQueue flag', () => {
   });
 
   it('does NOT insert again when a queued message is drained and re-sent', async () => {
-    // This is the bug: the drain calls sendMessage, which falls into the
-    // spawn-new-process branch (status will be 'reviewing' or 'idle', not
-    // 'working', because the previous process just exited). With fromQueue,
-    // we skip the duplicate INSERT.
-    const inserts = await sendMessageInsertCount({
+    // The drain calls sendMessage; the previous process just exited, so status
+    // is 'reviewing' or 'idle'. With fromQueue we skip the duplicate INSERT
+    // — the chat row already exists from when the message was first queued.
+    const session = makeSession();
+    const { inserts } = await callSendMessage(session, {
       status: 'reviewing',
       hasProcess: false,
       fromQueue: true,
@@ -77,16 +93,28 @@ describe('sendMessage fromQueue flag', () => {
     expect(inserts).toBe(0);
   });
 
-  it('does NOT insert when a queued message lands back in the queue (fromQueue + working)', async () => {
-    // Edge case: the drain fires sendMessage, but in the 100ms gap the user
-    // typed something else that started a new process. The drained message
-    // gets queued again — but it was already in messages, so still no insert.
-    const inserts = await sendMessageInsertCount({
+  it('re-enqueues without inserting when a drained message lands during a fresh working turn', async () => {
+    // Race: in the 100ms between dequeue broadcast and the deferred sendMessage
+    // call, a brand-new process started (because the user typed something else).
+    // The drained message must be re-persisted AND re-pushed onto the in-memory
+    // queue — both copies were already removed by _drainQueue, so a bare early
+    // return would silently drop the message.
+    const session = makeSession();
+    const { inserts } = await callSendMessage(session, {
       status: 'working',
       hasProcess: true,
       fromQueue: true,
+      content: 'drained-then-requeued',
     });
     expect(inserts).toBe(0);
+    // Re-persisted: enqueue called with the message
+    expect(session.queuedMessages.enqueue).toHaveBeenCalledWith('sess-1', 'drained-then-requeued');
+    // Re-pushed: the in-memory queue now holds the message with the new persisted id
+    expect(session.messageQueue).toHaveLength(1);
+    expect(session.messageQueue[0]).toMatchObject({
+      content: 'drained-then-requeued',
+      queueId: 999,
+    });
   });
 });
 

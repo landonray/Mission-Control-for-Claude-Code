@@ -1024,11 +1024,20 @@ class SessionProcess {
     this._processedToolUseIds = new Set();
 
     if (this.process && this.status === 'working') {
-      // A process is already running — queue the message but still show it in the UI.
-      // fromQueue=true means this message is already in the messageQueue (it just got
-      // re-queued because a new process started in the gap before drain), so don't
-      // double-add it or double-insert into the DB.
-      if (fromQueue) return;
+      // A process is already running — queue the message but still show it in
+      // the UI.
+      //
+      // fromQueue=true is the race case: this message was just drained (its
+      // in-memory entry shifted out and persisted row deleted by _drainQueue),
+      // but a brand-new process started in the 100ms gap before this deferred
+      // sendMessage fired. We must re-persist and re-push so the message isn't
+      // silently lost. The chat row already exists from the original queue,
+      // so no messages-table INSERT and no user_message rebroadcast.
+      if (fromQueue) {
+        const repersisted = await queuedMessages.enqueue(this.id, text, attachments);
+        this.messageQueue.push({ content: text, attachments: attachments || null, queueId: repersisted.id });
+        return;
+      }
 
       // Persist the queued message so a server restart doesn't drop it
       const persisted = await queuedMessages.enqueue(this.id, text, attachments);
