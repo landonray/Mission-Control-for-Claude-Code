@@ -499,6 +499,81 @@ router.get('/:id/test-runs/:runId', async (req, res) => {
   }
 });
 
+// POST /api/projects/:id/context-docs/generate — kick off a context document
+// generation run for this project. Returns the new run id immediately; the
+// pipeline runs in the background and broadcasts progress over the WebSocket.
+router.post('/:id/context-docs/generate', async (req, res) => {
+  try {
+    const orchestrator = require('../services/contextDocOrchestrator');
+    const runId = await orchestrator.startGeneration(req.params.id);
+    res.status(202).json({ runId });
+  } catch (err) {
+    if (err.code === 'CONCURRENT_RUN') {
+      return res.status(409).json({ error: err.message, code: err.code });
+    }
+    if (err.code === 'PROJECT_NOT_FOUND') {
+      return res.status(404).json({ error: err.message, code: err.code });
+    }
+    if (err.code === 'NO_GITHUB_REPO') {
+      return res.status(400).json({ error: err.message, code: err.code });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:id/context-docs/latest — current or most recent context
+// doc run for this project, plus existence/mtime of the generated files.
+router.get('/:id/context-docs/latest', async (req, res) => {
+  try {
+    const orchestrator = require('../services/contextDocOrchestrator');
+    const run = await orchestrator.getLatestRun(req.params.id);
+
+    const projectRow = await query('SELECT root_path FROM projects WHERE id = $1', [req.params.id]);
+    const project = projectRow.rows[0];
+    const files = {};
+    if (project?.root_path) {
+      for (const name of ['PRODUCT.md', 'ARCHITECTURE.md']) {
+        const full = path.join(project.root_path, name);
+        try {
+          const stat = fs.statSync(full);
+          files[name] = { exists: true, modified_at: stat.mtime.toISOString(), size: stat.size, path: full };
+        } catch {
+          files[name] = { exists: false };
+        }
+      }
+    }
+    res.json({ run, files });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/projects/:id/context-docs/file?name=PRODUCT.md — read a generated
+// context document from the project's repo on disk. Locked to the two
+// allowed filenames so it can't be used as a general file-read endpoint.
+router.get('/:id/context-docs/file', async (req, res) => {
+  try {
+    const name = String(req.query.name || '');
+    if (name !== 'PRODUCT.md' && name !== 'ARCHITECTURE.md') {
+      return res.status(400).json({ error: 'name must be PRODUCT.md or ARCHITECTURE.md' });
+    }
+    const projectRow = await query('SELECT root_path FROM projects WHERE id = $1', [req.params.id]);
+    const project = projectRow.rows[0];
+    if (!project?.root_path) return res.status(404).json({ error: 'Project not found' });
+
+    const full = path.join(project.root_path, name);
+    try {
+      const content = fs.readFileSync(full, 'utf8');
+      res.json({ name, path: full, content });
+    } catch (err) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: `${name} has not been generated yet` });
+      throw err;
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/projects/:id/settings — update project settings
 router.put('/:id/settings', async (req, res) => {
   try {

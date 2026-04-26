@@ -76,6 +76,10 @@ const { broadcastToAll } = require('./websocket');
 const testRunRecorder = require('./services/testRunRecorder');
 testRunRecorder.setBroadcast(broadcastToAll);
 
+// Wire the context doc orchestrator so it can broadcast pipeline progress.
+const contextDocOrchestrator = require('./services/contextDocOrchestrator');
+contextDocOrchestrator.setBroadcast(broadcastToAll);
+
 // Initialize database then start server
 initializeDb().then(() => {
   // Recover tmux sessions from previous server lifetime
