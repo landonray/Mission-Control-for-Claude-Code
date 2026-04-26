@@ -323,6 +323,9 @@ class SessionProcess {
       finalPrompt = `IMPORTANT: You are in plan/read-only mode. Do NOT edit, write, or create any files. Do not use the Edit, Write, or NotebookEdit tools. Only read, search, analyze, and discuss.\n\n${prompt}`;
     }
 
+    // Use -- separator so the CLI doesn't parse a prompt that starts with --
+    // as an option flag (e.g. the MCP planning preamble used to start with ---).
+    args.push('--');
     args.push(resolveUploadPaths(finalPrompt, this.workingDirectory));
 
     return args;
@@ -2162,4 +2165,5 @@ module.exports = {
   activeSessions,
   globalEvents,
   tmuxAvailable,
+  SessionProcess,
 };
