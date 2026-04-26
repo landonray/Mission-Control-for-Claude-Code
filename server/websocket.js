@@ -163,6 +163,10 @@ async function handleMessage(ws, msg, state) {
       }
       break;
 
+    case 'subscribe_pipeline':
+      // No server-side state needed — clients filter broadcast messages by pipelineId.
+      break;
+
     case 'watch_directory':
       if (msg.path) {
         const resolvedPath = msg.path.replace(/^~/, process.env.HOME || '');

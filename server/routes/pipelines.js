@@ -58,8 +58,7 @@ router.get('/:id', async (req, res) => {
 
 router.post('/:id/approve', async (req, res) => {
   try {
-    const orchestrator = runtime.getOrchestrator();
-    await orchestrator.approveCurrentStage(req.params.id);
+    await runtime.approveAndBroadcast(req.params.id);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -72,8 +71,7 @@ router.post('/:id/reject', async (req, res) => {
     if (!feedback || !String(feedback).trim()) {
       return res.status(400).json({ error: 'feedback is required' });
     }
-    const orchestrator = runtime.getOrchestrator();
-    await orchestrator.rejectCurrentStage(req.params.id, feedback);
+    await runtime.rejectAndBroadcast(req.params.id, feedback);
     res.json({ ok: true });
   } catch (err) {
     res.status(400).json({ error: err.message });

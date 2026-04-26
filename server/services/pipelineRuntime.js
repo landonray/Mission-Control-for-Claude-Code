@@ -4,9 +4,18 @@ const { execFileSync } = require('child_process');
 const sessionManager = require('./sessionManager');
 const planning = require('./planningSessionOrchestrator');
 const orchestratorFactory = require('./pipelineOrchestrator');
+const websocket = require('../websocket');
 const { query } = require('../database');
 
 let started = null;
+
+function broadcastPipelineChanged(pipelineId) {
+  try {
+    websocket.broadcastToAll({ type: 'pipeline_status_changed', pipelineId });
+  } catch (err) {
+    // websocket may not be initialized yet (e.g. in tests) — silent fallback
+  }
+}
 
 function createBranch({ branchName, projectRootPath }) {
   try {
@@ -67,9 +76,11 @@ function start() {
 
   sessionManager.globalEvents.on('session_complete', (payload) => {
     if (!payload || !payload.pipelineId) return;
-    Promise.resolve(orchestrator.handleSessionComplete(payload)).catch((err) => {
-      console.error('pipelineOrchestrator.handleSessionComplete failed:', err);
-    });
+    Promise.resolve(orchestrator.handleSessionComplete(payload))
+      .then(() => broadcastPipelineChanged(payload.pipelineId))
+      .catch((err) => {
+        console.error('pipelineOrchestrator.handleSessionComplete failed:', err);
+      });
   });
 
   started = { orchestrator };
@@ -81,4 +92,16 @@ function getOrchestrator() {
   return started.orchestrator;
 }
 
-module.exports = { start, getOrchestrator };
+async function approveAndBroadcast(pipelineId) {
+  if (!started) throw new Error('pipelineRuntime not started');
+  await started.orchestrator.approveCurrentStage(pipelineId);
+  broadcastPipelineChanged(pipelineId);
+}
+
+async function rejectAndBroadcast(pipelineId, feedback) {
+  if (!started) throw new Error('pipelineRuntime not started');
+  await started.orchestrator.rejectCurrentStage(pipelineId, feedback);
+  broadcastPipelineChanged(pipelineId);
+}
+
+module.exports = { start, getOrchestrator, approveAndBroadcast, rejectAndBroadcast };
