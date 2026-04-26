@@ -167,7 +167,15 @@ async function initializeDb() {
       answered_at TEXT
     )`,
     `CREATE INDEX IF NOT EXISTS idx_planning_questions_project ON planning_questions(project_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`
+    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`,
+    `CREATE TABLE IF NOT EXISTS queued_messages (
+      id SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      attachments TEXT,
+      queued_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_queued_messages_session ON queued_messages(session_id, id)`
   ];
 
   for (const stmt of statements) {
