@@ -4,36 +4,9 @@ const { v4: uuidv4 } = require('uuid');
 const { query } = require('../database');
 const sessionManager = require('./sessionManager');
 const decisionLog = require('./decisionLog');
+const { parseEscalation } = require('./escalationParser');
 
-const DEFAULT_TIMEOUTS_SECONDS = {
-  planning: 180,
-  extraction: 300,
-  eval_gatherer: 300,
-  implementation: 0,
-};
-
-const RATE_LIMIT_PER_HOUR = 10;
-
-function defaultTimeoutSeconds(sessionType) {
-  if (Object.prototype.hasOwnProperty.call(DEFAULT_TIMEOUTS_SECONDS, sessionType)) {
-    return DEFAULT_TIMEOUTS_SECONDS[sessionType];
-  }
-  return DEFAULT_TIMEOUTS_SECONDS.planning;
-}
-
-async function ensureRateLimit(projectId) {
-  const result = await query(
-    `SELECT COUNT(*) AS count FROM sessions
-     WHERE project_id = $1 AND session_type = 'planning' AND created_at > NOW() - INTERVAL '1 hour'`,
-    [projectId]
-  );
-  const count = parseInt(result.rows[0]?.count || 0, 10);
-  if (count >= RATE_LIMIT_PER_HOUR) {
-    const err = new Error(`Planning-session rate limit reached for this project (${RATE_LIMIT_PER_HOUR}/hour). Try again later.`);
-    err.code = 'RATE_LIMITED';
-    throw err;
-  }
-}
+const ESCALATION_HOLDING_RESPONSE = 'This question has been escalated to the project owner. Continue with other work that does not depend on this answer, or call mc_get_session_status periodically to check whether an answer has arrived.';
 
 async function loadProjectContextFiles(projectRoot) {
   const tryPaths = [
@@ -80,17 +53,47 @@ function buildPlanningPrompt({ systemPrompt, task, contextSections }) {
     parts.push(
       'You are a senior product and architecture planning agent for this project. ' +
       'Answer the question below using the project context provided. ' +
-      'Be concrete, decisive, and brief. If the project context does not give you enough information, ' +
-      'say so explicitly and recommend what would need to be checked.'
+      'Be concrete, decisive, and brief.'
     );
   }
   if (contextSections && contextSections.length > 0) {
     parts.push('\n## Project context\n\n' + contextSections.join('\n\n'));
   }
+
+  parts.push(`
+## Escalation rules
+
+After reasoning through the question, assess whether you can answer confidently or whether this needs to be escalated to the project owner.
+
+You CAN answer if:
+- The answer is clearly supported by the project's PRODUCT.md or ARCHITECTURE.md
+- The answer follows established patterns visible in the codebase
+- The question is a straightforward technical decision with a clear best practice
+- The decision is easily reversible if the owner disagrees
+
+You MUST escalate if:
+- The question requires establishing a new pattern not covered by existing documentation
+- The answer would contradict an existing documented pattern or decision
+- The question involves strategic or business direction
+- The decision involves irreversible or expensive-to-reverse changes (data model migrations, dropping features, switching core dependencies)
+- The question has external stakeholder implications
+- You genuinely don't have enough context to give a confident answer
+
+If you can answer, respond normally with your answer.
+
+If you must escalate, respond in EXACTLY this format (and nothing else after this block):
+
+ESCALATE
+Question: <restate the question clearly>
+Context: <what you know about this topic from the project documents>
+Recommendation: <what you would answer if you could, and why>
+Reason for escalation: <which category above applies>
+`);
+
   parts.push('\n## Question\n\n' + (task || '').trim());
   parts.push(
     '\nIMPORTANT: You are in read-only planning mode. Do not edit, write, or create files. ' +
-    'Reading and searching the project is fine. Respond with a clear, direct answer.'
+    'Reading and searching the project is fine. Respond with a clear, direct answer or with the ESCALATE block above.'
   );
   return parts.join('\n');
 }
@@ -120,8 +123,6 @@ async function startPlanningSession(opts) {
   const projectResult = await query('SELECT id, name, root_path FROM projects WHERE id = $1', [projectId]);
   const project = projectResult.rows[0];
   if (!project) throw new Error(`Project ${projectId} not found`);
-
-  await ensureRateLimit(projectId);
 
   const productArchSections = await loadProjectContextFiles(project.root_path);
   const extraSections = await loadExtraContextFiles(project.root_path, contextFiles);
@@ -176,7 +177,7 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
   if (!sessionRow) throw new Error(`Session ${sessionId} not found`);
 
   const sessionType = sessionRow.session_type || 'implementation';
-  const timeout = (timeoutSeconds || defaultTimeoutSeconds(sessionType)) * 1000;
+  const timeoutMs = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
   const startTime = Date.now();
 
   const session = sessionManager.getSession(sessionId);
@@ -226,10 +227,18 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
             resolved = true;
             const duration = Date.now() - startTime;
             const text = lastAssistantContent || (await fetchLastAssistantText(sessionId));
-            await finalizePlanningTurn({
+            const turn = await finalizePlanningTurn({
               sessionId, sessionType, planningQuestionId, message, response: text,
             });
-            resolve({ response: text, status: 'completed', durationSeconds: duration / 1000 });
+            if (turn && turn.escalated) {
+              resolve({
+                response: ESCALATION_HOLDING_RESPONSE,
+                status: 'escalated',
+                durationSeconds: duration / 1000,
+              });
+            } else {
+              resolve({ response: text, status: 'completed', durationSeconds: duration / 1000 });
+            }
           }
         } else if (event.type === 'error') {
           resolved = true;
@@ -244,13 +253,13 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
     });
   });
 
-  const timeoutPromise = timeout > 0 ? new Promise((resolve) => {
+  const timeoutPromise = timeoutMs > 0 ? new Promise((resolve) => {
     setTimeout(async () => {
       if (resolved) return;
       resolved = true;
       const text = lastAssistantContent || (await fetchLastAssistantText(sessionId));
       resolve({ response: text, status: 'timed_out', durationSeconds: (Date.now() - startTime) / 1000 });
-    }, timeout);
+    }, timeoutMs);
   }) : new Promise(() => {}); // never resolves
 
   // Send the message — this triggers the working transition.
@@ -291,12 +300,26 @@ async function fetchLastAssistantText(sessionId) {
 }
 
 async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId, message, response }) {
-  if (sessionType !== 'planning' || !planningQuestionId) return;
-  if (!response) return;
+  if (sessionType !== 'planning' || !planningQuestionId) return { escalated: false };
+  if (!response) return { escalated: false };
+
+  const escalation = parseEscalation(response);
+  if (escalation) {
+    await query(
+      `UPDATE planning_questions
+         SET status = 'escalated',
+             escalation_recommendation = $1,
+             escalation_reason = $2,
+             escalation_context = $3
+       WHERE id = $4`,
+      [escalation.recommendation, escalation.reason, escalation.context || null, planningQuestionId]
+    );
+    return { escalated: true };
+  }
 
   await query(
     `UPDATE planning_questions
-       SET answer = $1, status = 'answered', answered_at = NOW()
+       SET answer = $1, status = 'answered', answered_at = NOW(), decided_by = 'planning-agent'
      WHERE id = $2`,
     [response, planningQuestionId]
   );
@@ -307,7 +330,7 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
       'SELECT s.project_id, p.name AS project_name, p.root_path, s.asking_session_id FROM sessions s JOIN projects p ON s.project_id = p.id WHERE s.id = $1',
       [sessionId]
     )).rows[0];
-    if (!sessionRow) return;
+    if (!sessionRow) return { escalated: false };
 
     const planningQuestion = (await query(
       'SELECT working_files, asking_session_id FROM planning_questions WHERE id = $1',
@@ -325,6 +348,7 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
       projectName: sessionRow.project_name,
       question: message,
       answer: response,
+      decidedBy: 'planning-agent',
     });
     await query(
       'UPDATE planning_questions SET logged_to_file = 1 WHERE id = $1',
@@ -333,6 +357,7 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
   } catch (e) {
     console.error('[planningSessionOrchestrator] Failed to append decision log:', e.message);
   }
+  return { escalated: false };
 }
 
 async function getStatus(sessionId) {
@@ -341,12 +366,41 @@ async function getStatus(sessionId) {
     [sessionId]
   )).rows[0];
   if (!sessionRow) return null;
-  const lastResponse = await fetchLastAssistantText(sessionId);
+
+  // For planning sessions, the most recent planning_question can override
+  // the CLI session's status: an open escalation means the session is
+  // really waiting on the owner, and an owner-answered escalation means
+  // the answer Claude Code should see is the owner's text, not the
+  // planning agent's last assistant message.
+  let escalationOverride = null;
+  if (sessionRow.session_type === 'planning') {
+    const pq = (await query(
+      `SELECT id, status, owner_answer, decided_by
+       FROM planning_questions
+       WHERE planning_session_id = $1
+       ORDER BY asked_at DESC
+       LIMIT 1`,
+      [sessionId]
+    )).rows[0];
+    if (pq) {
+      if (pq.status === 'escalated') {
+        escalationOverride = { status: 'waiting_for_owner', lastResponse: null };
+      } else if (pq.status === 'answered' && pq.decided_by === 'owner' && pq.owner_answer) {
+        escalationOverride = { status: 'completed', lastResponse: pq.owner_answer };
+      } else if (pq.status === 'dismissed') {
+        escalationOverride = { status: 'dismissed', lastResponse: 'This escalation was dismissed by the project owner.' };
+      }
+    }
+  }
+
+  const lastResponse = escalationOverride
+    ? escalationOverride.lastResponse
+    : await fetchLastAssistantText(sessionId);
   const startedAt = sessionRow.created_at ? new Date(sessionRow.created_at).getTime() : Date.now();
   const endTime = sessionRow.ended_at ? new Date(sessionRow.ended_at).getTime() : Date.now();
   return {
     sessionId,
-    status: mapSessionStatus(sessionRow.status),
+    status: escalationOverride ? escalationOverride.status : mapSessionStatus(sessionRow.status),
     durationSeconds: Math.max(0, (endTime - startedAt) / 1000),
     lastResponse,
     sessionType: sessionRow.session_type || 'implementation',
@@ -372,14 +426,10 @@ function mapSessionStatus(rawStatus) {
 }
 
 module.exports = {
-  RATE_LIMIT_PER_HOUR,
-  DEFAULT_TIMEOUTS_SECONDS,
-  defaultTimeoutSeconds,
   startPlanningSession,
   sendAndAwait,
   getStatus,
   buildPlanningPrompt,
   loadProjectContextFiles,
   loadExtraContextFiles,
-  ensureRateLimit,
 };

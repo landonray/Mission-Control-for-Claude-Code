@@ -150,6 +150,42 @@ describe('decisionLog appendDecision', () => {
   });
 });
 
+describe('decisionLog decidedBy', () => {
+  it('formats a planning-agent decision with the right label', () => {
+    const block = formatDecisionEntry({
+      timestamp: '2026-04-25T00:00:00Z',
+      askingSessionId: 'a1', planningSessionId: 'p1',
+      workingFiles: ['x.js'], projectName: 'Demo',
+      question: 'Q?', answer: 'A.',
+      decidedBy: 'planning-agent',
+    });
+    expect(block).toContain('**Decided by:** Planning agent');
+  });
+
+  it('formats an owner decision with the right label', () => {
+    const block = formatDecisionEntry({
+      timestamp: '2026-04-25T00:00:00Z',
+      askingSessionId: 'a1', planningSessionId: 'p1',
+      workingFiles: ['x.js'], projectName: 'Demo',
+      question: 'Q?', answer: 'A.',
+      decidedBy: 'owner',
+    });
+    expect(block).toContain('**Decided by:** Owner');
+  });
+
+  it('round-trips decidedBy through parseDecisions', () => {
+    const block = formatDecisionEntry({
+      timestamp: '2026-04-25T00:00:00Z',
+      askingSessionId: 'a1', planningSessionId: 'p1',
+      workingFiles: ['x.js'], projectName: 'Demo',
+      question: 'Q?', answer: 'A.',
+      decidedBy: 'owner',
+    });
+    const parsed = parseDecisions(block);
+    expect(parsed[0].decidedBy).toBe('Owner');
+  });
+});
+
 describe('resolveDecisionFilePath', () => {
   it('joins relative paths against the project root', () => {
     const p = resolveDecisionFilePath('/tmp/proj', null);

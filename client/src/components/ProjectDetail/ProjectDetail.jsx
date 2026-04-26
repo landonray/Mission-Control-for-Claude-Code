@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../utils/api';
-import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench } from 'lucide-react';
+import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench, AlertTriangle } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
 import MCPPanel from './MCPPanel';
+import DecisionsNeeded from './DecisionsNeeded';
+import UsageCard from './UsageCard';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
 const DEPLOY_POLL_INTERVAL_MS = 5000;
@@ -21,6 +23,7 @@ export default function ProjectDetail() {
   const [starting, setStarting] = useState(false);
   const [deploy, setDeploy] = useState(null);
   const [refreshingDeploy, setRefreshingDeploy] = useState(false);
+  const [decisionsCount, setDecisionsCount] = useState(0);
   const pollRef = useRef(null);
   const deployPollRef = useRef(null);
 
@@ -182,6 +185,23 @@ export default function ProjectDetail() {
         </span>
       </div>
 
+      {decisionsCount > 0 && (
+        <div className={styles.decisionsBanner}>
+          <AlertTriangle size={14} />
+          <span>{decisionsCount} decision{decisionsCount === 1 ? '' : 's'} waiting for you below.</span>
+        </div>
+      )}
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>
+          Decisions Needed
+          {decisionsCount > 0 && (
+            <span className={styles.countBadge}>{decisionsCount}</span>
+          )}
+        </h2>
+        <DecisionsNeeded projectId={project.id} onChange={setDecisionsCount} />
+      </section>
+
       <section className={styles.section}>
         <h2 className={styles.sectionHeader}>Hosting</h2>
         <DeployStatus
@@ -220,6 +240,11 @@ export default function ProjectDetail() {
       <section className={styles.section}>
         <h2 className={styles.sectionHeader}>Planning Activity</h2>
         <MCPPanel projectId={project.id} />
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Usage</h2>
+        <UsageCard projectId={project.id} />
       </section>
 
       <section className={styles.section}>
