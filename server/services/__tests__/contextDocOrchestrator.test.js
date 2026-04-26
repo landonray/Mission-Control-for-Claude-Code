@@ -221,12 +221,56 @@ describe('contextDocOrchestrator', () => {
       .rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' });
   });
 
-  it('throws NO_GITHUB_REPO when the project has no github_repo', async () => {
+  it('throws NO_GITHUB_REPO when the project has no github_repo and no git remote', async () => {
     project = { id: 'p1', name: 'p1', root_path: '/x', github_repo: null };
     db = createFakeDb({ project });
-    orchestrator._setForTests({ query: db.query });
+    orchestrator._setForTests({
+      query: db.query,
+      detectGithubRepoFromGit: vi.fn().mockReturnValue(null),
+    });
     await expect(orchestrator.startGeneration('p1'))
       .rejects.toMatchObject({ code: 'NO_GITHUB_REPO' });
+  });
+
+  it('falls back to detecting github_repo from the project folder git remote', async () => {
+    project = { id: 'p1', name: 'Project One', root_path: '/tmp/p1', github_repo: null };
+    db = createFakeDb({ project });
+    const detectGithubRepoFromGit = vi.fn().mockReturnValue('octo/p1');
+    const listMergedPRs = vi.fn().mockResolvedValue([
+      { number: 1, title: 'first', body: '', merged_at: '2026-01-01', url: 'u1' },
+    ]);
+
+    orchestrator._setForTests({
+      query: db.query,
+      detectGithubRepoFromGit,
+      listMergedPRs,
+      fetchPRDetails: vi.fn().mockImplementation(async (_repo, n) => ({
+        number: n, diff: 'D', diff_truncated: false,
+      })),
+      extractPR: vi.fn().mockResolvedValue({
+        extraction: {
+          what_changed: 'x', why: '',
+          product_decisions: [], architectural_decisions: [],
+          patterns_established: [], patterns_broken: [],
+          files_touched: [], is_mechanical: false,
+        },
+        raw: '{}',
+      }),
+      rollupBatch: vi.fn().mockResolvedValue('# Batch\n'),
+      rollupFinal: vi.fn().mockResolvedValue({ product: '# P\n', architecture: '# A\n' }),
+      writeFile: vi.fn().mockResolvedValue(undefined),
+    });
+
+    const runId = await orchestrator.startGeneration('p1');
+    expect(runId).toMatch(/-/);
+
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+    await flushPromises();
+
+    expect(detectGithubRepoFromGit).toHaveBeenCalledWith('/tmp/p1');
+    expect(listMergedPRs).toHaveBeenCalledWith('octo/p1');
   });
 
   it('marks the run as failed when no merged PRs are found', async () => {
