@@ -183,7 +183,7 @@ describe('resolveProject', () => {
     expect(project.id).toBe('existing-id');
     expect(project.config).toBeDefined();
     expect(mockQuery).toHaveBeenCalledWith(
-      'SELECT * FROM projects WHERE root_path = $1',
+      'SELECT * FROM projects WHERE LOWER(root_path) = LOWER($1)',
       ['/projects/my-app']
     );
   });
@@ -319,6 +319,149 @@ describe('getProject', () => {
     const project = await getProject('proj-1');
     expect(project.config.project).toEqual({});
     expect(project.config.evals.folders).toEqual([]);
+  });
+});
+
+describe('matchProjectByPath', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('matches when working_directory equals a project root_path', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [{ id: 'proj-1', root_path: '/projects/my-app' }];
+    expect(matchProjectByPath('/projects/my-app', projects)).toBe('proj-1');
+  });
+
+  it('matches a worktree path beneath a project root', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [{ id: 'proj-1', root_path: '/projects/my-app' }];
+    expect(
+      matchProjectByPath('/projects/my-app/.claude/worktrees/foo', projects)
+    ).toBe('proj-1');
+  });
+
+  it('matches case-insensitively', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [{ id: 'proj-1', root_path: '/users/me/coding projects/Command Center' }];
+    expect(
+      matchProjectByPath('/Users/Me/Coding Projects/Command Center', projects)
+    ).toBe('proj-1');
+  });
+
+  it('does not match a sibling whose name shares a prefix', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [{ id: 'proj-1', root_path: '/projects/my-app' }];
+    // /projects/my-app-other is NOT inside /projects/my-app
+    expect(matchProjectByPath('/projects/my-app-other', projects)).toBeNull();
+  });
+
+  it('picks the deepest (longest) matching root when projects nest', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [
+      { id: 'outer', root_path: '/projects' },
+      { id: 'inner', root_path: '/projects/my-app' },
+    ];
+    expect(matchProjectByPath('/projects/my-app/src', projects)).toBe('inner');
+  });
+
+  it('returns null when nothing matches', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [{ id: 'proj-1', root_path: '/projects/my-app' }];
+    expect(matchProjectByPath('/somewhere/else', projects)).toBeNull();
+  });
+
+  it('returns null for empty inputs', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    expect(matchProjectByPath(null, [{ id: 'p', root_path: '/x' }])).toBeNull();
+    expect(matchProjectByPath('/x', [])).toBeNull();
+  });
+
+  it('skips project records that have no root_path', async () => {
+    const { matchProjectByPath } = await import('../services/projectDiscovery.js');
+    const projects = [
+      { id: 'broken', root_path: null },
+      { id: 'good', root_path: '/projects/my-app' },
+    ];
+    expect(matchProjectByPath('/projects/my-app', projects)).toBe('good');
+  });
+});
+
+describe('backfillSessionProjectIds', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('returns zero counts when no projects exist', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // SELECT projects
+    const { backfillSessionProjectIds } = await import('../services/projectDiscovery.js');
+    const result = await backfillSessionProjectIds();
+    expect(result).toEqual({ scanned: 0, updated: 0, unmatched: 0 });
+    // Should not even query for orphan sessions if there are no projects.
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates orphan sessions whose working_directory falls under a project', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 'proj-1', root_path: '/projects/my-app' }],
+    });
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        { id: 'sess-1', working_directory: '/projects/my-app' },
+        { id: 'sess-2', working_directory: '/projects/my-app/.claude/worktrees/foo' },
+      ],
+    });
+    mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
+
+    const { backfillSessionProjectIds } = await import('../services/projectDiscovery.js');
+    const result = await backfillSessionProjectIds();
+
+    expect(result.updated).toBe(2);
+    expect(result.unmatched).toBe(0);
+    // First two calls are SELECTs; remaining are UPDATEs.
+    const updateCalls = mockQuery.mock.calls.slice(2);
+    expect(updateCalls).toHaveLength(2);
+    expect(updateCalls[0][0]).toMatch(/^UPDATE sessions SET project_id/);
+    expect(updateCalls[0][1]).toEqual(['proj-1', 'sess-1']);
+    expect(updateCalls[1][1]).toEqual(['proj-1', 'sess-2']);
+  });
+
+  it('counts but does not update sessions whose path matches no project', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 'proj-1', root_path: '/projects/my-app' }],
+    });
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 'sess-orphan', working_directory: '/somewhere/else' }],
+    });
+
+    const { backfillSessionProjectIds } = await import('../services/projectDiscovery.js');
+    const result = await backfillSessionProjectIds();
+
+    expect(result.updated).toBe(0);
+    expect(result.unmatched).toBe(1);
+    // No UPDATE issued for the unmatched orphan.
+    expect(mockQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('matches case-insensitive paths (the macOS path-case bug)', async () => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ id: 'cc', root_path: '/users/me/coding projects/Command Center' }],
+    });
+    mockQuery.mockResolvedValueOnce({
+      rows: [
+        { id: 's1', working_directory: '/Users/Me/Coding Projects/Command Center' },
+      ],
+    });
+    mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
+
+    const { backfillSessionProjectIds } = await import('../services/projectDiscovery.js');
+    const result = await backfillSessionProjectIds();
+
+    expect(result.updated).toBe(1);
+    const updateCall = mockQuery.mock.calls[2];
+    expect(updateCall[1]).toEqual(['cc', 's1']);
   });
 });
 
