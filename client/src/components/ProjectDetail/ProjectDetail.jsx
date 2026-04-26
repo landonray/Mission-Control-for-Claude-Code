@@ -7,6 +7,7 @@ import MCPPanel from './MCPPanel';
 import TestRunsPanel from './TestRunsPanel';
 import DecisionsNeeded from './DecisionsNeeded';
 import UsageCard from './UsageCard';
+import ContextDocsPanel from './ContextDocsPanel';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
 const DEPLOY_POLL_INTERVAL_MS = 5000;
@@ -236,6 +237,11 @@ export default function ProjectDetail() {
             ))
           )}
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Context Docs</h2>
+        <ContextDocsPanel projectId={project.id} githubRepo={project.github_repo} />
       </section>
 
       <section className={styles.section}>

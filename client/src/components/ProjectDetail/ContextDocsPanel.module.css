@@ -1,0 +1,245 @@
+.panel {
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intro {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.intro code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.actionBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 200, 100, 0.06);
+  border: 1px solid rgba(255, 200, 100, 0.25);
+  border-radius: 6px;
+}
+
+.statusLine, .statusRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.errorBlock {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #ff8a8a;
+  background: rgba(220, 80, 80, 0.06);
+  border: 1px solid rgba(220, 80, 80, 0.25);
+  border-radius: 6px;
+}
+
+.successBlock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #6ee7a4;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.badgeRunning {
+  background: rgba(255, 200, 100, 0.12);
+  color: var(--accent, #ffc864);
+}
+
+.badgeDone {
+  background: rgba(80, 200, 120, 0.15);
+  color: #6ee7a4;
+}
+
+.badgeFailed {
+  background: rgba(220, 80, 80, 0.18);
+  color: #ff8a8a;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.logBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.logToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 0;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.logToggle:hover {
+  color: var(--text-primary);
+}
+
+.logPre {
+  margin: 0;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.fileLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.fileLinkBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--accent, #ffc864);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 0;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 200, 100, 0.3);
+  text-underline-offset: 3px;
+}
+
+.fileLinkBtn:hover {
+  text-decoration-color: var(--accent, #ffc864);
+}
+
+.fileLinkMissing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.previewHeader strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+}
+
+.previewClose {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+}
+
+.previewClose:hover {
+  color: var(--text-primary);
+}
+
+.previewPre {
+  margin: 0;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  max-height: 480px;
+  overflow-y: auto;
+}

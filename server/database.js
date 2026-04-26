@@ -193,7 +193,34 @@ async function initializeDb() {
       completed_at TEXT
     )`,
     `CREATE INDEX IF NOT EXISTS idx_test_runs_project ON test_runs(project_id, created_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS idx_test_runs_session ON test_runs(session_id)`
+    `CREATE INDEX IF NOT EXISTS idx_test_runs_session ON test_runs(session_id)`,
+    `CREATE TABLE IF NOT EXISTS context_doc_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'running',
+      phase TEXT NOT NULL DEFAULT 'fetching',
+      prs_total INTEGER DEFAULT 0,
+      prs_extracted INTEGER DEFAULT 0,
+      batches_total INTEGER DEFAULT 0,
+      batches_done INTEGER DEFAULT 0,
+      error_message TEXT,
+      log_lines JSONB DEFAULT '[]'::jsonb,
+      created_at TEXT DEFAULT NOW(),
+      completed_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_context_doc_runs_project ON context_doc_runs(project_id, created_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS context_doc_extractions (
+      id SERIAL PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      pr_number INTEGER NOT NULL,
+      pr_title TEXT,
+      pr_url TEXT,
+      pr_merged_at TEXT,
+      extraction JSONB NOT NULL,
+      extracted_at TEXT DEFAULT NOW(),
+      UNIQUE(project_id, pr_number)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_context_doc_extractions_project ON context_doc_extractions(project_id, pr_merged_at)`
   ];
 
   for (const stmt of statements) {
