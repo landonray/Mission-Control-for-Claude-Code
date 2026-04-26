@@ -545,6 +545,21 @@ class SessionProcess {
     this.process = null;
     this.pendingPermission = null;
 
+    // Emit session_complete so the pipeline orchestrator (and any other listener)
+    // can react. Includes pipeline metadata when the session is part of a pipeline.
+    query('SELECT pipeline_id, pipeline_stage FROM sessions WHERE id = $1', [this.id])
+      .then((r) => {
+        const row = r.rows[0] || {};
+        globalEvents.emit('session_complete', {
+          sessionId: this.id,
+          pipelineId: row.pipeline_id || null,
+          pipelineStage: row.pipeline_stage || null,
+        });
+      })
+      .catch((err) => {
+        console.error(`[Session ${this.id.slice(0, 8)}] Failed to emit session_complete:`, err.message);
+      });
+
     const wasInterrupted = this._interrupted;
     this._interrupted = false;
 
