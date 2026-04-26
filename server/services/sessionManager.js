@@ -12,6 +12,7 @@ const qualityRunner = require('./qualityRunner');
 const mergeFields = require('./mergeFields');
 const testRunRecorder = require('./testRunRecorder');
 const { sanitizeAssistantText } = require('../utils/sanitizeAssistantText');
+const queuedMessages = require('./queuedMessages');
 
 const activeSessions = new Map();
 
@@ -589,11 +590,7 @@ class SessionProcess {
     }
 
     // Process queued messages
-    if (this.messageQueue.length > 0) {
-      const nextMsg = this.messageQueue.shift();
-      this.broadcast({ type: 'message_dequeued', sessionId: this.id, content: nextMsg, timestamp: new Date().toISOString() });
-      setTimeout(() => this.sendMessage(nextMsg), 100);
-    }
+    this._drainQueue();
   }
 
   async spawnDirectProcess(prompt) {
@@ -714,11 +711,7 @@ class SessionProcess {
       }
 
       // Drain message queue (matches tmux behavior)
-      if (this.messageQueue.length > 0) {
-        const nextMsg = this.messageQueue.shift();
-        this.broadcast({ type: 'message_dequeued', sessionId: this.id, content: nextMsg, timestamp: new Date().toISOString() });
-        setTimeout(() => this.sendMessage(nextMsg), 100);
-      }
+      this._drainQueue();
     });
 
     this.process.on('error', (err) => {
@@ -742,11 +735,7 @@ class SessionProcess {
         timestamp: new Date().toISOString()
       });
       // Drain message queue so queued messages aren't silently lost
-      if (this.messageQueue.length > 0) {
-        const nextMsg = this.messageQueue.shift();
-        this.broadcast({ type: 'message_dequeued', sessionId: this.id, content: nextMsg, timestamp: new Date().toISOString() });
-        setTimeout(() => this.sendMessage(nextMsg), 100);
-      }
+      this._drainQueue();
     });
   }
 
@@ -1017,11 +1006,7 @@ class SessionProcess {
                 status: 'idle',
                 timestamp: new Date().toISOString()
               });
-              if (this.messageQueue.length > 0) {
-                const nextMsg = this.messageQueue.shift();
-                this.broadcast({ type: 'message_dequeued', sessionId: this.id, content: nextMsg, timestamp: new Date().toISOString() });
-                setTimeout(() => this.sendMessage(nextMsg), 100);
-              }
+              this._drainQueue();
             }
           }
         }, 5000);
@@ -1059,7 +1044,7 @@ class SessionProcess {
     }
   }
 
-  async sendMessage(text, attachments = null, { isQualityReview = false } = {}) {
+  async sendMessage(text, attachments = null, { isQualityReview = false, fromQueue = false } = {}) {
     // Reset quality review iteration counter when a user sends a message manually
     if (!isQualityReview) {
       this.qualityReviewIteration = 0;
@@ -1070,10 +1055,28 @@ class SessionProcess {
     this._processedToolUseIds = new Set();
 
     if (this.process && this.status === 'working') {
-      // A process is already running — queue the message but still show it in the UI
-      this.messageQueue.push(text);
+      // A process is already running — queue the message but still show it in
+      // the UI.
+      //
+      // fromQueue=true is the race case: this message was just drained (its
+      // in-memory entry shifted out and persisted row deleted by _drainQueue),
+      // but a brand-new process started in the 100ms gap before this deferred
+      // sendMessage fired. We must re-persist and re-push so the message isn't
+      // silently lost. The chat row already exists from the original queue,
+      // so no messages-table INSERT and no user_message rebroadcast.
+      if (fromQueue) {
+        const repersisted = await queuedMessages.enqueue(this.id, text, attachments);
+        this.messageQueue.push({ content: text, attachments: attachments || null, queueId: repersisted.id });
+        return;
+      }
 
-      // Insert into DB and broadcast so the user sees their message immediately
+      // Persist the queued message so a server restart doesn't drop it
+      const persisted = await queuedMessages.enqueue(this.id, text, attachments);
+
+      // In-memory queue tracks the persisted id so we can remove it on drain
+      this.messageQueue.push({ content: text, attachments: attachments || null, queueId: persisted.id });
+
+      // Insert into messages so the user sees their message immediately with the queued badge
       if (attachments) {
         await query(
           `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
@@ -1153,32 +1156,36 @@ class SessionProcess {
       }).catch(e => autoNameLog('Session name generation error:', e.message));
     }
 
-    console.log(`sendMessage: inserting message for session ${this.id}, hasAttachments=${!!attachments}`);
-    try {
-      if (attachments) {
-        await query(
-          `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
-          [this.id, text, JSON.stringify(attachments)]
-        );
-      } else {
-        await query(
-          `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
-          [this.id, text]
-        );
+    // Skip the INSERT and counter bump for messages drained from the queue —
+    // they were already inserted/counted when first queued.
+    if (!fromQueue) {
+      console.log(`sendMessage: inserting message for session ${this.id}, hasAttachments=${!!attachments}`);
+      try {
+        if (attachments) {
+          await query(
+            `INSERT INTO messages (session_id, role, content, attachments, timestamp) VALUES ($1, 'user', $2, $3, NOW())`,
+            [this.id, text, JSON.stringify(attachments)]
+          );
+        } else {
+          await query(
+            `INSERT INTO messages (session_id, role, content, timestamp) VALUES ($1, 'user', $2, NOW())`,
+            [this.id, text]
+          );
+        }
+        console.log(`sendMessage: message inserted successfully for session ${this.id}`);
+      } catch (dbErr) {
+        console.error(`sendMessage: FAILED to insert message for session ${this.id}:`, dbErr.message);
+        // Check if session exists
+        const check = await query('SELECT id FROM sessions WHERE id = $1', [this.id]);
+        console.error(`sendMessage: session exists in DB: ${check.rows.length > 0}`);
+        throw dbErr;
       }
-      console.log(`sendMessage: message inserted successfully for session ${this.id}`);
-    } catch (dbErr) {
-      console.error(`sendMessage: FAILED to insert message for session ${this.id}:`, dbErr.message);
-      // Check if session exists
-      const check = await query('SELECT id FROM sessions WHERE id = $1', [this.id]);
-      console.error(`sendMessage: session exists in DB: ${check.rows.length > 0}`);
-      throw dbErr;
-    }
 
-    await query(
-      `UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1`,
-      [this.id]
-    );
+      await query(
+        `UPDATE sessions SET user_message_count = user_message_count + 1, last_activity_at = NOW() WHERE id = $1`,
+        [this.id]
+      );
+    }
 
     // Clear stale error/permission state from previous process failures
     this.errorMessage = null;
@@ -1196,13 +1203,19 @@ class SessionProcess {
       timestamp: new Date().toISOString()
     });
 
-    this.broadcast({
-      type: 'user_message',
-      sessionId: this.id,
-      content: text,
-      attachments: attachments || null,
-      timestamp: new Date().toISOString()
-    });
+    // Skip the user_message rebroadcast for queue-drained messages — the chat
+    // already rendered this row when it was first queued. Rebroadcasting causes
+    // the client's dedup window (last 10 messages) to miss the original and add
+    // a phantom duplicate at the bottom of the chat.
+    if (!fromQueue) {
+      this.broadcast({
+        type: 'user_message',
+        sessionId: this.id,
+        content: text,
+        attachments: attachments || null,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // If compaction was detected (context usage dropped significantly), prepend
     // the full conversation history so Claude regains context that was lost.
@@ -1267,10 +1280,18 @@ class SessionProcess {
    * Returns true if the message was found and removed, false otherwise.
    */
   deleteQueuedMessage(content) {
-    const idx = this.messageQueue.lastIndexOf(content);
+    // Find the most recent queue entry matching this content
+    let idx = -1;
+    for (let i = this.messageQueue.length - 1; i >= 0; i--) {
+      if (this.messageQueue[i].content === content) { idx = i; break; }
+    }
     if (idx === -1) return false;
 
-    this.messageQueue.splice(idx, 1);
+    const removed = this.messageQueue.splice(idx, 1)[0];
+
+    // Drop the persisted queue row so a server restart doesn't re-deliver it
+    queuedMessages.removeById(removed.queueId)
+      .catch(e => console.error('[Session] Error deleting queued_messages row:', e.message));
 
     // Delete only the most recent matching message from DB (not all with same content)
     query(
@@ -1413,6 +1434,8 @@ class SessionProcess {
 
   async end() {
     this.messageQueue = [];
+    queuedMessages.clearForSession(this.id)
+      .catch(e => console.error('[Session] Error clearing queued_messages on end:', e.message));
     this.stopOutputTail();
 
     if (this.process && !this.process.killed) {
@@ -1501,6 +1524,40 @@ class SessionProcess {
       status: 'idle',
       timestamp: new Date().toISOString()
     });
+  }
+
+  /**
+   * Move the next queued message out of the queue and into a fresh agent turn.
+   * Removes the persisted row, broadcasts the dequeue, and schedules sendMessage
+   * with fromQueue=true so the messages-table row isn't double-inserted.
+   *
+   * Errors during the deferred sendMessage call surface in the chat as an error
+   * event so a failed drain doesn't silently lose the message.
+   */
+  _drainQueue() {
+    if (this.messageQueue.length === 0) return;
+    const next = this.messageQueue.shift();
+    queuedMessages.removeById(next.queueId)
+      .catch(e => console.error(`[Session ${this.id.slice(0, 8)}] Failed to remove queued_messages row:`, e.message));
+    this.broadcast({
+      type: 'message_dequeued',
+      sessionId: this.id,
+      content: next.content,
+      timestamp: new Date().toISOString(),
+    });
+    setTimeout(() => {
+      this.sendMessage(next.content, next.attachments, { fromQueue: true })
+        .catch(err => {
+          console.error(`[Session ${this.id.slice(0, 8)}] Failed to drain queued message:`, err.message);
+          this.errorMessage = `Could not deliver queued message: ${err.message}`;
+          this.broadcast({
+            type: 'error',
+            sessionId: this.id,
+            error: this.errorMessage,
+            timestamp: new Date().toISOString(),
+          });
+        });
+    }, 100);
   }
 
   parseQualityResults(text) {
@@ -1779,6 +1836,23 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
     session.resuming = true;
     activeSessions.set(sessionId, session);
 
+    // Rehydrate any messages that were queued before the session went cold so
+    // they aren't silently dropped. They drain after the current resume message
+    // finishes its turn.
+    try {
+      const queued = await queuedMessages.peekAll(sessionId);
+      session.messageQueue = queued.map(q => ({
+        content: q.content,
+        attachments: q.attachments,
+        queueId: q.id,
+      }));
+      if (session.messageQueue.length > 0) {
+        console.log(`[Session ${sessionId.slice(0, 8)}] Rehydrated ${session.messageQueue.length} queued message(s) on resume`);
+      }
+    } catch (e) {
+      console.error(`[Session ${sessionId.slice(0, 8)}] Failed to rehydrate queue on resume:`, e.message);
+    }
+
     // Attach listener before any broadcasts so the client doesn't miss events
     if (listener) {
       session.addListener(listener);
@@ -1943,6 +2017,28 @@ async function recoverTmuxSessions() {
     session.updateDbStatus(sessionStatus);
 
     activeSessions.set(sessionRow.id, session);
+
+    // Rehydrate any messages that were queued when the server went down so
+    // they aren't silently lost. If the recovered session is idle, drain
+    // immediately to start the next agent turn; if still working, the queue
+    // will drain on the next process exit as usual.
+    try {
+      const queued = await queuedMessages.peekAll(sessionRow.id);
+      session.messageQueue = queued.map(q => ({
+        content: q.content,
+        attachments: q.attachments,
+        queueId: q.id,
+      }));
+      if (session.messageQueue.length > 0) {
+        console.log(`  Rehydrated ${session.messageQueue.length} queued message(s) for ${sessionRow.id.slice(0, 8)}`);
+        if (sessionStatus === 'idle') {
+          session._drainQueue();
+        }
+      }
+    } catch (e) {
+      console.error(`  Failed to rehydrate queue for ${sessionRow.id.slice(0, 8)}:`, e.message);
+    }
+
     console.log(`  Recovered session ${sessionRow.id} as ${sessionStatus}`);
   }
 
