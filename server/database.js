@@ -274,6 +274,21 @@ async function initializeDb() {
   // and could delete legitimate repeated messages (same content, different turns).
   // The upsert logic in sessionManager now prevents duplicates at the source.
 
+  // Backfill project_id on sessions that pre-date the project-linking feature
+  // (or whose linking failed silently). Idempotent: only touches sessions
+  // where project_id is NULL, so it is safe to run on every startup.
+  try {
+    const { backfillSessionProjectIds } = await import('./services/projectDiscovery.js');
+    const result = await backfillSessionProjectIds();
+    if (result.updated > 0 || result.unmatched > 0) {
+      console.log(
+        `[migrations] session.project_id backfill: ${result.updated} linked, ${result.unmatched} unmatched, ${result.scanned} scanned`
+      );
+    }
+  } catch (e) {
+    console.error('Migration failed: session.project_id backfill', e.message);
+  }
+
   await seedQualityRules();
 }
 
