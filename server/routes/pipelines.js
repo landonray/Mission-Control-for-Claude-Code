@@ -45,12 +45,14 @@ router.get('/:id', async (req, res) => {
     if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
     const outputs = await repo.listStageOutputs(req.params.id);
     const prompts = await repo.getStagePrompts(req.params.id);
+    const chunks = await repo.listChunks(req.params.id);
+    const escalations = await repo.listOpenEscalations(req.params.id);
     const sessions = await query(
       `SELECT id, status, session_type, created_at, ended_at, pipeline_stage
        FROM sessions WHERE pipeline_id = $1 ORDER BY created_at ASC`,
       [req.params.id]
     );
-    res.json({ pipeline, outputs, prompts, sessions: sessions.rows });
+    res.json({ pipeline, outputs, prompts, chunks, escalations, sessions: sessions.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -81,7 +83,9 @@ router.post('/:id/reject', async (req, res) => {
 router.put('/:id/prompts/:stage', async (req, res) => {
   try {
     const stage = Number(req.params.stage);
-    if (![1, 2, 3].includes(stage)) return res.status(400).json({ error: 'Stage must be 1, 2, or 3' });
+    if (![1, 2, 3, 4, 5, 6, 7].includes(stage)) {
+      return res.status(400).json({ error: 'Stage must be between 1 and 7' });
+    }
     const prompt = req.body && req.body.prompt;
     if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: 'prompt is required' });
     await repo.updateStagePrompt(req.params.id, stage, prompt);

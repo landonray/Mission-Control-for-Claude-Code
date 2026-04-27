@@ -87,15 +87,22 @@ describe('pipelines routes', () => {
     expect(res.body.pipelines).toHaveLength(2);
   });
 
-  it('GET /api/pipelines/:id returns pipeline detail with stage outputs and prompts', async () => {
+  it('GET /api/pipelines/:id returns pipeline detail with stage outputs, prompts, chunks, and escalations', async () => {
     const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 's' });
     await repo.recordStageOutput({ pipelineId: p.id, stage: 1, iteration: 1, outputPath: 'docs/specs/x-refined.md' });
+    await repo.createChunks(p.id, [
+      { index: 1, name: 'first', body: 'b', files: '', qaScenarios: '', dependencies: '', complexity: '' },
+    ]);
+    await repo.createEscalation({ pipelineId: p.id, stage: 4, summary: 'test escalation' });
     const app = makeApp();
     const res = await request(app).get(`/api/pipelines/${p.id}`);
     expect(res.status).toBe(200);
     expect(res.body.pipeline.id).toBe(p.id);
     expect(res.body.outputs).toHaveLength(1);
     expect(res.body.prompts).toHaveProperty('1');
+    expect(res.body.prompts).toHaveProperty('7');
+    expect(res.body.chunks).toHaveLength(1);
+    expect(res.body.escalations).toHaveLength(1);
   });
 
   it('POST /api/pipelines/:id/approve returns ok', async () => {
@@ -121,13 +128,24 @@ describe('pipelines routes', () => {
     expect(res.body.ok).toBe(true);
   });
 
-  it('PUT /api/pipelines/:id/prompts/:stage updates a stage prompt', async () => {
+  it('PUT /api/pipelines/:id/prompts/:stage updates a stage prompt for stages 1-7', async () => {
     const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 's' });
     const app = makeApp();
-    const res = await request(app).put(`/api/pipelines/${p.id}/prompts/1`).send({ prompt: 'NEW PROMPT' });
-    expect(res.status).toBe(200);
+    for (const stage of [1, 4, 7]) {
+      const res = await request(app).put(`/api/pipelines/${p.id}/prompts/${stage}`).send({ prompt: `NEW PROMPT ${stage}` });
+      expect(res.status).toBe(200);
+    }
     const prompts = await repo.getStagePrompts(p.id);
-    expect(prompts['1']).toBe('NEW PROMPT');
+    expect(prompts['1']).toBe('NEW PROMPT 1');
+    expect(prompts['4']).toBe('NEW PROMPT 4');
+    expect(prompts['7']).toBe('NEW PROMPT 7');
+  });
+
+  it('PUT /api/pipelines/:id/prompts/:stage rejects out-of-range stages', async () => {
+    const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 's' });
+    const app = makeApp();
+    const res = await request(app).put(`/api/pipelines/${p.id}/prompts/9`).send({ prompt: 'NEW' });
+    expect(res.status).toBe(400);
   });
 
   it('GET /api/pipelines/:id/output/:stage returns the latest stage output content', async () => {

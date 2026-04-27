@@ -79,4 +79,41 @@ describe('PipelineDetail', () => {
     fireEvent.click(screen.getByRole('button', { name: /submit rejection/i }));
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/pipelines/p1/reject', { feedback: 'too vague' }));
   });
+
+  it('renders all 7 stages', async () => {
+    api.get.mockResolvedValue(mockPipeline);
+    renderAt();
+    await waitFor(() => expect(screen.getByText(/Stage 1: Spec Refinement/i)).toBeTruthy());
+    expect(screen.getByText(/Stage 4: Implementation/i)).toBeTruthy();
+    expect(screen.getByText(/Stage 5: QA Execution/i)).toBeTruthy();
+    expect(screen.getByText(/Stage 6: Code Review/i)).toBeTruthy();
+    expect(screen.getByText(/Stage 7: Fix Cycle/i)).toBeTruthy();
+  });
+
+  it('renders chunks for stage 4 and shows escalation banner', async () => {
+    const fullPipeline = {
+      pipeline: {
+        id: 'p2', name: 'Big feature', status: 'paused_for_escalation', current_stage: 7,
+        fix_cycle_count: 3, spec_input: 'x', branch_name: 'pipeline-big', project_id: 'proj1',
+      },
+      outputs: [],
+      prompts: {},
+      sessions: [],
+      chunks: [
+        { chunk_index: 1, name: 'first', status: 'completed', complexity: 'small' },
+        { chunk_index: 2, name: 'second', status: 'running', complexity: 'medium' },
+      ],
+      escalations: [
+        { id: 'e1', stage: 7, summary: 'Stuck after 3 fix cycles.', detail: 'Latest QA: docs/specs/big-qa-report.md' },
+      ],
+    };
+    api.get.mockResolvedValue(fullPipeline);
+    renderAt('/pipelines/p2');
+    await waitFor(() => expect(screen.getByText(/Big feature/)).toBeTruthy());
+    expect(screen.getByText(/Pipeline needs your attention/i)).toBeTruthy();
+    expect(screen.getByText(/Stuck after 3 fix cycles/i)).toBeTruthy();
+    expect(screen.getByText(/Chunk 1:/)).toBeTruthy();
+    expect(screen.getByText(/Chunk 2:/)).toBeTruthy();
+    expect(screen.getByText(/Fix cycles used:/i)).toBeTruthy();
+  });
 });

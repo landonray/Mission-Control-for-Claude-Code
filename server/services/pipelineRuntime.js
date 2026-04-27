@@ -46,12 +46,15 @@ async function startSession({
   const contextSections = await planning.loadProjectContextFiles(project.root_path);
   const contextBlock =
     contextSections.length > 0 ? `\n\n## Project context\n\n${contextSections.join('\n\n')}` : '';
+  // Code review (stage 6) is read-only; everything else may write code or
+  // produce documents.
+  const permissionMode = sessionType === 'code_review' ? 'plan' : 'acceptEdits';
   const initialPrompt = `${systemPrompt}${contextBlock}\n\n## Your task\n\n${task}\n`;
 
   const session = await sessionManager.createSession({
     name: `Pipeline ${sessionType}: ${task.split('\n')[0].slice(0, 60)}`,
     workingDirectory: project.root_path,
-    permissionMode: 'acceptEdits',
+    permissionMode,
     model: process.env.MC_PIPELINE_MODEL || 'claude-sonnet-4-6',
     sessionType,
     projectId,
@@ -70,9 +73,23 @@ function readFileExists(fullPath) {
   return fs.existsSync(fullPath);
 }
 
+function readBuildPlan(fullPath) {
+  return fs.readFileSync(fullPath, 'utf8');
+}
+
+function readStageOutput(fullPath) {
+  return fs.readFileSync(fullPath, 'utf8');
+}
+
 function start() {
   if (started) return started;
-  const orchestrator = orchestratorFactory.create({ createBranch, startSession, readFileExists });
+  const orchestrator = orchestratorFactory.create({
+    createBranch,
+    startSession,
+    readFileExists,
+    readBuildPlan,
+    readStageOutput,
+  });
 
   sessionManager.globalEvents.on('session_complete', (payload) => {
     if (!payload || !payload.pipelineId) return;

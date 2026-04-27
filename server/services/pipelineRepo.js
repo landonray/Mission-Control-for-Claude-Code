@@ -8,7 +8,12 @@ const STAGE_FILES = {
   1: 'spec_refinement.md',
   2: 'qa_design.md',
   3: 'implementation_planning.md',
+  4: 'implementation.md',
+  5: 'qa_execution.md',
+  6: 'code_review.md',
+  7: 'fix_cycle.md',
 };
+const ALL_STAGES = [1, 2, 3, 4, 5, 6, 7];
 
 function sanitizeBranchName(name) {
   const slug = String(name)
@@ -43,7 +48,7 @@ async function createPipeline({ projectId, name, specInput }) {
   );
   const pipeline = result.rows[0];
 
-  for (const stage of [1, 2, 3]) {
+  for (const stage of ALL_STAGES) {
     await query(
       `INSERT INTO pipeline_stage_prompts (pipeline_id, stage, prompt) VALUES ($1, $2, $3)
        ON CONFLICT (pipeline_id, stage) DO NOTHING`,
@@ -166,6 +171,106 @@ async function getActivePipelineForProject(projectId) {
   return result.rows[0] || null;
 }
 
+async function createChunks(pipelineId, chunks) {
+  for (const chunk of chunks) {
+    await query(
+      `INSERT INTO pipeline_chunks
+         (pipeline_id, chunk_index, name, body, files, qa_scenarios, dependencies, complexity, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
+       ON CONFLICT (pipeline_id, chunk_index) DO NOTHING`,
+      [
+        pipelineId,
+        chunk.index,
+        chunk.name,
+        chunk.body,
+        chunk.files || '',
+        chunk.qaScenarios || '',
+        chunk.dependencies || '',
+        chunk.complexity || '',
+      ]
+    );
+  }
+}
+
+async function listChunks(pipelineId) {
+  const result = await query(
+    `SELECT * FROM pipeline_chunks WHERE pipeline_id = $1 ORDER BY chunk_index ASC`,
+    [pipelineId]
+  );
+  return result.rows;
+}
+
+async function getNextPendingChunk(pipelineId) {
+  const result = await query(
+    `SELECT * FROM pipeline_chunks WHERE pipeline_id = $1 AND status = 'pending'
+     ORDER BY chunk_index ASC LIMIT 1`,
+    [pipelineId]
+  );
+  return result.rows[0] || null;
+}
+
+async function markChunkRunning(pipelineId, chunkIndex, sessionId) {
+  await query(
+    `UPDATE pipeline_chunks SET status = 'running', session_id = $1, started_at = NOW()
+     WHERE pipeline_id = $2 AND chunk_index = $3`,
+    [sessionId, pipelineId, chunkIndex]
+  );
+}
+
+async function markChunkCompleted(pipelineId, chunkIndex) {
+  await query(
+    `UPDATE pipeline_chunks SET status = 'completed', completed_at = NOW()
+     WHERE pipeline_id = $1 AND chunk_index = $2`,
+    [pipelineId, chunkIndex]
+  );
+}
+
+async function findChunkBySessionId(sessionId) {
+  const result = await query(
+    `SELECT * FROM pipeline_chunks WHERE session_id = $1 LIMIT 1`,
+    [sessionId]
+  );
+  return result.rows[0] || null;
+}
+
+async function incrementFixCycleCount(pipelineId) {
+  const result = await query(
+    `UPDATE pipelines SET fix_cycle_count = COALESCE(fix_cycle_count, 0) + 1
+     WHERE id = $1
+     RETURNING fix_cycle_count`,
+    [pipelineId]
+  );
+  return result.rows[0]?.fix_cycle_count ?? 0;
+}
+
+async function createEscalation({ pipelineId, stage, summary, detail }) {
+  const id = `pesc_${crypto.randomBytes(8).toString('hex')}`;
+  const result = await query(
+    `INSERT INTO pipeline_escalations (id, pipeline_id, stage, summary, detail, status)
+     VALUES ($1, $2, $3, $4, $5, 'open')
+     RETURNING *`,
+    [id, pipelineId, stage, summary, detail || null]
+  );
+  return result.rows[0];
+}
+
+async function listOpenEscalations(pipelineId) {
+  const result = await query(
+    `SELECT * FROM pipeline_escalations WHERE pipeline_id = $1 AND status = 'open'
+     ORDER BY created_at DESC`,
+    [pipelineId]
+  );
+  return result.rows;
+}
+
+async function resolveEscalation(escalationId) {
+  await query(
+    `UPDATE pipeline_escalations SET status = 'resolved', resolved_at = NOW()
+     WHERE id = $1`,
+    [escalationId]
+  );
+}
+
 module.exports = {
   sanitizeBranchName,
   loadDefaultPrompt,
@@ -181,4 +286,14 @@ module.exports = {
   getStagePrompts,
   updateStagePrompt,
   getActivePipelineForProject,
+  createChunks,
+  listChunks,
+  getNextPendingChunk,
+  markChunkRunning,
+  markChunkCompleted,
+  findChunkBySessionId,
+  incrementFixCycleCount,
+  createEscalation,
+  listOpenEscalations,
+  resolveEscalation,
 };

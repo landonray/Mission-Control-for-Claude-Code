@@ -5,6 +5,10 @@ const STAGE_NAMES = {
   1: 'Stage 1: Spec Refinement',
   2: 'Stage 2: QA Design',
   3: 'Stage 3: Implementation Planning',
+  4: 'Stage 4: Implementation',
+  5: 'Stage 5: QA Execution',
+  6: 'Stage 6: Code Review',
+  7: 'Stage 7: Fix Cycle',
 };
 
 export default function StagePromptEditor({ prompts, onSave }) {
@@ -14,9 +18,10 @@ export default function StagePromptEditor({ prompts, onSave }) {
       <p className={styles.note}>
         These prompts are unique to this pipeline. Editing one only affects this pipeline.
         If a stage hasn't run yet, the next run uses the new prompt. If it has, you'll need to
-        reject the stage to re-run with the updated prompt.
+        reject the stage (for gated stages) or wait for the next iteration (for autonomous stages)
+        to see the updated prompt take effect.
       </p>
-      {[1, 2, 3].map((stage) => (
+      {[1, 2, 3, 4, 5, 6, 7].map((stage) => (
         <PromptBlock
           key={stage}
           stage={stage}

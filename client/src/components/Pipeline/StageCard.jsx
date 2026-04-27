@@ -7,15 +7,29 @@ const STAGE_NAMES = {
   1: 'Spec Refinement',
   2: 'QA Design',
   3: 'Implementation Planning',
+  4: 'Implementation',
+  5: 'QA Execution',
+  6: 'Code Review',
+  7: 'Fix Cycle',
 };
 
 const SESSION_TYPE_FOR_STAGE = {
   1: 'spec_refinement',
   2: 'qa_design',
   3: 'implementation_planning',
+  4: 'implementation',
+  5: 'qa_execution',
+  6: 'code_review',
+  7: 'implementation',
 };
 
-export default function StageCard({ pipeline, stage, output, sessions, onApprove, onReject }) {
+// Stages that produce a doc the user reads inline. Stages 4 and 7 are code-only.
+const STAGE_HAS_DOC = { 1: true, 2: true, 3: true, 5: true, 6: true };
+
+// Only stages 1-3 are user-gated. The rest run autonomously.
+const STAGE_IS_GATED = { 1: true, 2: true, 3: true };
+
+export default function StageCard({ pipeline, stage, output, sessions, chunks, onApprove, onReject }) {
   const [content, setContent] = useState(null);
   const [contentError, setContentError] = useState(null);
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -24,10 +38,11 @@ export default function StageCard({ pipeline, stage, output, sessions, onApprove
   const sessionType = SESSION_TYPE_FOR_STAGE[stage];
   const stageStatus = computeStageStatus(pipeline, stage, output);
   const isCurrent = pipeline.current_stage === stage;
-  const isPausedForApproval = isCurrent && pipeline.status === 'paused_for_approval' && output;
+  const isPausedForApproval =
+    isCurrent && pipeline.status === 'paused_for_approval' && output && STAGE_IS_GATED[stage];
 
   useEffect(() => {
-    if (!output) { setContent(null); return; }
+    if (!output || !STAGE_HAS_DOC[stage]) { setContent(null); return; }
     let cancelled = false;
     api
       .get(`/api/pipelines/${pipeline.id}/output/${stage}`)
@@ -35,6 +50,8 @@ export default function StageCard({ pipeline, stage, output, sessions, onApprove
       .catch((err) => { if (!cancelled) setContentError(err.message); });
     return () => { cancelled = true; };
   }, [pipeline.id, stage, output && output.iteration]);
+
+  const stageChunks = stage === 4 && Array.isArray(chunks) ? chunks : [];
 
   return (
     <div className={`${styles.card} ${isCurrent ? styles.current : ''}`}>
@@ -58,7 +75,23 @@ export default function StageCard({ pipeline, stage, output, sessions, onApprove
           ))
         )}
       </div>
-      {output && (
+      {stage === 4 && stageChunks.length > 0 && (
+        <ul className={styles.chunkList}>
+          {stageChunks.map((chunk) => (
+            <li key={chunk.chunk_index} className={`${styles.chunkRow} ${styles[`chunk_${chunk.status}`]}`}>
+              <strong>Chunk {chunk.chunk_index}:</strong> {chunk.name}
+              <span className={styles.chunkStatus}>{chunk.status}</span>
+              {chunk.complexity && <span className={styles.chunkMeta}>· {chunk.complexity}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {stage === 7 && (pipeline.fix_cycle_count || 0) > 0 && (
+        <div className={styles.fixCycleMeta}>
+          Fix cycle iteration {pipeline.fix_cycle_count} of 3.
+        </div>
+      )}
+      {output && STAGE_HAS_DOC[stage] && (
         <div className={styles.output}>
           <div className={styles.outputHeader}>
             Output: <code>{output.output_path}</code>
@@ -102,10 +135,12 @@ export default function StageCard({ pipeline, stage, output, sessions, onApprove
 }
 
 function computeStageStatus(pipeline, stage, output) {
-  if (pipeline.status === 'completed' || stage < pipeline.current_stage) return 'completed';
+  if (pipeline.status === 'completed' && stage <= pipeline.current_stage) return 'completed';
+  if (stage < pipeline.current_stage) return 'completed';
   if (stage > pipeline.current_stage) return 'pending';
   if (pipeline.status === 'paused_for_approval' && output) return 'awaiting_approval';
   if (pipeline.status === 'paused_for_failure') return 'failed';
+  if (pipeline.status === 'paused_for_escalation') return 'escalated';
   if (pipeline.status === 'running') return 'in_progress';
   return pipeline.status;
 }
@@ -117,5 +152,6 @@ function humanizeStageStatus(status) {
     in_progress: 'In progress',
     awaiting_approval: 'Awaiting approval',
     failed: 'Failed',
+    escalated: 'Awaiting decision',
   })[status] || status;
 }
