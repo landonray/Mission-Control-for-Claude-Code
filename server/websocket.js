@@ -75,14 +75,29 @@ function setupWebSocket(server) {
           } else {
             // Session not in memory — check DB for its status
             const { query } = require('./database');
-            query('SELECT status FROM sessions WHERE id = $1', [msg.sessionId]).then(async (result) => {
+            query('SELECT status, tmux_session_name FROM sessions WHERE id = $1', [msg.sessionId]).then(async (result) => {
               const dbSession = result.rows[0];
               let status = dbSession ? dbSession.status : 'ended';
               // If DB says 'working' but there's no active process in memory,
-              // the session is stale — reset to idle so the user isn't stuck
+              // it might be a genuinely-stale row (server crashed mid-run) OR
+              // a live tmux session that recovery hasn't reattached to yet.
+              // Verify tmux is actually dead before clobbering the DB —
+              // otherwise we kill live sessions during the recovery window.
               if (status === 'working') {
-                status = 'idle';
-                await query("UPDATE sessions SET status = 'idle' WHERE id = $1", [msg.sessionId]);
+                let tmuxAlive = false;
+                if (dbSession && dbSession.tmux_session_name) {
+                  try {
+                    require('child_process').execSync(
+                      `tmux has-session -t ${dbSession.tmux_session_name} 2>/dev/null`,
+                      { stdio: 'ignore' }
+                    );
+                    tmuxAlive = true;
+                  } catch (e) {}
+                }
+                if (!tmuxAlive) {
+                  status = 'idle';
+                  await query("UPDATE sessions SET status = 'idle' WHERE id = $1", [msg.sessionId]);
+                }
               }
               safeSend(ws, {
                 type: 'session_status',

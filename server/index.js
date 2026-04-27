@@ -84,9 +84,17 @@ contextDocOrchestrator.setBroadcast(broadcastToAll);
 
 // Initialize database then start server
 initializeDb().then(async () => {
-  // Recover tmux sessions from previous server lifetime
+  // Recover tmux sessions from previous server lifetime.
+  // Must finish before server.listen() — otherwise the browser auto-reconnects
+  // before recovery has populated the active map, and the websocket safety-net
+  // path resets live sessions to 'idle' in the DB. (See websocket.js subscribe
+  // handler.)
   const { recoverTmuxSessions } = require('./services/sessionManager');
-  recoverTmuxSessions();
+  try {
+    await recoverTmuxSessions();
+  } catch (err) {
+    console.error('Tmux session recovery failed:', err);
+  }
 
   // Mark any context-doc runs that were mid-flight when the server died as
   // failed-with-interrupted, so the project is unblocked and the user can
