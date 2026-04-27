@@ -113,7 +113,7 @@ async function listPipelines(projectId) {
   return result.rows.map(hydratePipelineRow);
 }
 
-async function updateStatus(pipelineId, { status, currentStage, prUrl, prCreationError, completedAt }) {
+async function updateStatus(pipelineId, { status, currentStage, prUrl, prCreationError, completedAt, worktreePath }) {
   const fields = [];
   const values = [];
   let idx = 1;
@@ -122,6 +122,7 @@ async function updateStatus(pipelineId, { status, currentStage, prUrl, prCreatio
   if (prUrl !== undefined) { fields.push(`pr_url = $${idx++}`); values.push(prUrl); }
   if (prCreationError !== undefined) { fields.push(`pr_creation_error = $${idx++}`); values.push(prCreationError); }
   if (completedAt !== undefined) { fields.push(`completed_at = $${idx++}`); values.push(completedAt); }
+  if (worktreePath !== undefined) { fields.push(`worktree_path = $${idx++}`); values.push(worktreePath); }
   fields.push(`updated_at = NOW()`);
   values.push(pipelineId);
   await query(
@@ -201,16 +202,6 @@ async function updateStagePrompt(pipelineId, stage, prompt) {
      ON CONFLICT (pipeline_id, stage) DO UPDATE SET prompt = EXCLUDED.prompt, updated_at = NOW()`,
     [pipelineId, stage, prompt]
   );
-}
-
-async function getActivePipelineForProject(projectId) {
-  const result = await query(
-    `SELECT * FROM pipelines WHERE project_id = $1
-     AND status NOT IN ('completed', 'failed', 'draft')
-     ORDER BY created_at DESC LIMIT 1`,
-    [projectId]
-  );
-  return result.rows[0] || null;
 }
 
 async function createChunks(pipelineId, chunks) {
@@ -339,7 +330,6 @@ module.exports = {
   rejectStageOutput,
   getStagePrompts,
   updateStagePrompt,
-  getActivePipelineForProject,
   createChunks,
   listChunks,
   getNextPendingChunk,

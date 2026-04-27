@@ -54,7 +54,10 @@ describe('pipelineOrchestrator', () => {
       await query(`DELETE FROM sessions WHERE id = ANY($1)`, [stubSessionIds.splice(0)]);
     }
     deps = {
-      createBranch: vi.fn().mockResolvedValue(undefined),
+      createBranchAndWorktree: vi.fn().mockImplementation(({ branchName, projectRootPath }) => {
+        return path.join(projectRootPath, '.claude', 'worktrees', branchName);
+      }),
+      removeWorktree: vi.fn(),
       startSession: vi.fn().mockImplementation(async ({ pipelineId, pipelineStage }) => {
         const sessionId = await insertStubSession();
         await query(
@@ -79,7 +82,7 @@ describe('pipelineOrchestrator', () => {
   });
 
   describe('createAndStart', () => {
-    it('creates the pipeline, creates a branch, and starts stage 1', async () => {
+    it('creates the pipeline, creates a branch + worktree, and starts stage 1 in the worktree', async () => {
       const pipeline = await orchestrator.createAndStart({
         projectId: TEST_PROJECT_ID,
         name: 'Add foo',
@@ -87,24 +90,32 @@ describe('pipelineOrchestrator', () => {
       });
       expect(pipeline.status).toBe('running');
       expect(pipeline.current_stage).toBe(1);
-      expect(deps.createBranch).toHaveBeenCalledWith(
+      expect(deps.createBranchAndWorktree).toHaveBeenCalledWith(
         expect.objectContaining({ branchName: pipeline.branch_name, projectRootPath: TEST_ROOT })
       );
+      const expectedWorktree = path.join(TEST_ROOT, '.claude', 'worktrees', pipeline.branch_name);
+      expect(pipeline.worktree_path).toBe(expectedWorktree);
       expect(deps.startSession).toHaveBeenCalledWith(
         expect.objectContaining({
           projectId: TEST_PROJECT_ID,
           sessionType: 'spec_refinement',
           pipelineId: pipeline.id,
           pipelineStage: 1,
+          workingDirectory: expectedWorktree,
         })
       );
     });
 
-    it('refuses to start if the project already has an active pipeline', async () => {
-      await orchestrator.createAndStart({ projectId: TEST_PROJECT_ID, name: 'P1', specInput: 's' });
-      await expect(
-        orchestrator.createAndStart({ projectId: TEST_PROJECT_ID, name: 'P2', specInput: 's' })
-      ).rejects.toThrow(/already has an active pipeline/i);
+    it('allows multiple concurrent pipelines on the same project, each with its own worktree', async () => {
+      const p1 = await orchestrator.createAndStart({ projectId: TEST_PROJECT_ID, name: 'P1', specInput: 's' });
+      const p2 = await orchestrator.createAndStart({ projectId: TEST_PROJECT_ID, name: 'P2', specInput: 's' });
+      expect(p1.id).not.toBe(p2.id);
+      expect(p1.status).toBe('running');
+      expect(p2.status).toBe('running');
+      expect(p1.branch_name).not.toBe(p2.branch_name);
+      expect(p1.worktree_path).not.toBe(p2.worktree_path);
+      expect(p1.worktree_path).toContain(p1.branch_name);
+      expect(p2.worktree_path).toContain(p2.branch_name);
     });
   });
 
@@ -467,6 +478,7 @@ describe('pipelineOrchestrator', () => {
       orchestrator = orchestratorMod.create(deps);
 
       const pipeline = await runThroughStage5Pass(orchestrator);
+      const worktreeBeforePr = (await repo.getPipeline(pipeline.id)).worktree_path;
       await orchestrator.handleSessionComplete({
         sessionId: 'sess_review', pipelineId: pipeline.id, pipelineStage: 6,
       });
@@ -474,15 +486,41 @@ describe('pipelineOrchestrator', () => {
       const final = await repo.getPipeline(pipeline.id);
       expect(final.status).toBe('completed');
       expect(final.completed_at).not.toBeNull();
+      // PR is pushed from the worktree (where the branch is checked out), not
+      // the shared project root. This is what makes concurrent pipelines safe.
       expect(deps.createPullRequest).toHaveBeenCalledWith(
         expect.objectContaining({
+          projectRootPath: worktreeBeforePr,
           branchName: final.branch_name,
           pipelineId: final.id,
           pipelineName: final.name,
         })
       );
+      // After a successful PR, the worktree is cleaned up and the path cleared.
+      expect(deps.removeWorktree).toHaveBeenCalledWith(
+        expect.objectContaining({ worktreePath: worktreeBeforePr })
+      );
+      expect(final.worktree_path).toBeNull();
       expect(final.pr_url).toBe('https://github.com/example/repo/pull/1');
       expect(final.pr_creation_error).toBeNull();
+    });
+
+    it('does not clean up the worktree if PR creation fails (so the user can retry)', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn()
+        .mockReturnValueOnce('# QA\n\nOverall: pass\n')
+        .mockReturnValueOnce('# Review\n\nClean.\n\nBlockers: 0\n');
+      deps.createPullRequest = vi.fn().mockRejectedValue(new Error('gh not authed'));
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await runThroughStage5Pass(orchestrator);
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_review', pipelineId: pipeline.id, pipelineStage: 6,
+      });
+
+      const final = await repo.getPipeline(pipeline.id);
+      expect(deps.removeWorktree).not.toHaveBeenCalled();
+      expect(final.worktree_path).not.toBeNull();
     });
 
     it('still marks pipeline completed if PR creation fails, recording the error', async () => {

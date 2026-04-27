@@ -21,17 +21,68 @@ function broadcastPipelineChanged(pipelineId) {
   }
 }
 
-function createBranch({ branchName, projectRootPath }) {
+// Each pipeline gets its own worktree so two pipelines in the same project
+// don't fight over the working directory. Path is keyed by the pipeline's
+// branch name (which already includes a unique pipeline-id suffix).
+function pipelineWorktreePath(projectRootPath, branchName) {
+  return path.join(projectRootPath, '.claude', 'worktrees', branchName);
+}
+
+function createBranchAndWorktree({ branchName, projectRootPath }) {
+  const worktreePath = pipelineWorktreePath(projectRootPath, branchName);
+
+  // Ensure the parent directory exists; .claude/worktrees may be missing.
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+
+  // Create the branch if it doesn't already exist.
+  let branchExists = true;
   try {
     execFileSync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branchName}`], {
       cwd: projectRootPath,
       stdio: 'ignore',
     });
-    return; // already exists
   } catch (_) {
-    // does not exist — fall through to create
+    branchExists = false;
   }
-  execFileSync('git', ['branch', branchName], { cwd: projectRootPath, stdio: 'inherit' });
+  if (!branchExists) {
+    execFileSync('git', ['branch', branchName], { cwd: projectRootPath, stdio: 'inherit' });
+  }
+
+  // Prune stale worktree records before adding (handles a previous worktree
+  // dir that was deleted out-of-band).
+  try {
+    execFileSync('git', ['worktree', 'prune'], { cwd: projectRootPath, stdio: 'ignore' });
+  } catch (_) { /* best effort */ }
+
+  // If the worktree dir is already on disk, reuse it. Otherwise create it.
+  if (!fs.existsSync(worktreePath)) {
+    execFileSync('git', ['worktree', 'add', worktreePath, branchName], {
+      cwd: projectRootPath,
+      stdio: 'inherit',
+    });
+  }
+
+  return worktreePath;
+}
+
+function removeWorktree({ projectRootPath, worktreePath }) {
+  if (!worktreePath) return;
+  try {
+    execFileSync('git', ['worktree', 'remove', '--force', worktreePath], {
+      cwd: projectRootPath,
+      stdio: 'ignore',
+    });
+  } catch (_) {
+    // Fallback: directory may have been removed manually. Prune the record so
+    // git doesn't keep complaining about a missing worktree.
+    try {
+      execFileSync('git', ['worktree', 'prune'], { cwd: projectRootPath, stdio: 'ignore' });
+    } catch (_) { /* best effort */ }
+    if (fs.existsSync(worktreePath)) {
+      try { fs.rmSync(worktreePath, { recursive: true, force: true }); }
+      catch (_) { /* best effort */ }
+    }
+  }
 }
 
 async function startSession({
@@ -41,12 +92,18 @@ async function startSession({
   task,
   pipelineId,
   pipelineStage,
-  branchName,
+  workingDirectory,
 }) {
   const projectRow = await query('SELECT id, name, root_path FROM projects WHERE id = $1', [projectId]);
   const project = projectRow.rows[0];
   if (!project) throw new Error(`Project ${projectId} not found`);
 
+  // Pipeline sessions live in a per-pipeline worktree (passed in by the
+  // orchestrator); fall back to the project root only for legacy callers.
+  const cwd = workingDirectory || project.root_path;
+
+  // Project context docs (PRODUCT.md, ARCHITECTURE.md, etc.) live in the
+  // project root, not the worktree, so load them from there.
   const contextSections = await planning.loadProjectContextFiles(project.root_path);
   const contextBlock =
     contextSections.length > 0 ? `\n\n## Project context\n\n${contextSections.join('\n\n')}` : '';
@@ -57,12 +114,11 @@ async function startSession({
 
   const session = await sessionManager.createSession({
     name: `Pipeline ${sessionType}: ${task.split('\n')[0].slice(0, 60)}`,
-    workingDirectory: project.root_path,
+    workingDirectory: cwd,
     permissionMode,
     model: process.env.MC_PIPELINE_MODEL || 'claude-sonnet-4-6',
     sessionType,
     projectId,
-    branch: branchName,
     initialPrompt,
   });
 
@@ -88,7 +144,8 @@ function readStageOutput(fullPath) {
 function start() {
   if (started) return started;
   const orchestrator = orchestratorFactory.create({
-    createBranch,
+    createBranchAndWorktree,
+    removeWorktree,
     startSession,
     readFileExists,
     readBuildPlan,
@@ -287,5 +344,10 @@ module.exports = {
   rejectAndBroadcast,
   createPrAndBroadcast,
   reconcileStuckSessions,
-  _internal: { defaultIsTmuxSessionRunning },
+  _internal: {
+    defaultIsTmuxSessionRunning,
+    createBranchAndWorktree,
+    removeWorktree,
+    pipelineWorktreePath,
+  },
 };
