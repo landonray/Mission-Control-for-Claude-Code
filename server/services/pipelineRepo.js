@@ -233,6 +233,16 @@ async function findChunkBySessionId(sessionId) {
   return result.rows[0] || null;
 }
 
+async function findActiveSessionForStage(pipelineId, stage) {
+  const result = await query(
+    `SELECT id FROM sessions
+     WHERE pipeline_id = $1 AND pipeline_stage = $2 AND status != 'ended'
+     ORDER BY created_at DESC LIMIT 1`,
+    [pipelineId, stage]
+  );
+  return result.rows[0]?.id || null;
+}
+
 async function incrementFixCycleCount(pipelineId) {
   const result = await query(
     `UPDATE pipelines SET fix_cycle_count = COALESCE(fix_cycle_count, 0) + 1
@@ -292,6 +302,7 @@ module.exports = {
   markChunkRunning,
   markChunkCompleted,
   findChunkBySessionId,
+  findActiveSessionForStage,
   incrementFixCycleCount,
   createEscalation,
   listOpenEscalations,
