@@ -28,6 +28,39 @@
 const HEAD_WITH_OUTPUT = /^\[Tool:[^\]\n]{1,80}\][ \t]*\n+[ \t]*Tool result:[^\n]*\n+[ \t]*Last (\d+) lines \(full output:[^\n]*\):[ \t]*\n/;
 const HEAD_NO_OUTPUT = /^\[Tool:[^\]\n]{1,80}\][ \t]*\n+[ \t]*Tool result:[^\n]*\n+[ \t]*\(no output\)[ \t]*\n?/;
 
+// Tags the Claude Code harness uses to inject internal scaffolding into the
+// model's context. The model occasionally emits these in its OWN output (a
+// hallucination of its training). Strip them defensively from any assistant
+// text we render so they don't show up as if they were authoritative.
+const FAKE_HARNESS_TAGS = [
+  'system-reminder',
+  'command-name',
+  'command-message',
+  'command-args',
+  'local-command-stdout',
+  'local-command-stderr',
+];
+const FAKE_HARNESS_TAG_PATTERNS = FAKE_HARNESS_TAGS.map(
+  tag => new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi')
+);
+
+function stripFakeHarnessTags(text) {
+  let out = text;
+  for (const pattern of FAKE_HARNESS_TAG_PATTERNS) {
+    out = out.replace(pattern, '');
+  }
+  return out;
+}
+
+function hasFakeHarnessTag(text) {
+  if (!text.includes('</')) return false;
+  const lower = text.toLowerCase();
+  for (const tag of FAKE_HARNESS_TAGS) {
+    if (lower.includes(`</${tag}>`)) return true;
+  }
+  return false;
+}
+
 function findBoundary(remaining, fromPos) {
   const a = remaining.indexOf('\nAssistant:', fromPos - 1);
   const t = remaining.indexOf('\n[Tool:', fromPos - 1);
@@ -85,12 +118,20 @@ function stripTranscriptBlocks(text) {
 
 export function sanitizeAssistantText(text) {
   if (!text || typeof text !== 'string') return text;
-  if (!text.includes('[Tool:') || !text.includes('Tool result:')) return text;
 
-  const cleaned = stripTranscriptBlocks(text)
-    .replace(/^Assistant:[ \t]*/gm, '')
+  const hasTranscript = text.includes('[Tool:') && text.includes('Tool result:');
+  const hasFakeTag = hasFakeHarnessTag(text);
+  if (!hasTranscript && !hasFakeTag) return text;
+
+  let working = text;
+  if (hasFakeTag) working = stripFakeHarnessTags(working);
+  if (hasTranscript) {
+    working = stripTranscriptBlocks(working)
+      .replace(/^Assistant:[ \t]*/gm, '');
+  }
+  return working
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-
-  return cleaned;
 }
+
+export { stripFakeHarnessTags };
