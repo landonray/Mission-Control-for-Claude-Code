@@ -339,6 +339,7 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_id TEXT REFERENCES pipelines(id) ON DELETE SET NULL`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_stage INTEGER`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
+    `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS pr_creation_error TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

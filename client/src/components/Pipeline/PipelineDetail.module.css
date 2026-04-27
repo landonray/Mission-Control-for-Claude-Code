@@ -33,3 +33,58 @@
   font-size: 12px;
   margin-top: 6px;
 }
+
+.completionBanner {
+  background: #ecfdf5;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.completionBanner h4 { margin: 0 0 6px; color: #065f46; font-size: 15px; }
+.completionLine { margin: 0 0 12px; color: #064e3b; font-size: 14px; }
+.completionLine code {
+  background: #d1fae5;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 12px;
+}
+.completionActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.prLink {
+  background: #059669;
+  color: #ffffff;
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.prLink:hover { background: #047857; }
+.createPrButton {
+  background: #059669;
+  color: #ffffff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.createPrButton:hover { background: #047857; }
+.createPrButton:disabled { background: #6ee7b7; cursor: not-allowed; }
+.completionMetric { color: #047857; font-size: 13px; }
+.completionWarn {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  color: #92400e;
+  font-size: 13px;
+}

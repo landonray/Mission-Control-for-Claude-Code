@@ -129,6 +129,23 @@ router.post('/:id/approve', async (req, res) => {
   }
 });
 
+router.post('/:id/create-pr', async (req, res) => {
+  try {
+    const pipeline = await repo.getPipeline(req.params.id);
+    if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
+    if (pipeline.status !== 'completed') {
+      return res.status(409).json({ error: 'Pipeline is not completed yet' });
+    }
+    const result = await runtime.createPrAndBroadcast(req.params.id);
+    if (!result.ok) {
+      return res.status(502).json({ error: result.error });
+    }
+    res.json({ ok: true, url: result.url, existed: result.existed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/:id/reject', async (req, res) => {
   try {
     const feedback = req.body && req.body.feedback;

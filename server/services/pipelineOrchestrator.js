@@ -29,6 +29,13 @@ function create(deps) {
     return fs.readFileSync(fullPath, 'utf8');
   });
 
+  // Optional dep — invoked at completion to create a PR via gh CLI. If unset,
+  // we fall back to the production module. Set to a no-op in unit tests that
+  // don't care about PR creation.
+  const createPullRequest = deps.createPullRequest || ((...args) =>
+    require('./pipelinePrCreator').createPullRequest(...args)
+  );
+
   async function getProjectRootPath(projectId) {
     const r = await query('SELECT root_path FROM projects WHERE id = $1', [projectId]);
     if (!r.rows[0]) throw new Error(`Project not found: ${projectId}`);
@@ -231,10 +238,38 @@ function create(deps) {
           status: 'completed',
           completedAt: new Date().toISOString(),
         });
+        await tryCreatePullRequest(pipelineId);
       } else {
         await advanceToFixCycle(pipelineId, 'review_blockers');
       }
       return;
+    }
+  }
+
+  async function tryCreatePullRequest(pipelineId) {
+    const pipeline = await repo.getPipeline(pipelineId);
+    if (!pipeline) return { ok: false, error: 'Pipeline not found' };
+    const projectRootPath = await getProjectRootPath(pipeline.project_id);
+    try {
+      const result = await createPullRequest({
+        projectRootPath,
+        branchName: pipeline.branch_name,
+        pipelineName: pipeline.name,
+        pipelineId: pipeline.id,
+        specInput: pipeline.spec_input,
+      });
+      await repo.updateStatus(pipelineId, {
+        prUrl: result.url,
+        prCreationError: null,
+      });
+      return { ok: true, url: result.url, existed: !!result.existed };
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      console.error('Pipeline PR creation failed:', msg);
+      await repo.updateStatus(pipelineId, {
+        prCreationError: msg.slice(0, 500),
+      });
+      return { ok: false, error: msg };
     }
   }
 
@@ -380,6 +415,7 @@ function create(deps) {
     handleSessionComplete,
     approveCurrentStage,
     rejectCurrentStage,
+    tryCreatePullRequest,
     _internal: { startStage, retryAttempts },
   };
 }

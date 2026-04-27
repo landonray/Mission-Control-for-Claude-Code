@@ -114,6 +114,42 @@ describe('PipelineDetail', () => {
     expect(screen.getByText(/Stuck after 3 fix cycles/i)).toBeTruthy();
     expect(screen.getByText(/Chunk 1:/)).toBeTruthy();
     expect(screen.getByText(/Chunk 2:/)).toBeTruthy();
-    expect(screen.getByText(/Fix cycles used:/i)).toBeTruthy();
+    expect(screen.getByText(/fix cycles of 3 to pass QA/i)).toBeTruthy();
+  });
+
+  it('shows the completion banner with PR link when pipeline is completed and pr_url is set', async () => {
+    api.get.mockResolvedValue({
+      pipeline: {
+        id: 'p3', name: 'Done feature', status: 'completed', current_stage: 6,
+        fix_cycle_count: 1, spec_input: 'x', branch_name: 'pipeline-done', project_id: 'proj1',
+        pr_url: 'https://github.com/example/repo/pull/99',
+        pr_creation_error: null,
+        completed_at: '2026-04-27T10:00:00Z',
+      },
+      outputs: [], prompts: {}, sessions: [], chunks: [], escalations: [],
+    });
+    renderAt('/pipelines/p3');
+    await waitFor(() => expect(screen.getByText(/Pipeline complete/i)).toBeTruthy());
+    const prLink = screen.getByRole('link', { name: /view pull request/i });
+    expect(prLink.getAttribute('href')).toBe('https://github.com/example/repo/pull/99');
+    expect(screen.getByText(/Took/i)).toBeTruthy();
+  });
+
+  it('shows a Create pull request button when pipeline is completed without a PR', async () => {
+    api.get.mockResolvedValue({
+      pipeline: {
+        id: 'p4', name: 'Done feature', status: 'completed', current_stage: 6,
+        fix_cycle_count: 0, spec_input: 'x', branch_name: 'pipeline-done', project_id: 'proj1',
+        pr_url: null, pr_creation_error: 'gh not authed',
+        completed_at: '2026-04-27T10:00:00Z',
+      },
+      outputs: [], prompts: {}, sessions: [], chunks: [], escalations: [],
+    });
+    api.post.mockResolvedValue({ ok: true, url: 'https://github.com/example/repo/pull/101' });
+    renderAt('/pipelines/p4');
+    await waitFor(() => expect(screen.getByText(/Pipeline complete/i)).toBeTruthy());
+    expect(screen.getByText(/gh not authed/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /create pull request/i }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/pipelines/p4/create-pr'));
   });
 });

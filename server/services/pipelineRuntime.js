@@ -124,4 +124,17 @@ async function rejectAndBroadcast(pipelineId, feedback) {
   broadcastPipelineChanged(pipelineId);
 }
 
-module.exports = { start, getOrchestrator, approveAndBroadcast, rejectAndBroadcast };
+async function createPrAndBroadcast(pipelineId) {
+  if (!started) throw new Error('pipelineRuntime not started');
+  const result = await started.orchestrator.tryCreatePullRequest(pipelineId);
+  broadcastPipelineChanged(pipelineId);
+  return result;
+}
+
+module.exports = {
+  start,
+  getOrchestrator,
+  approveAndBroadcast,
+  rejectAndBroadcast,
+  createPrAndBroadcast,
+};
