@@ -1,0 +1,21 @@
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; background: var(--sand-light); }
+.head { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.question { font-weight: 600; margin-bottom: 8px; }
+.rec { background: var(--bg); padding: 8px; border-left: 3px solid var(--accent); margin-bottom: 8px; }
+.recLabel { font-size: 12px; color: var(--text-muted); }
+.context { margin-bottom: 8px; }
+.workingFiles { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.chat { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-top: 1px solid var(--border); max-height: 400px; overflow-y: auto; }
+.msg { padding: 6px 10px; border-radius: 6px; max-width: 90%; }
+.msgUser { background: var(--accent-light); align-self: flex-end; }
+.msgAssistant { background: var(--bg); align-self: flex-start; border: 1px solid var(--border); }
+.input { display: flex; gap: 6px; margin-top: 6px; }
+.input textarea { flex: 1; min-height: 40px; resize: vertical; }
+.actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+.lockInPanel { background: var(--bg); border: 1px solid var(--accent); padding: 12px; border-radius: 6px; margin-top: 12px; }
+.field { display: block; margin-bottom: 8px; }
+.field span { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.field textarea, .field input, .field select { width: 100%; }
+.error { color: var(--danger); font-size: 12px; margin-top: 4px; }
+.thinking { font-style: italic; color: var(--text-muted); padding: 6px; }
+.empty { color: var(--text-muted); font-size: 12px; padding: 6px; }

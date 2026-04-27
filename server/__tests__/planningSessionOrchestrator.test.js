@@ -88,6 +88,12 @@ describe('buildPlanningPrompt', () => {
     const prompt = orchestrator.buildPlanningPrompt({ task: 'q', contextSections: [] });
     expect(prompt).toMatch(/read-only planning mode/i);
   });
+
+  it('forbids spawning sub-agents', () => {
+    const prompt = orchestrator.buildPlanningPrompt({ task: 'q', contextSections: [] });
+    expect(prompt).toMatch(/sub-agents/i);
+    expect(prompt).toMatch(/Mission Control MCP tools/i);
+  });
 });
 
 describe('loadProjectContextFiles', () => {

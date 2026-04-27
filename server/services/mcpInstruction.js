@@ -9,7 +9,7 @@
  * mc_start_session", which is exactly the ferry-loop fix for projects that
  * have no context documents.
  */
-const MCP_INSTRUCTION = `--- Mission Control planning instructions ---
+const MCP_INSTRUCTION = `=== Mission Control planning instructions ===
 
 This project is connected to Mission Control's MCP server. Mission Control exposes a planning loop you should use BEFORE asking the user product or architectural questions:
 
@@ -23,7 +23,7 @@ This project is connected to Mission Control's MCP server. Mission Control expos
 
 The user reviews planning decisions asynchronously in the Mission Control dashboard, so do not feel bad about asking — just keep questions concrete and skip ones already answered by the context documents.
 
---- end planning instructions ---
+=== end planning instructions ===
 
 `;
 

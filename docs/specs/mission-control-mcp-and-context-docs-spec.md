@@ -350,7 +350,7 @@ A single agent reading an entire project's history (100+ PRs, thousands of commi
 
 For each PR in the project's history, a small focused LLM call reads the PR and extracts structured knowledge.
 
-Each extraction runs as a Mission Control session via the MCP server: `mc_start_session` with session_type "extraction". This means every extraction is logged, visible in the dashboard, and follows the same sandboxing rules as all other sessions. The extraction session is short-lived (typically under 30 seconds), read-only, and uses a fast cheap model (Haiku-class).
+Each extraction runs as a Mission Control session via the MCP server: `mc_start_session` with session_type "extraction". This means every extraction is logged, visible in the dashboard, and follows the same sandboxing rules as all other sessions. The extraction session is short-lived (typically under 30 seconds), read-only, and uses Sonnet (see Slice 3 Implementation Notes below — Haiku was originally proposed but Sonnet was chosen for extraction quality).
 
 **Inputs to the extraction call:**
 
@@ -593,3 +593,31 @@ Context document generation depends on the MCP server for session management. Bu
 5. **Freshness signal.** Should the dashboard warn when context documents are stale (many unprocessed extractions or decisions pending roll-up)? Probably yes — a simple count of "X new PRs and Y new decisions since last update" with a threshold-based warning.
 
 6. **Decision log format.** The planning session decisions log needs a format that's both human-readable (for async review) and machine-parseable (for roll-up ingestion). Suggest structured markdown with clear delimiters, similar to the eval YAML format but more prose-friendly.
+
+---
+
+## Slice 3 Implementation Notes (decided 2026-04-26)
+
+The slice-3 build narrows the spec above to the minimum viable "kick it off and watch it run" experience. These notes are deltas to apply to the spec; they don't replace it.
+
+1. **Trigger.** Manual only — a "Generate Context Docs" button on each project's detail page. No PR-merge webhook, no scheduled job, no automatic rollup in this slice. Subsequent slices can add automation.
+
+2. **Inputs.** Closed and merged PRs from the project's GitHub repo, fetched in batches via the GitHub REST API. The decision log (`docs/decisions.md`) is **not** read in this slice — the system is brand new and the log is empty everywhere.
+
+3. **Extraction model.** Sonnet (`claude-sonnet-4-5` via the LLM gateway), not Haiku. Resolves open question #1.
+
+4. **Roll-up.** Sonnet for both intermediate (batch-of-25) and final synthesis. Two-level roll-up only when PR count exceeds 25; otherwise a single rollup pass.
+
+5. **Output.** Generated `PRODUCT.md` and `ARCHITECTURE.md` are written to the project's repo root (`projects.root_path`), overwriting any existing copies. In practice these files don't exist yet for any project, so this is initial generation everywhere.
+
+6. **Storage of intermediate extractions.** Mission Control's database (new `context_doc_extractions` table), keyed by project_id and pr_number. Idempotent — re-running the button skips PRs that already have an extraction unless explicitly cleared.
+
+7. **Job tracking.** New `context_doc_runs` table modeled on `test_runs`. One row per click. Tracks phase (`fetching` | `extracting` | `rolling_up` | `finalizing` | `completed` | `failed`), counts (PRs total / PRs extracted / batches total / batches done), and error info on failure.
+
+8. **Progress UI.** Status panel in place of the button while a run is active. Shows phase label, progress counts, and an expandable live log. Updates push over the existing WebSocket using the same broadcast pattern as `testRunRecorder`. Done state shows last-generated timestamp and links to the two markdown files.
+
+9. **Concurrency.** One context-doc run per project at a time. The button is disabled while a run is in progress for that project. Different projects can generate in parallel.
+
+10. **Failure recovery.** If a run fails partway, the cached per-PR extractions remain in the DB. Retry button restarts the run — already-extracted PRs are skipped, only the missing ones plus the rollup re-execute.
+
+11. **Routing through MCP.** Slice 3 calls the underlying extraction and rollup services directly from server code rather than self-calling its own MCP endpoints over HTTP. The MCP tools (`mc_trigger_extraction`, `mc_trigger_rollup`) can be wired up in a later slice as thin wrappers over the same internal services.

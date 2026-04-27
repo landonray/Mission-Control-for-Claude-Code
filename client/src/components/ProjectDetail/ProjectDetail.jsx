@@ -4,8 +4,11 @@ import { api } from '../../utils/api';
 import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench, AlertTriangle } from 'lucide-react';
 import styles from './ProjectDetail.module.css';
 import MCPPanel from './MCPPanel';
-import DecisionsNeeded from './DecisionsNeeded';
+import TestRunsPanel from './TestRunsPanel';
+import DecisionsList from '../Decisions/DecisionsList.jsx';
+import PipelinesPanel from './PipelinesPanel';
 import UsageCard from './UsageCard';
+import ContextDocsPanel from './ContextDocsPanel';
 
 const SERVER_POLL_INTERVAL_MS = 3000;
 const DEPLOY_POLL_INTERVAL_MS = 5000;
@@ -199,7 +202,12 @@ export default function ProjectDetail() {
             <span className={styles.countBadge}>{decisionsCount}</span>
           )}
         </h2>
-        <DecisionsNeeded projectId={project.id} onChange={setDecisionsCount} />
+        <DecisionsList projectId={project.id} onChange={setDecisionsCount} />
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Pipelines</h2>
+        <PipelinesPanel projectId={project.id} />
       </section>
 
       <section className={styles.section}>
@@ -235,6 +243,16 @@ export default function ProjectDetail() {
             ))
           )}
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Context Docs</h2>
+        <ContextDocsPanel projectId={project.id} githubRepo={project.github_repo} />
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Test Runs</h2>
+        <TestRunsPanel projectId={project.id} />
       </section>
 
       <section className={styles.section}>

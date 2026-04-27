@@ -167,7 +167,131 @@ async function initializeDb() {
       answered_at TEXT
     )`,
     `CREATE INDEX IF NOT EXISTS idx_planning_questions_project ON planning_questions(project_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`
+    `CREATE INDEX IF NOT EXISTS idx_planning_questions_session ON planning_questions(planning_session_id)`,
+    `CREATE TABLE IF NOT EXISTS queued_messages (
+      id SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      content TEXT NOT NULL,
+      attachments TEXT,
+      queued_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_queued_messages_session ON queued_messages(session_id, id)`,
+    `CREATE TABLE IF NOT EXISTS test_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
+      session_id TEXT REFERENCES sessions(id),
+      command TEXT NOT NULL,
+      framework TEXT,
+      status TEXT NOT NULL DEFAULT 'parsing',
+      total INTEGER,
+      passed INTEGER,
+      failed INTEGER,
+      failures JSONB,
+      raw_output TEXT,
+      duration_ms INTEGER,
+      created_at TEXT DEFAULT NOW(),
+      completed_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_test_runs_project ON test_runs(project_id, created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_test_runs_session ON test_runs(session_id)`,
+    `CREATE TABLE IF NOT EXISTS context_doc_runs (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'running',
+      phase TEXT NOT NULL DEFAULT 'fetching',
+      prs_total INTEGER DEFAULT 0,
+      prs_extracted INTEGER DEFAULT 0,
+      batches_total INTEGER DEFAULT 0,
+      batches_done INTEGER DEFAULT 0,
+      error_message TEXT,
+      log_lines JSONB DEFAULT '[]'::jsonb,
+      created_at TEXT DEFAULT NOW(),
+      completed_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_context_doc_runs_project ON context_doc_runs(project_id, created_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS context_doc_extractions (
+      id SERIAL PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      pr_number INTEGER NOT NULL,
+      pr_title TEXT,
+      pr_url TEXT,
+      pr_merged_at TEXT,
+      extraction JSONB NOT NULL,
+      extracted_at TEXT DEFAULT NOW(),
+      UNIQUE(project_id, pr_number)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_context_doc_extractions_project ON context_doc_extractions(project_id, pr_merged_at)`,
+    `CREATE TABLE IF NOT EXISTS decision_chats (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL REFERENCES planning_questions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_decision_chats_question_id ON decision_chats(question_id, created_at)`,
+    `CREATE TABLE IF NOT EXISTS pipelines (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      branch_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      current_stage INTEGER DEFAULT 0,
+      fix_cycle_count INTEGER DEFAULT 0,
+      pr_url TEXT,
+      spec_input TEXT NOT NULL,
+      created_at TEXT DEFAULT NOW(),
+      updated_at TEXT DEFAULT NOW(),
+      completed_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipelines_project ON pipelines(project_id, created_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS pipeline_stage_outputs (
+      id SERIAL PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL,
+      iteration INTEGER NOT NULL DEFAULT 1,
+      output_path TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed',
+      approved_at TEXT,
+      created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_stage_outputs_pipeline ON pipeline_stage_outputs(pipeline_id, stage, iteration)`,
+    `CREATE TABLE IF NOT EXISTS pipeline_stage_prompts (
+      id SERIAL PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL,
+      prompt TEXT NOT NULL,
+      updated_at TEXT DEFAULT NOW(),
+      UNIQUE(pipeline_id, stage)
+    )`,
+    `CREATE TABLE IF NOT EXISTS pipeline_chunks (
+      id SERIAL PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      files TEXT,
+      qa_scenarios TEXT,
+      dependencies TEXT,
+      complexity TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      created_at TEXT DEFAULT NOW(),
+      UNIQUE(pipeline_id, chunk_index)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_chunks_pipeline ON pipeline_chunks(pipeline_id, chunk_index)`,
+    `CREATE TABLE IF NOT EXISTS pipeline_escalations (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL,
+      summary TEXT NOT NULL,
+      detail TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT DEFAULT NOW(),
+      resolved_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_escalations_pipeline ON pipeline_escalations(pipeline_id, status)`
   ];
 
   for (const stmt of statements) {
@@ -212,6 +336,9 @@ async function initializeDb() {
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS owner_answered_at TEXT`,
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS dismissed_at TEXT`,
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS decided_by TEXT`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_id TEXT REFERENCES pipelines(id) ON DELETE SET NULL`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_stage INTEGER`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
@@ -220,6 +347,21 @@ async function initializeDb() {
   // NOTE: One-time duplicate cleanup was here but removed — it ran on every restart
   // and could delete legitimate repeated messages (same content, different turns).
   // The upsert logic in sessionManager now prevents duplicates at the source.
+
+  // Backfill project_id on sessions that pre-date the project-linking feature
+  // (or whose linking failed silently). Idempotent: only touches sessions
+  // where project_id is NULL, so it is safe to run on every startup.
+  try {
+    const { backfillSessionProjectIds } = await import('./services/projectDiscovery.js');
+    const result = await backfillSessionProjectIds();
+    if (result.updated > 0 || result.unmatched > 0) {
+      console.log(
+        `[migrations] session.project_id backfill: ${result.updated} linked, ${result.unmatched} unmatched, ${result.scanned} scanned`
+      );
+    }
+  } catch (e) {
+    console.error('Migration failed: session.project_id backfill', e.message);
+  }
 
   await seedQualityRules();
 }

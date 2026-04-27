@@ -43,8 +43,9 @@ function formatDecisionEntry(entry) {
   const decidedBy = entry.decidedBy === 'owner' ? 'Owner' : 'Planning agent';
   const question = escapeForBlock(entry.question);
   const answer = escapeForBlock(entry.answer) || '_(no answer recorded)_';
+  const reasoning = escapeForBlock(entry.reasoning);
 
-  return [
+  const lines = [
     `## Decision: ${summary}`,
     '',
     `- **Timestamp:** ${timestamp}`,
@@ -62,9 +63,17 @@ function formatDecisionEntry(entry) {
     '',
     answer,
     '',
-    '---',
-    ''
-  ].join('\n');
+  ];
+
+  // Reasoning is emitted inline inside the Answer block (not as a separate
+  // heading) so the existing parseDecisions answer regex keeps working and
+  // the context-doc rollup parses correctly.
+  if (reasoning) {
+    lines.push(`**Reasoning:** ${reasoning}`, '');
+  }
+
+  lines.push('---', '');
+  return lines.join('\n');
 }
 
 function resolveDecisionFilePath(projectRoot, configuredPath) {
@@ -124,6 +133,7 @@ function parseEntryBody(summary, rawBody) {
     decidedBy: null,
     question: '',
     answer: '',
+    reasoning: '',
   };
 
   const metaMatchers = [
@@ -148,8 +158,13 @@ function parseEntryBody(summary, rawBody) {
   const questionMatch = body.match(/### Question\n+([\s\S]*?)\n### Answer/);
   if (questionMatch) meta.question = questionMatch[1].trim();
 
-  const answerMatch = body.match(/### Answer\n+([\s\S]*)$/);
+  // Stop the answer capture before the inline "**Reasoning:**" line (or
+  // end-of-block) so reasoning doesn't bleed into the answer field.
+  const answerMatch = body.match(/### Answer\n+([\s\S]*?)(?:\n\n\*\*Reasoning:\*\*|\s*$)/);
   if (answerMatch) meta.answer = answerMatch[1].trim();
+
+  const reasoningMatch = body.match(/^\*\*Reasoning:\*\*\s+([\s\S]*?)\s*$/m);
+  if (reasoningMatch) meta.reasoning = reasoningMatch[1].trim();
 
   return meta;
 }

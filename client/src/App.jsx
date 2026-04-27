@@ -11,6 +11,8 @@ import HistoryView from './components/History/HistoryView';
 import SettingsView from './components/Settings/SettingsView';
 import QualityHistory from './components/Quality/QualityHistory';
 import ProjectDetail from './components/ProjectDetail/ProjectDetail';
+import DecisionsDashboard from './pages/DecisionsDashboard.jsx';
+import PipelineDetail from './components/Pipeline/PipelineDetail';
 import { useMediaQuery } from './hooks/useMediaQuery';
 
 export default function App() {
@@ -30,6 +32,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsView />} />
           <Route path="/quality-analytics" element={<QualityHistory />} />
           <Route path="/projects/:id" element={<ProjectDetail />} />
+          <Route path="/decisions" element={<DecisionsDashboard />} />
+          <Route path="/pipelines/:id" element={<PipelineDetail />} />
         </Routes>
       </MobileLayout>
     );
@@ -44,6 +48,8 @@ export default function App() {
       <Route path="/settings" element={<SettingsView />} />
       <Route path="/quality-analytics" element={<QualityHistory />} />
       <Route path="/projects/:id" element={<ProjectDetail />} />
+      <Route path="/decisions" element={<DecisionsDashboard />} />
+      <Route path="/pipelines/:id" element={<PipelineDetail />} />
     </Routes>
   );
 }

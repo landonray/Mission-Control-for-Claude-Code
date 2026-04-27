@@ -1,10 +1,12 @@
 import React, { useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutGrid, MessageSquare, FolderOpen, Settings, Eye, ShieldCheck } from 'lucide-react';
+import { LayoutGrid, MessageSquare, FolderOpen, Settings, Eye, ShieldCheck, CheckSquare } from 'lucide-react';
+import { usePendingDecisionsCount } from '../../hooks/usePendingDecisionsCount.js';
 import styles from './MobileLayout.module.css';
 
 const dashboardTabs = [
   { id: 'dashboard', path: '/', icon: LayoutGrid, label: 'Dashboard' },
+  { id: 'decisions', path: '/decisions', icon: CheckSquare, label: 'Decisions' },
   { id: 'settings', path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
@@ -20,6 +22,7 @@ function getSessionTabs(sessionId) {
 export default function MobileLayout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { count: pendingDecisions } = usePendingDecisionsCount();
 
   const sessionMatch = location.pathname.match(/^\/session\/([^/]+)/);
   const sessionId = sessionMatch ? sessionMatch[1] : null;
@@ -46,7 +49,11 @@ export default function MobileLayout({ children }) {
               onClick={() => navigate(tab.path)}
             >
               <Icon size={20} />
-              <span>{tab.label}</span>
+              <span>
+                {tab.id === 'decisions' && pendingDecisions > 0
+                  ? `${tab.label} (${pendingDecisions})`
+                  : tab.label}
+              </span>
             </button>
           );
         })}
