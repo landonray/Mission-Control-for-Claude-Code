@@ -74,26 +74,55 @@ describe('contextDocRollup', () => {
   });
 
   describe('rollupFinal', () => {
-    it('parses well-formed JSON output', async () => {
-      chat.mockResolvedValue(JSON.stringify({
-        product: '# Product\n...',
-        architecture: '# Architecture\n...',
-      }));
+    const wellFormed = [
+      '===BEGIN PRODUCT.md===',
+      '# Product',
+      'Body line one.',
+      '===END PRODUCT.md===',
+      '',
+      '===BEGIN ARCHITECTURE.md===',
+      '# Architecture',
+      'Arch body.',
+      '===END ARCHITECTURE.md===',
+    ].join('\n');
+
+    it('parses well-formed delimited output', async () => {
+      chat.mockResolvedValue(wellFormed);
       const out = await rollup.rollupFinal('myproj', ['batch1'], 5);
-      expect(out.product).toContain('# Product');
-      expect(out.architecture).toContain('# Architecture');
+      expect(out.product).toBe('# Product\nBody line one.');
+      expect(out.architecture).toBe('# Architecture\nArch body.');
     });
 
-    it('parses output wrapped in a markdown fence', async () => {
-      chat.mockResolvedValue('```json\n{"product":"P","architecture":"A"}\n```');
-      const out = await rollup.rollupFinal('x', ['b'], 1);
-      expect(out.product).toBe('P');
-      expect(out.architecture).toBe('A');
+    it('tolerates leading/trailing chatter from the model', async () => {
+      chat.mockResolvedValue(`Sure, here you go:\n\n${wellFormed}\n\nThanks!`);
+      const out = await rollup.rollupFinal('myproj', ['batch1'], 5);
+      expect(out.product).toBe('# Product\nBody line one.');
+      expect(out.architecture).toBe('# Architecture\nArch body.');
     });
 
-    it('throws when JSON is missing required fields', async () => {
+    it('throws when output is missing the architecture block (e.g., truncated)', async () => {
+      const truncated = '===BEGIN PRODUCT.md===\n# Product\nstuff\n===END PRODUCT.md===\n===BEGIN ARCHITECTURE.md===\n# Architecture\nincomplete';
+      chat.mockResolvedValue(truncated);
+      await expect(rollup.rollupFinal('x', ['b'], 1)).rejects.toThrow(/expected delimiters/);
+    });
+
+    it('throws when output has no delimiters at all', async () => {
       chat.mockResolvedValue('I cannot do that');
-      await expect(rollup.rollupFinal('x', ['b'], 1)).rejects.toThrow(/valid JSON/);
+      await expect(rollup.rollupFinal('x', ['b'], 1)).rejects.toThrow(/expected delimiters/);
+    });
+  });
+
+  describe('parseFinalOutput', () => {
+    it('returns null when product block is missing', () => {
+      const text = '===BEGIN ARCHITECTURE.md===\nA\n===END ARCHITECTURE.md===';
+      expect(rollup.parseFinalOutput(text)).toBeNull();
+    });
+
+    it('strips the leading and trailing newlines around the content', () => {
+      const text = '===BEGIN PRODUCT.md===\n\nP\n\n===END PRODUCT.md===\n===BEGIN ARCHITECTURE.md===\nA\n===END ARCHITECTURE.md===';
+      const out = rollup.parseFinalOutput(text);
+      expect(out.product).toBe('\nP');
+      expect(out.architecture).toBe('A');
     });
   });
 });
