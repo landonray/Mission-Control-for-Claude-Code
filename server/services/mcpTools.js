@@ -1069,10 +1069,10 @@ async function getSessionSummaryTool(args, _ctx) {
   }
 
   const planningResult = await query(
-    `SELECT question, answer, status, created_at, answered_at
+    `SELECT question, answer, status, asked_at, answered_at
      FROM planning_questions
      WHERE planning_session_id = $1 OR asking_session_id = $1
-     ORDER BY created_at ASC`,
+     ORDER BY asked_at ASC`,
     [args.session_id]
   );
 
@@ -1112,7 +1112,7 @@ async function getSessionSummaryTool(args, _ctx) {
       question: p.question,
       answer: p.answer,
       status: p.status,
-      created_at: p.created_at,
+      asked_at: p.asked_at,
       answered_at: p.answered_at,
     })),
     eval_batches: evalBatchesResult.rows.map((b) => ({
