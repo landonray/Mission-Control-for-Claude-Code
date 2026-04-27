@@ -1192,12 +1192,12 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_send_message',
     description:
-      'Send a follow-up message to an existing planning session and synchronously wait for the response. Use this when the planning agent\'s first answer needs clarification ("you said X — but what about Y?"). Blocks until the session responds. Use mc_get_session_status to poll instead if you don\'t want to block.',
+      'Send a message to any Mission Control session (planning or implementation) and synchronously wait for the response. Works whether the session is currently active or cold — cold sessions are automatically resumed before the message is sent. For planning sessions, the Q&A is also recorded to the planning_questions table and the project decision log. Blocks until the session responds. Use mc_get_session_status to poll instead if you don\'t want to block.',
     inputSchema: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', description: 'The planning session ID returned by mc_start_session.' },
-        message: { type: 'string', description: 'The follow-up question or message.' },
+        session_id: { type: 'string', description: 'The session ID. Can be a planning session from mc_start_session or any existing implementation session.' },
+        message: { type: 'string', description: 'The message to send.' },
         asking_session_id: { type: 'string' },
         working_files: { type: 'array', items: { type: 'string' } },
         timeout_seconds: { type: 'number', description: 'Optional cap on how long to wait. Omit (or 0) to wait indefinitely (recommended).' },

@@ -185,16 +185,10 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
   const timeoutMs = timeoutSeconds && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
   const startTime = Date.now();
 
-  const session = sessionManager.getSession(sessionId);
-  if (!session) {
-    throw new Error(`Session ${sessionId} is not active. Resume it from the dashboard before sending messages.`);
-  }
-
   // Track the most recent assistant text observed during this turn.
   let lastAssistantContent = '';
-  let observedWorking = session.status === 'working';
+  let observedWorking = false;
   let resolved = false;
-  let removeListener;
 
   // Optional planning_questions row for follow-up turns within the same planning session.
   let planningQuestionId = null;
@@ -219,8 +213,9 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
     }
   }
 
+  let listener;
   const responsePromise = new Promise((resolve) => {
-    removeListener = session.addListener(async (event) => {
+    listener = async (event) => {
       if (resolved) return;
       try {
         if (event.type === 'stream_event' && event.event && event.event.type === 'assistant') {
@@ -255,7 +250,7 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
           resolve({ response: '', status: 'error', error: e.message, durationSeconds: (Date.now() - startTime) / 1000 });
         }
       }
-    });
+    };
   });
 
   const timeoutPromise = timeoutMs > 0 ? new Promise((resolve) => {
@@ -267,16 +262,22 @@ async function sendAndAwait(sessionId, message, { timeoutSeconds, askingSessionI
     }, timeoutMs);
   }) : new Promise(() => {}); // never resolves
 
-  // Send the message — this triggers the working transition.
-  try {
-    await session.sendMessage(message);
-  } catch (e) {
-    if (removeListener) removeListener();
-    throw e;
+  // resumeSession handles both cases: if the session is already active, it just
+  // attaches the listener and sends the message; if it's cold, it spawns a new
+  // CLI process (restoring the worktree and transcript) before sending.
+  const session = await sessionManager.resumeSession(sessionId, message, { listener });
+  if (!session) {
+    throw new Error(`Session ${sessionId} not found or could not be resumed.`);
   }
 
+  const removeListener = () => {
+    try {
+      if (session && session.listeners) session.listeners.delete(listener);
+    } catch (_) { /* noop */ }
+  };
+
   const result = await Promise.race([responsePromise, timeoutPromise]);
-  if (removeListener) removeListener();
+  removeListener();
   return result;
 }
 
