@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createRequire } from 'module';
+import fs from 'fs';
 import path from 'path';
 
 process.env.DATABASE_URL = 'postgresql://test:test@host.test/db';
@@ -188,7 +189,7 @@ describe('mc_get_session_summary', () => {
         return {
           rows: [{
             question: 'How should we model recipes?', answer: 'Use Zod schema',
-            status: 'completed', created_at: '2026-04-20T10:05:00Z',
+            status: 'completed', asked_at: '2026-04-20T10:05:00Z',
             answered_at: '2026-04-20T10:07:00Z',
           }],
         };
@@ -262,5 +263,94 @@ describe('mc_get_session_summary', () => {
     const res = await callTool('mc_get_session_summary', {});
     expect(res.result.isError).toBe(true);
     expect(res.result.content[0].text).toMatch(/session_id is required/);
+  });
+});
+
+// Parses server/database.js to build the actual column set for planning_questions
+// (CREATE TABLE + ALTER ADD COLUMN), so the assertions below catch any reference
+// to a column that doesn't exist in the live schema — not just SQL shape.
+function planningQuestionsColumnsFromSchema() {
+  const src = fs.readFileSync(databasePath, 'utf8');
+  const cols = new Set();
+  const create = src.match(/CREATE TABLE IF NOT EXISTS planning_questions\s*\(([\s\S]*?)\)`/);
+  if (create) {
+    for (const raw of create[1].split('\n')) {
+      const line = raw.trim();
+      const m = line.match(/^([a-z_][a-z0-9_]*)\s+(?:TEXT|INTEGER|TIMESTAMPTZ|JSONB|SERIAL|REAL|BOOLEAN)/i);
+      if (m) cols.add(m[1]);
+    }
+  }
+  for (const m of src.matchAll(/ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS\s+([a-z_][a-z0-9_]*)/gi)) {
+    cols.add(m[1]);
+  }
+  return cols;
+}
+
+// Extracts every column-like identifier the SQL references on planning_questions.
+// Catches both qualified `pq.col` refs (used in JOIN'd queries) and bare idents
+// in SELECT / ORDER BY / WHERE for single-table queries against planning_questions.
+function planningQuestionsColumnRefs(sql) {
+  const refs = new Set();
+  for (const m of sql.matchAll(/\bpq\.([a-z_][a-z0-9_]*)/gi)) refs.add(m[1]);
+  if (/FROM\s+planning_questions\b/i.test(sql)) {
+    const sel = sql.match(/SELECT\s+([\s\S]*?)\s+FROM\s+planning_questions/i);
+    if (sel) {
+      for (const tok of sel[1].split(',')) {
+        const ident = tok.trim().replace(/\s+AS\s+\w+/i, '').trim();
+        if (/^[a-z_][a-z0-9_]*$/i.test(ident)) refs.add(ident);
+      }
+    }
+    const order = sql.match(/ORDER\s+BY\s+([a-z_][a-z0-9_]*)/i);
+    if (order) refs.add(order[1]);
+    const where = sql.match(/WHERE\s+([\s\S]+?)(?:ORDER\s+BY|LIMIT|$)/i);
+    if (where) {
+      for (const m of where[1].matchAll(/\b([a-z_][a-z0-9_]*)\s*=/gi)) refs.add(m[1]);
+    }
+  }
+  return refs;
+}
+
+describe('schema validation: MCP session tools reference real planning_questions columns', () => {
+  it('every column referenced by mc_search_sessions and mc_get_session_summary exists in the schema', async () => {
+    const validCols = planningQuestionsColumnsFromSchema();
+    // Sanity: parser found the schema we expect.
+    expect(validCols.has('asked_at')).toBe(true);
+    expect(validCols.has('planning_session_id')).toBe(true);
+    expect(validCols.has('asking_session_id')).toBe(true);
+    expect(validCols.has('created_at')).toBe(false); // the bug we caught
+
+    let searchSql = null;
+    let summarySql = null;
+    mockQuery.mockImplementation(async (sql) => {
+      if (sql.includes('SELECT id FROM projects WHERE id')) return { rows: [{ id: 'p1' }] };
+      if (sql.includes('FROM sessions s\n      LEFT JOIN LATERAL') || sql.includes('LEFT JOIN planning_questions pq')) {
+        searchSql = sql; return { rows: [] };
+      }
+      if (sql.includes('FROM sessions s\n     LEFT JOIN pipelines')) {
+        return { rows: [{
+          id: 's1', name: 'x', session_type: 'i', status: 'idle', project_id: 'p1',
+          pipeline_id: null, pipeline_stage: null, pipeline_pr_url: null,
+          created_at: 'x', ended_at: null, last_activity_at: null,
+          last_action_summary: null, branch: null, working_directory: null,
+          lines_added: 0, lines_removed: 0,
+          user_message_count: 0, assistant_message_count: 0, tool_call_count: 0,
+        }]};
+      }
+      if (sql.includes('FROM planning_questions')) { summarySql = sql; return { rows: [] }; }
+      return { rows: [] };
+    });
+
+    await callTool('mc_search_sessions', { project_id: 'p1', query: 'x' });
+    await callTool('mc_get_session_summary', { session_id: 's1' });
+
+    expect(searchSql).toBeTruthy();
+    expect(summarySql).toBeTruthy();
+
+    for (const col of planningQuestionsColumnRefs(searchSql)) {
+      expect(validCols.has(col), `mc_search_sessions references unknown planning_questions column: ${col}`).toBe(true);
+    }
+    for (const col of planningQuestionsColumnRefs(summarySql)) {
+      expect(validCols.has(col), `mc_get_session_summary references unknown planning_questions column: ${col}`).toBe(true);
+    }
   });
 });
