@@ -93,6 +93,7 @@ function start() {
     readFileExists,
     readBuildPlan,
     readStageOutput,
+    endSession: (sessionId) => sessionManager.endSession(sessionId),
   });
 
   sessionManager.globalEvents.on('session_complete', (payload) => {
