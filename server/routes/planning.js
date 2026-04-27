@@ -2,9 +2,54 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const { query } = require('../database');
 const decisionLog = require('../services/decisionLog');
 const { appendOwnerDecisionToContextDoc } = require('../services/contextDocAppender');
+
+// decisionChat is ESM — use lazy dynamic import
+// Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
+function unwrapDefault(mod) {
+  if (!mod) return mod;
+  // If named exports exist on top level, prefer that. Otherwise unwrap default.
+  if (typeof mod.buildSystemPrompt === 'function') return mod;
+  if (mod.default && typeof mod.default === 'object') return mod.default;
+  return mod;
+}
+
+let _decisionChat;
+async function getDecisionChat() {
+  if (!_decisionChat) {
+    _decisionChat = unwrapDefault(await import('../services/decisionChat.js'));
+  }
+  return _decisionChat;
+}
+
+async function loadProjectDocs(projectId) {
+  const result = await query(`SELECT root_path FROM projects WHERE id = $1`, [projectId]);
+  const projectPath = result.rows[0]?.root_path;
+  const read = (filename) => {
+    if (!projectPath) return '';
+    const fp = path.join(projectPath, 'docs', filename);
+    try {
+      return fs.readFileSync(fp, 'utf8');
+    } catch {
+      return '';
+    }
+  };
+  return {
+    productMd: read('PRODUCT.md'),
+    architectureMd: read('ARCHITECTURE.md'),
+    decisionsMd: read('decisions.md'),
+  };
+}
+
+async function loadQuestion(id) {
+  const result = await query(
+    `SELECT * FROM planning_questions WHERE id = $1`, [id]
+  );
+  return result.rows[0] || null;
+}
 
 // GET /api/planning/questions — list planning questions, optionally filtered
 //   ?project_id=...   limit by project
@@ -237,6 +282,76 @@ router.post('/escalations/:id/answer', async (req, res) => {
     }
 
     res.json({ status: 'answered', contextDocAppended });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/planning/escalations/:id/chat
+// Returns chat history for an escalated question, oldest first.
+router.get('/escalations/:id/chat', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, role, content, created_at FROM decision_chats
+       WHERE question_id = $1 ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/planning/escalations/:id/chat
+// Body: { message: string }
+// Appends the user message, runs an LLM turn with project-doc context,
+// stores the assistant reply, and returns both messages.
+router.post('/escalations/:id/chat', async (req, res) => {
+  const { message } = req.body || {};
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'message is required' });
+  }
+  try {
+    const question = await loadQuestion(req.params.id);
+    if (!question) return res.status(404).json({ error: 'not found' });
+    if (question.status !== 'escalated') {
+      return res.status(409).json({ error: 'question is not in escalated state' });
+    }
+
+    const userId = randomUUID();
+    await query(
+      `INSERT INTO decision_chats (id, question_id, role, content, created_at)
+       VALUES ($1, $2, 'user', $3, NOW())`,
+      [userId, req.params.id, message.trim()]
+    );
+
+    const history = await query(
+      `SELECT role, content FROM decision_chats WHERE question_id = $1 ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+
+    const docs = await loadProjectDocs(question.project_id);
+    const { buildSystemPrompt, sendChatTurn } = await getDecisionChat();
+    const systemPrompt = buildSystemPrompt(
+      { ...question, working_files: question.working_files ? question.working_files.split(',').map((s) => s.trim()) : [] },
+      docs
+    );
+    const reply = await sendChatTurn({
+      systemPrompt,
+      messages: history.rows,
+    });
+
+    const assistantId = randomUUID();
+    await query(
+      `INSERT INTO decision_chats (id, question_id, role, content, created_at)
+       VALUES ($1, $2, 'assistant', $3, NOW())`,
+      [assistantId, req.params.id, reply]
+    );
+
+    res.json({
+      user: { id: userId, role: 'user', content: message.trim() },
+      assistant: { id: assistantId, role: 'assistant', content: reply },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
