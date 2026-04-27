@@ -47,6 +47,24 @@ describe('testRunDetector — detectFramework', () => {
     expect(detectFramework('bun test')).toBe('npm-test');
   });
 
+  it('detects test runners after a `cd` prefix (chained with &&)', () => {
+    expect(detectFramework('cd /path/to/repo && npx vitest run')).toBe('vitest');
+    expect(detectFramework('cd "/Users/foo/My Project" && npx vitest run server/__tests__'))
+      .toBe('vitest');
+    expect(detectFramework('cd repo && pytest')).toBe('pytest');
+    expect(detectFramework('cd repo && npm test')).toBe('npm-test');
+  });
+
+  it('detects test runners when piped to other commands', () => {
+    expect(detectFramework('npx vitest run 2>&1 | tail -30')).toBe('vitest');
+    expect(detectFramework('pytest -v | grep FAIL')).toBe('pytest');
+  });
+
+  it('detects test runners after env-var prefixes', () => {
+    expect(detectFramework('CI=1 npx vitest run')).toBe('vitest');
+    expect(detectFramework('NODE_ENV=test FOO=bar pytest')).toBe('pytest');
+  });
+
   it('returns null for non-test commands that mention "test" incidentally', () => {
     expect(detectFramework('git commit -m "add tests for foo"')).toBe(null);
     expect(detectFramework('ls test/')).toBe(null);
@@ -54,6 +72,17 @@ describe('testRunDetector — detectFramework', () => {
     expect(detectFramework('mkdir tests')).toBe(null);
     expect(detectFramework('echo "running tests"')).toBe(null);
     expect(detectFramework('cat test_results.txt')).toBe(null);
+  });
+
+  it('does not match test-runner names that appear inside quoted strings', () => {
+    // PR body contains "npm test" in the test-plan checklist — should NOT match.
+    expect(detectFramework(
+      'gh pr create --title "feat: thing" --body "## Test plan\n- [ ] npm test passes\n- [ ] vitest green"'
+    )).toBe(null);
+    // Commit message containing test runner names
+    expect(detectFramework('git commit -m "wire up vitest config and run pytest"')).toBe(null);
+    // Quoted arg with --title containing "test"
+    expect(detectFramework("git commit -m 'fix: pytest stability'")).toBe(null);
   });
 
   it('returns null for unrelated commands', () => {
@@ -65,5 +94,7 @@ describe('testRunDetector — detectFramework', () => {
   it('isTestCommand mirrors detectFramework as boolean', () => {
     expect(isTestCommand('vitest')).toBe(true);
     expect(isTestCommand('npm install')).toBe(false);
+    expect(isTestCommand('cd /path && npx vitest run')).toBe(true);
+    expect(isTestCommand('gh pr create --body "npm test plan"')).toBe(false);
   });
 });
