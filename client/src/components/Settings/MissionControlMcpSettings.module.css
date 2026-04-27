@@ -131,6 +131,49 @@
   color: var(--accent);
 }
 
+.snippetTabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.snippetTab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.snippetTab:hover {
+  color: var(--text-primary);
+}
+
+.snippetTabActive {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.guidePara {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.guidePara code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
 .snippet {
   margin: 0;
   padding: 12px;

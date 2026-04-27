@@ -39,6 +39,10 @@ async function dispatch(method, params, ctx) {
         serverInfo: SERVER_INFO,
       };
 
+    case 'notifications/initialized':
+    case 'notifications/cancelled':
+      return undefined; // Notifications — no response
+
     case 'ping':
       return {};
 

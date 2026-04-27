@@ -9,6 +9,7 @@ export default function MissionControlMcpSettings() {
   const [creating, setCreating] = useState(false);
   const [newlyCreated, setNewlyCreated] = useState(null);
   const [snippet, setSnippet] = useState(null);
+  const [activeTab, setActiveTab] = useState('claude-code');
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -126,18 +127,55 @@ export default function MissionControlMcpSettings() {
           <div className={styles.snippetHeader}>
             <strong>Token created — copy it now, it won't be shown again.</strong>
           </div>
-          <pre className={styles.snippet}>{JSON.stringify(snippet.snippet, null, 2)}</pre>
-          <div className={styles.snippetRow}>
+          <div className={styles.snippetTabs}>
             <button
-              className="btn btn-sm"
-              onClick={() => handleCopy(JSON.stringify(snippet.snippet, null, 2))}
+              className={`${styles.snippetTab} ${activeTab === 'claude-code' ? styles.snippetTabActive : ''}`}
+              onClick={() => setActiveTab('claude-code')}
             >
-              <Copy size={14} /> {copied ? 'Copied' : 'Copy snippet'}
+              Claude Code
             </button>
-            <span className={styles.snippetHint}>
-              Use the snippet below to wire it into Claude Code or Claude Desktop.
-            </span>
+            <button
+              className={`${styles.snippetTab} ${activeTab === 'claude-desktop' ? styles.snippetTabActive : ''}`}
+              onClick={() => setActiveTab('claude-desktop')}
+            >
+              Claude Desktop
+            </button>
           </div>
+          {activeTab === 'claude-code' ? (
+            <>
+              <pre className={styles.snippet}>
+                {JSON.stringify(snippet.claudeCode?.snippet || snippet.snippet, null, 2)}
+              </pre>
+              <div className={styles.snippetRow}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => handleCopy(JSON.stringify(snippet.claudeCode?.snippet || snippet.snippet, null, 2))}
+                >
+                  <Copy size={14} /> {copied ? 'Copied' : 'Copy snippet'}
+                </button>
+                <span className={styles.snippetHint}>
+                  Paste into <code>~/.claude.json</code> or your project's <code>.mcp.json</code>
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <pre className={styles.snippet}>
+                {JSON.stringify(snippet.claudeDesktop?.snippet, null, 2)}
+              </pre>
+              <div className={styles.snippetRow}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => handleCopy(JSON.stringify(snippet.claudeDesktop?.snippet, null, 2))}
+                >
+                  <Copy size={14} /> {copied ? 'Copied' : 'Copy snippet'}
+                </button>
+                <span className={styles.snippetHint}>
+                  Paste into <code>~/Library/Application Support/Claude/claude_desktop_config.json</code>
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -145,31 +183,40 @@ export default function MissionControlMcpSettings() {
         <div className={styles.sectionLabel}>How to connect</div>
 
         <div className={styles.guideCard}>
-          <div className={styles.guideTitle}>Claude Code (terminal)</div>
+          <div className={styles.guideTitle}>Claude Code (terminal / CLI / IDE extensions)</div>
+          <p className={styles.guidePara}>
+            Claude Code supports HTTP MCP servers natively. Just paste the snippet and go.
+          </p>
           <ol className={styles.guideList}>
             <li>
-              Generate a token above and copy the JSON snippet.
+              Generate a token above. Switch to the <strong>Claude Code</strong> tab and copy the snippet.
             </li>
             <li>
-              Open <code>~/.claude.json</code> (your global Claude Code config) in any editor.
-              If a project should have its own config, use that project's <code>.mcp.json</code> instead.
+              Open <code>~/.claude.json</code> in any editor.
+              For per-project config, use that project's <code>.mcp.json</code> instead.
             </li>
             <li>
-              Merge the <code>mcpServers</code> block from the snippet into the file.
-              If <code>mcpServers</code> already exists, just add the <code>mission-control</code> entry alongside the others.
+              Merge the <code>mcpServers</code> block into the file.
+              If <code>mcpServers</code> already exists, add the <code>mission-control</code> entry alongside the others.
             </li>
             <li>
-              Restart Claude Code. The Mission Control tools (<code>mc_list_projects</code>,
-              <code> mc_start_session</code>, etc.) will appear automatically.
+              Restart Claude Code. The tools (<code>mc_list_projects</code>,
+              <code> mc_start_session</code>, etc.) appear automatically.
             </li>
           </ol>
         </div>
 
         <div className={styles.guideCard}>
           <div className={styles.guideTitle}>Claude Desktop (Mac / Windows app)</div>
+          <p className={styles.guidePara}>
+            Claude Desktop only supports stdio MCP servers — it can't connect to HTTP endpoints directly.
+            Mission Control includes a lightweight bridge script (<code>mcp-stdio-bridge.js</code>) that
+            translates between Desktop's stdio protocol and the HTTP endpoint.
+            The snippet above is pre-configured with the bridge path and your token.
+          </p>
           <ol className={styles.guideList}>
             <li>
-              Generate a token above and copy the JSON snippet.
+              Generate a token above. Switch to the <strong>Claude Desktop</strong> tab and copy the snippet.
             </li>
             <li>
               Open the Claude Desktop config file:
@@ -184,18 +231,23 @@ export default function MissionControlMcpSettings() {
               If the file doesn't exist yet, create it with <code>{'{}'}</code> as the contents.
             </li>
             <li>
-              Merge the <code>mcpServers</code> block from the snippet into the file.
-              If <code>mcpServers</code> already exists, just add the <code>mission-control</code> entry alongside the others.
+              Merge the <code>mcpServers</code> block into the file.
+              If <code>mcpServers</code> already exists, add the <code>mission-control</code> entry alongside the others.
             </li>
             <li>
-              Fully quit and reopen Claude Desktop (don't just close the window — use Quit).
-              The Mission Control tools will show up under the connectors menu in any chat.
+              <strong>Important:</strong> The <code>command</code> path in the snippet must point to a <code>node</code> binary
+              that Claude Desktop can find. The snippet uses the same Node.js that runs this server.
+              If your Desktop app can't find it, replace the <code>command</code> value with the full path
+              to your <code>node</code> (run <code>which node</code> in terminal to find it).
+            </li>
+            <li>
+              Fully quit and reopen Claude Desktop (<strong>Cmd+Q</strong>, not just close the window).
+              The Mission Control tools will appear in any new conversation.
             </li>
           </ol>
           <div className={styles.guideNote}>
-            Note: Mission Control needs to be running on this machine for either app to reach it.
-            If you point Claude Desktop at <code>http://localhost:3001/mcp</code> from another machine
-            it won't connect — the server is local-only.
+            Mission Control must be running on this machine for either client to connect.
+            The server is local-only — it won't work from another machine.
           </div>
         </div>
       </div>

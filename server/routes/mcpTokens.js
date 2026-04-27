@@ -43,7 +43,9 @@ router.get('/connect-snippet', async (req, res) => {
   try {
     const token = req.query.token || '<paste your token here>';
     const baseUrl = req.query.baseUrl || `${req.protocol}://${req.get('host')}`;
-    const snippet = {
+
+    // Claude Code snippet (HTTP transport — native support)
+    const claudeCodeSnippet = {
       mcpServers: {
         'mission-control': {
           type: 'http',
@@ -54,13 +56,37 @@ router.get('/connect-snippet', async (req, res) => {
         },
       },
     };
+
+    // Claude Desktop snippet (stdio transport via bridge script).
+    // Desktop doesn't support HTTP or SSE — it needs a stdio process.
+    const bridgePath = require('path').join(__dirname, '..', '..', 'mcp-stdio-bridge.js');
+    const nodePath = process.execPath;
+
+    const claudeDesktopSnippet = {
+      mcpServers: {
+        'mission-control': {
+          command: nodePath,
+          args: [bridgePath],
+          env: {
+            MC_MCP_TOKEN: token,
+            MC_MCP_URL: `${baseUrl}/mcp`,
+          },
+        },
+      },
+    };
+
     res.json({
       mcpUrl: `${baseUrl}/mcp`,
-      snippet,
-      instructions:
-        'Paste this into Claude Code\'s MCP config (`~/.claude.json` or a project\'s `.mcp.json`). ' +
-        'Restart Claude Code; the Mission Control tools (mc_list_projects, mc_start_session, etc.) will appear automatically. ' +
-        'Claude Code will call mc_list_projects to discover projects, then specify project_id on every other call.',
+      claudeCode: {
+        snippet: claudeCodeSnippet,
+        configFile: '~/.claude.json or .mcp.json',
+      },
+      claudeDesktop: {
+        snippet: claudeDesktopSnippet,
+        configFile: '~/Library/Application Support/Claude/claude_desktop_config.json',
+      },
+      // Legacy field for backwards compat
+      snippet: claudeCodeSnippet,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
