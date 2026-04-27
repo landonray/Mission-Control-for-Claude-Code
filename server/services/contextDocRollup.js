@@ -21,7 +21,12 @@ const llmGateway = require('./llmGateway');
 const ROLLUP_MODEL = 'claude-sonnet-4-5';
 const BATCH_SIZE = 25;
 const BATCH_MAX_TOKENS = 4000;
-const FINAL_MAX_TOKENS = 8000;
+const FINAL_MAX_TOKENS = 12000;
+
+const PRODUCT_BEGIN = '===BEGIN PRODUCT.md===';
+const PRODUCT_END = '===END PRODUCT.md===';
+const ARCH_BEGIN = '===BEGIN ARCHITECTURE.md===';
+const ARCH_END = '===END ARCHITECTURE.md===';
 
 let _chatCompletion = (...args) => llmGateway.chatCompletion(...args);
 function _setChatCompletionForTests(fn) { _chatCompletion = fn; }
@@ -61,12 +66,15 @@ const FINAL_SYSTEM_PROMPT = `You are writing two living context documents — PR
 
 These documents will be loaded by future Claude Code sessions at startup, so they must be a clear, navigable reference — not a chronological log. Organize by topic, not by date.
 
-Return ONLY valid JSON with this exact shape — no prose, no markdown fences around the JSON:
+Output format — emit BOTH documents using these exact delimiter lines, with the markdown content in between. No prose outside the delimiters, no code fences:
 
-{
-  "product": "<full PRODUCT.md content as a markdown string>",
-  "architecture": "<full ARCHITECTURE.md content as a markdown string>"
-}
+${PRODUCT_BEGIN}
+<full PRODUCT.md content as raw markdown>
+${PRODUCT_END}
+
+${ARCH_BEGIN}
+<full ARCHITECTURE.md content as raw markdown>
+${ARCH_END}
 
 PRODUCT.md must use this top-level structure:
 
@@ -152,21 +160,21 @@ function buildFinalUserPrompt(projectName, batchOutputs, totalPrs) {
   return `${header}${body}\n\nNow synthesize PRODUCT.md and ARCHITECTURE.md following the rules in the system prompt.`;
 }
 
-function parseFinalJson(text) {
+function extractBlock(text, beginMarker, endMarker) {
+  const beginIdx = text.indexOf(beginMarker);
+  if (beginIdx === -1) return null;
+  const contentStart = beginIdx + beginMarker.length;
+  const endIdx = text.indexOf(endMarker, contentStart);
+  if (endIdx === -1) return null;
+  return text.slice(contentStart, endIdx).replace(/^\r?\n/, '').replace(/\r?\n\s*$/, '');
+}
+
+function parseFinalOutput(text) {
   if (typeof text !== 'string') return null;
-  let trimmed = text.trim();
-  if (trimmed.startsWith('```')) {
-    trimmed = trimmed.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/, '');
-  }
-  const firstBrace = trimmed.indexOf('{');
-  const lastBrace = trimmed.lastIndexOf('}');
-  if (firstBrace === -1 || lastBrace === -1) return null;
-  const candidate = trimmed.slice(firstBrace, lastBrace + 1);
-  try {
-    return JSON.parse(candidate);
-  } catch (_) {
-    return null;
-  }
+  const product = extractBlock(text, PRODUCT_BEGIN, PRODUCT_END);
+  const architecture = extractBlock(text, ARCH_BEGIN, ARCH_END);
+  if (product === null || architecture === null) return null;
+  return { product, architecture };
 }
 
 /**
@@ -208,11 +216,12 @@ async function rollupFinal(projectName, batchOutputs, totalPrs, opts = {}) {
     messages: [{ role: 'user', content: userPrompt }],
     signal: opts.signal,
   });
-  const parsed = parseFinalJson(raw);
-  if (!parsed || typeof parsed.product !== 'string' || typeof parsed.architecture !== 'string') {
+  const parsed = parseFinalOutput(raw);
+  if (!parsed || !parsed.product || !parsed.architecture) {
+    const rawStr = String(raw);
     throw new Error(
-      'Final rollup did not return valid JSON with product/architecture string fields. ' +
-      `Raw output (first 500 chars): ${String(raw).slice(0, 500)}`
+      'Final rollup did not return both PRODUCT.md and ARCHITECTURE.md blocks with the expected delimiters. ' +
+      `Raw length: ${rawStr.length} chars. First 300: ${rawStr.slice(0, 300)} | Last 300: ${rawStr.slice(-300)}`
     );
   }
   return { product: parsed.product, architecture: parsed.architecture };
@@ -223,7 +232,7 @@ module.exports = {
   rollupFinal,
   chunkExtractions,
   formatExtractionForPrompt,
-  parseFinalJson,
+  parseFinalOutput,
   ROLLUP_MODEL,
   BATCH_SIZE,
   _setChatCompletionForTests,
