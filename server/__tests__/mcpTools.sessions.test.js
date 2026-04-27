@@ -140,6 +140,10 @@ describe('mc_search_sessions', () => {
     expect(capturedParams).toContain('planning');
     // Last param is the limit, capped at 50.
     expect(capturedParams[capturedParams.length - 1]).toBe(50);
+    // Regression: the join must reference real columns on planning_questions
+    // (planning_session_id / asking_session_id), not a phantom session_id.
+    expect(capturedSql).toMatch(/planning_questions\s+pq\s+ON\s+pq\.planning_session_id\s*=\s*s\.id\s+OR\s+pq\.asking_session_id\s*=\s*s\.id/);
+    expect(capturedSql).not.toMatch(/pq\.session_id/);
   });
 
   it('rejects missing project_id and missing query', async () => {
@@ -215,6 +219,7 @@ describe('mc_get_session_summary', () => {
   });
 
   it('handles a session with no summary, planning, or evals gracefully', async () => {
+    let planningSql = null;
     mockQuery.mockImplementation(async (sql) => {
       if (sql.includes('FROM sessions s\n     LEFT JOIN pipelines')) {
         return {
@@ -228,6 +233,9 @@ describe('mc_get_session_summary', () => {
           }],
         };
       }
+      if (sql.includes('FROM planning_questions')) {
+        planningSql = sql;
+      }
       return { rows: [] };
     });
     const res = await callTool('mc_get_session_summary', { session_id: 's2' });
@@ -237,6 +245,10 @@ describe('mc_get_session_summary', () => {
     expect(payload.planning_questions).toEqual([]);
     expect(payload.eval_batches).toEqual([]);
     expect(payload.files_touched).toBeNull();
+    // Regression: planning_questions has no `session_id` column — the lookup
+    // must use planning_session_id / asking_session_id.
+    expect(planningSql).toMatch(/planning_session_id\s*=\s*\$1\s+OR\s+asking_session_id\s*=\s*\$1/);
+    expect(planningSql).not.toMatch(/WHERE\s+session_id\s*=/);
   });
 
   it('errors when the session_id is unknown', async () => {

@@ -975,7 +975,7 @@ async function searchSessionsTool(args, _ctx) {
       ORDER BY created_at DESC
       LIMIT 1
     ) ss ON TRUE
-    LEFT JOIN planning_questions pq ON pq.session_id = s.id
+    LEFT JOIN planning_questions pq ON pq.planning_session_id = s.id OR pq.asking_session_id = s.id
     LEFT JOIN pipelines p ON p.id = s.pipeline_id
     WHERE s.project_id = $1
       AND (
@@ -1071,7 +1071,7 @@ async function getSessionSummaryTool(args, _ctx) {
   const planningResult = await query(
     `SELECT question, answer, status, created_at, answered_at
      FROM planning_questions
-     WHERE session_id = $1
+     WHERE planning_session_id = $1 OR asking_session_id = $1
      ORDER BY created_at ASC`,
     [args.session_id]
   );
