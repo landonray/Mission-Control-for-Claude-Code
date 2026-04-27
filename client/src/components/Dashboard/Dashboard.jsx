@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import SessionCard from './SessionCard';
 import NewSessionModal from './NewSessionModal';
+import { useCollapsedProjects } from '../../hooks/useCollapsedProjects';
 import { Plus, RefreshCw, Filter, Rocket, Terminal, Search, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import styles from './Dashboard.module.css';
 
@@ -15,7 +16,7 @@ export default function Dashboard() {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [contentMatchIds, setContentMatchIds] = useState(new Set());
-  const [collapsedProjects, setCollapsedProjects] = useState(new Set());
+  const { collapsedProjects, toggleProject } = useCollapsedProjects();
   const searchTimerRef = useRef(null);
   const navigate = useNavigate();
 
@@ -64,15 +65,6 @@ export default function Dashboard() {
       return true;
     });
   }, [sessions, showEnded, showArchived, searchQuery, contentMatchIds]);
-
-  const toggleProject = (projectName) => {
-    setCollapsedProjects(prev => {
-      const next = new Set(prev);
-      if (next.has(projectName)) next.delete(projectName);
-      else next.add(projectName);
-      return next;
-    });
-  };
 
   const groupedSessions = useMemo(() => {
     const groups = new Map();
