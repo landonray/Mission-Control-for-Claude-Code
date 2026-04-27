@@ -128,6 +128,32 @@ describe('pipelines routes', () => {
     expect(res.body.ok).toBe(true);
   });
 
+  it('POST /api/pipelines/:id/recover returns 404 for an unknown pipeline', async () => {
+    const app = makeApp();
+    const res = await request(app).post('/api/pipelines/no-such-pipe/recover');
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/pipelines/:id/recover invokes reconcileStuckSessions for the pipeline', async () => {
+    const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 's' });
+    const calls = [];
+    const original = runtime.reconcileStuckSessions;
+    runtime.reconcileStuckSessions = async (opts) => {
+      calls.push(opts);
+      return [{ sessionId: 's1', pipelineId: p.id, stage: 1, action: 'recovered' }];
+    };
+    try {
+      const app = makeApp();
+      const res = await request(app).post(`/api/pipelines/${p.id}/recover`);
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      expect(res.body.reconciled).toHaveLength(1);
+      expect(calls).toEqual([{ pipelineId: p.id }]);
+    } finally {
+      runtime.reconcileStuckSessions = original;
+    }
+  });
+
   it('PUT /api/pipelines/:id/prompts/:stage updates a stage prompt for stages 1-7', async () => {
     const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 's' });
     const app = makeApp();
