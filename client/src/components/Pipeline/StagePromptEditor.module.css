@@ -1,0 +1,16 @@
+.editor { border: 1px solid var(--color-border, #e2e8f0); border-radius: 8px; padding: 16px; margin-bottom: 16px; background: var(--color-surface, #fff); }
+.editor h3 { margin: 0 0 8px; font-size: 16px; }
+.note { font-size: 12px; color: var(--color-text-muted, #64748b); margin: 0 0 16px; }
+
+.block { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--color-border, #e2e8f0); }
+.block:last-child { border-bottom: none; padding-bottom: 0; }
+.blockHeader { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.blockHeader h4 { margin: 0; flex: 1; font-size: 14px; }
+.saved { color: #16a34a; font-size: 12px; }
+
+.preview { background: var(--color-bg-subtle, #f8fafc); padding: 12px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; max-height: 220px; overflow: auto; font-family: ui-monospace, SFMono-Regular, monospace; }
+.textarea { width: 100%; padding: 12px; border: 1px solid var(--color-border, #cbd5e1); border-radius: 4px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; box-sizing: border-box; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.actions button { padding: 6px 12px; border-radius: 4px; cursor: pointer; border: 1px solid var(--color-border, #cbd5e1); background: white; font-size: 13px; }
+.actions button:last-child { background: var(--color-primary, #3b82f6); color: white; border-color: var(--color-primary, #3b82f6); }
+.actions button:disabled { opacity: 0.5; cursor: not-allowed; }

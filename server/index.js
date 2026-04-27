@@ -34,6 +34,7 @@ app.use('/api/merge-fields', require('./routes/mergeFields'));
 app.use('/api/transcribe', require('./routes/transcribe'));
 app.use('/api/mcp-tokens', require('./routes/mcpTokens'));
 app.use('/api/planning', require('./routes/planning'));
+app.use('/api/pipelines', require('./routes/pipelines'));
 app.use('/mcp', require('./routes/mcpServer'));
 
 // Model config
@@ -81,10 +82,26 @@ const contextDocOrchestrator = require('./services/contextDocOrchestrator');
 contextDocOrchestrator.setBroadcast(broadcastToAll);
 
 // Initialize database then start server
-initializeDb().then(() => {
+initializeDb().then(async () => {
   // Recover tmux sessions from previous server lifetime
   const { recoverTmuxSessions } = require('./services/sessionManager');
   recoverTmuxSessions();
+
+  // Mark any context-doc runs that were mid-flight when the server died as
+  // failed-with-interrupted, so the project is unblocked and the user can
+  // click Resume to continue from cached extractions.
+  try {
+    const recovered = await contextDocOrchestrator.recoverInterruptedRuns();
+    if (recovered > 0) {
+      console.log(`Recovered ${recovered} interrupted context-doc run(s).`);
+    }
+  } catch (err) {
+    console.error('Failed to recover interrupted context-doc runs:', err.message);
+  }
+
+  // Start the pipeline orchestration runtime (listens for session_complete events)
+  const pipelineRuntime = require('./services/pipelineRuntime');
+  pipelineRuntime.start();
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Mission Control server running on http://0.0.0.0:${PORT}`);

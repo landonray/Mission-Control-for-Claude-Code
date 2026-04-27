@@ -487,3 +487,38 @@ textarea.input {
     padding: 12px 14px;
   }
 }
+
+/* ============================================================
+   Session type color badges (used in session lists, pipeline views, etc.)
+   ============================================================ */
+:root {
+  --session-color-blue: #3b82f6;
+  --session-color-purple: #a855f7;
+  --session-color-green: #22c55e;
+  --session-color-orange: #f97316;
+  --session-color-yellow: #eab308;
+  --session-color-gray: #6b7280;
+  --session-color-manual: #94a3b8;
+}
+
+.session-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+.session-badge.color-blue { background-color: var(--session-color-blue); }
+.session-badge.color-purple { background-color: var(--session-color-purple); }
+.session-badge.color-green { background-color: var(--session-color-green); }
+.session-badge.color-orange { background-color: var(--session-color-orange); }
+.session-badge.color-yellow { background-color: var(--session-color-yellow); color: #000; }
+.session-badge.color-gray { background-color: var(--session-color-gray); }
+.session-badge.color-manual { background-color: var(--session-color-manual); }

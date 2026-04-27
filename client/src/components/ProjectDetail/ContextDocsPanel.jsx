@@ -117,6 +117,7 @@ export default function ContextDocsPanel({ projectId, githubRepo }) {
   const isRunning = run && !TERMINAL.has(run.status);
   const isFailed = run && run.status === 'failed';
   const isCompleted = run && run.status === 'completed';
+  const isInterrupted = isFailed && /Interrupted by server restart/i.test(run?.error_message || '');
 
   return (
     <div className={styles.panel}>
@@ -150,6 +151,7 @@ export default function ContextDocsPanel({ projectId, githubRepo }) {
           isRunning={isRunning}
           isFailed={isFailed}
           isCompleted={isCompleted}
+          isInterrupted={isInterrupted}
           logLines={logLines}
           logExpanded={logExpanded}
           setLogExpanded={setLogExpanded}
@@ -198,10 +200,11 @@ function IdleState({ starting, startError, onGenerate, files, onViewFile }) {
 }
 
 function RunPanel({
-  run, isRunning, isFailed, isCompleted,
+  run, isRunning, isFailed, isCompleted, isInterrupted,
   logLines, logExpanded, setLogExpanded,
   starting, startError, onGenerate, files, onViewFile,
 }) {
+  const retryLabel = isInterrupted ? 'Resume' : 'Retry';
   return (
     <div className={styles.actionBlock}>
       <div className={styles.statusRow}>
@@ -250,7 +253,7 @@ function RunPanel({
             onClick={onGenerate}
             disabled={starting}
           >
-            <RefreshCw size={14} /> {starting ? 'Starting…' : isFailed ? 'Retry' : 'Regenerate'}
+            <RefreshCw size={14} /> {starting ? 'Starting…' : isFailed ? retryLabel : 'Regenerate'}
           </button>
         )}
       </div>

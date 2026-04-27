@@ -323,6 +323,77 @@ describe('contextDocOrchestrator', () => {
     expect(extractPR.mock.calls[0][0].number).toBe(2);
   });
 
+  describe('recoverInterruptedRuns', () => {
+    it('marks orphaned running rows as failed with an "interrupted" message', async () => {
+      // Seed two running rows and one already-completed row.
+      const queryFn = vi.fn(async (sql) => {
+        const trimmed = sql.replace(/\s+/g, ' ').trim();
+        if (trimmed.startsWith("SELECT id, project_id FROM context_doc_runs WHERE status = 'running'")) {
+          return { rows: [
+            { id: 'run-a', project_id: 'p1' },
+            { id: 'run-b', project_id: 'p2' },
+          ], rowCount: 2 };
+        }
+        if (trimmed.startsWith("UPDATE context_doc_runs SET status = 'failed'")) {
+          return { rows: [], rowCount: 1 };
+        }
+        if (trimmed.startsWith('SELECT id, project_id, status, phase')) {
+          // getRunById call after the UPDATE — return a representative row.
+          return { rows: [{
+            id: 'x', project_id: 'p', status: 'failed', phase: 'failed',
+            prs_total: 0, prs_extracted: 0, batches_total: 0, batches_done: 0,
+            error_message: 'Interrupted by server restart', log_lines: [],
+            created_at: '2026-04-26', completed_at: '2026-04-26',
+          }], rowCount: 1 };
+        }
+        throw new Error(`Unhandled SQL: ${trimmed}`);
+      });
+
+      orchestrator._setForTests({ query: queryFn });
+      const captured = [];
+      orchestrator.setBroadcast(msg => captured.push(msg));
+
+      const recovered = await orchestrator.recoverInterruptedRuns();
+
+      expect(recovered).toBe(2);
+      // The function should have issued one UPDATE per orphaned row marking
+      // it as failed with a clear interruption message that the frontend can
+      // detect (used to label the button "Resume").
+      const updateCalls = queryFn.mock.calls.filter(c =>
+        c[0].includes("status = 'failed'")
+      );
+      expect(updateCalls).toHaveLength(2);
+      for (const call of updateCalls) {
+        const params = call[1];
+        // params: [errorMessage, runId]
+        expect(params[0]).toMatch(/Interrupted by server restart/i);
+      }
+      // Should broadcast a completion event for each so the UI updates live.
+      const completedBroadcasts = captured.filter(b => b.type === 'context_doc_run_completed');
+      expect(completedBroadcasts).toHaveLength(2);
+    });
+
+    it('returns 0 and does nothing when there are no orphaned runs', async () => {
+      const queryFn = vi.fn(async (sql) => {
+        const trimmed = sql.replace(/\s+/g, ' ').trim();
+        if (trimmed.startsWith("SELECT id, project_id FROM context_doc_runs WHERE status = 'running'")) {
+          return { rows: [], rowCount: 0 };
+        }
+        throw new Error(`Unhandled SQL: ${trimmed}`);
+      });
+
+      orchestrator._setForTests({ query: queryFn });
+
+      const recovered = await orchestrator.recoverInterruptedRuns();
+      expect(recovered).toBe(0);
+      // No update calls were issued.
+      const updateCalls = queryFn.mock.calls.filter(c =>
+        String(c[0]).includes("UPDATE context_doc_runs")
+      );
+      expect(updateCalls).toHaveLength(0);
+    });
+  });
+
   it('records a failure when the final rollup throws', async () => {
     orchestrator._setForTests({
       query: db.query,

@@ -1,0 +1,54 @@
+.card {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: var(--color-surface, #fff);
+}
+.card.current { border-color: var(--color-primary, #3b82f6); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15); }
+
+.header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.header h4 { margin: 0; flex: 1; font-size: 15px; }
+
+.statusPill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-bg-subtle, #f1f5f9);
+  color: var(--color-text, #0f172a);
+}
+.status_completed { background: #dcfce7; color: #166534; }
+.status_pending { background: #f1f5f9; color: #475569; }
+.status_in_progress { background: #dbeafe; color: #1e40af; }
+.status_awaiting_approval { background: #fef3c7; color: #92400e; }
+.status_failed { background: #fee2e2; color: #991b1b; }
+
+.sessions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; font-size: 12px; color: var(--color-text-muted, #64748b); }
+.session { padding: 2px 6px; background: var(--color-bg-subtle, #f1f5f9); border-radius: 4px; }
+.noSessions { color: var(--color-text-muted, #64748b); font-style: italic; }
+
+.output { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--color-border, #e2e8f0); }
+.outputHeader { font-size: 12px; color: var(--color-text-muted, #64748b); margin-bottom: 6px; }
+.outputHeader code { font-size: 12px; background: var(--color-bg-subtle, #f1f5f9); padding: 1px 4px; border-radius: 3px; }
+.iteration { color: #b91c1c; }
+.content {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 4px;
+  max-height: 400px;
+  overflow: auto;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  white-space: pre-wrap;
+}
+
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.approveBtn { background: #16a34a; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+.rejectBtn { background: #dc2626; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+.rejectBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.rejectForm { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.rejectForm textarea { width: 100%; padding: 8px; border: 1px solid var(--color-border, #cbd5e1); border-radius: 4px; font-family: inherit; }
+.rejectForm > div { display: flex; gap: 8px; justify-content: flex-end; }
+
+.error { background: #fee2e2; color: #b91c1c; padding: 8px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; }

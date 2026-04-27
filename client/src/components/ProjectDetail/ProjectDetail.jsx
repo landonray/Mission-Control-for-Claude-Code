@@ -6,6 +6,7 @@ import styles from './ProjectDetail.module.css';
 import MCPPanel from './MCPPanel';
 import TestRunsPanel from './TestRunsPanel';
 import DecisionsList from '../Decisions/DecisionsList.jsx';
+import PipelinesPanel from './PipelinesPanel';
 import UsageCard from './UsageCard';
 import ContextDocsPanel from './ContextDocsPanel';
 
@@ -202,6 +203,11 @@ export default function ProjectDetail() {
           )}
         </h2>
         <DecisionsList projectId={project.id} onChange={setDecisionsCount} />
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionHeader}>Pipelines</h2>
+        <PipelinesPanel projectId={project.id} />
       </section>
 
       <section className={styles.section}>

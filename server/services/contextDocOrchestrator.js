@@ -96,6 +96,29 @@ class ConcurrentRunError extends Error {
 
 // --- public API --------------------------------------------------------------
 
+/**
+ * On server boot, any context_doc_runs row left in status='running' is an
+ * orphan from a process that crashed or was restarted mid-pipeline. Mark it
+ * as failed with a clear, machine-detectable message so the project is
+ * unblocked for a new run and the frontend can surface a "Resume" button.
+ *
+ * Resuming is safe because per-PR extractions are cached in
+ * context_doc_extractions and skipped on the next run.
+ *
+ * @returns {Promise<number>} number of rows recovered
+ */
+async function recoverInterruptedRuns() {
+  const { rows } = await _query(
+    `SELECT id, project_id FROM context_doc_runs WHERE status = 'running'`
+  );
+  if (rows.length === 0) return 0;
+  const message = 'Interrupted by server restart — click Resume to continue from cached extractions.';
+  for (const row of rows) {
+    await failRun(row.id, row.project_id, message);
+  }
+  return rows.length;
+}
+
 async function getLatestRun(projectId) {
   const { rows } = await _query(
     `SELECT id, project_id, status, phase, prs_total, prs_extracted,
@@ -425,6 +448,7 @@ module.exports = {
   startGeneration,
   getLatestRun,
   getActiveRun,
+  recoverInterruptedRuns,
   setBroadcast,
   ConcurrentRunError,
   PHASE,
