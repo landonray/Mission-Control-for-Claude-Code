@@ -104,6 +104,20 @@ initializeDb().then(async () => {
   const pipelineRuntime = require('./services/pipelineRuntime');
   pipelineRuntime.start();
 
+  // Reconcile any pipeline sessions that were mid-flight when the server died.
+  // tmux session recovery above rehydrates still-running ones; this sweep
+  // handles orphans whose tmux process is gone but whose DB row never got the
+  // session_complete signal.
+  try {
+    const reconciled = await pipelineRuntime.reconcileStuckSessions();
+    if (reconciled.length > 0) {
+      const summary = reconciled.map(r => `${r.sessionId.slice(0, 8)}→${r.action}`).join(', ');
+      console.log(`Reconciled ${reconciled.length} stuck pipeline session(s): ${summary}`);
+    }
+  } catch (err) {
+    console.error('Failed to reconcile stuck pipeline sessions:', err.message);
+  }
+
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Mission Control server running on http://0.0.0.0:${PORT}`);
   });

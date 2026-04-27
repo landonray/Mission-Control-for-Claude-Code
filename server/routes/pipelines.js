@@ -70,7 +70,7 @@ async function loadPipelineForApproval(pipelineId) {
 
 router.post('/', async (req, res) => {
   try {
-    const { project_id, name, spec_input } = req.body || {};
+    const { project_id, name, spec_input, gated_stages } = req.body || {};
     if (!project_id || !name || !spec_input) {
       return res.status(400).json({ error: 'project_id, name, and spec_input are required' });
     }
@@ -79,12 +79,16 @@ router.post('/', async (req, res) => {
       projectId: project_id,
       name,
       specInput: spec_input,
+      gatedStages: gated_stages,
     });
     res.status(201).json(pipeline);
   } catch (err) {
     console.error('POST /api/pipelines failed:', err);
     if (/already has an active pipeline/i.test(err.message)) {
       return res.status(409).json({ error: err.message });
+    }
+    if (/gatedStages/i.test(err.message)) {
+      return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: err.message });
   }
@@ -141,6 +145,21 @@ router.post('/:id/create-pr', async (req, res) => {
       return res.status(502).json({ error: result.error });
     }
     res.json({ ok: true, url: result.url, existed: result.existed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pipelines/:id/recover
+// Reconcile any orphaned pipeline sessions for this pipeline. Used as an
+// escape hatch when a session's tmux process died but its DB row is still
+// stuck in 'working' (e.g. after an unclean server restart).
+router.post('/:id/recover', async (req, res) => {
+  try {
+    const pipeline = await repo.getPipeline(req.params.id);
+    if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
+    const reconciled = await runtime.reconcileStuckSessions({ pipelineId: req.params.id });
+    res.json({ ok: true, reconciled });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

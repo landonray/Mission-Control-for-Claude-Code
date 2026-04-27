@@ -32,21 +32,45 @@ function loadDefaultPrompt(stage) {
   return fs.readFileSync(fullPath, 'utf8');
 }
 
-async function createPipeline({ projectId, name, specInput }) {
+// Stages 4 (chunked implementation) and 7 (fix cycle) follow internal flows
+// that do not fall through the gating pause point, so they cannot be gated.
+const GATEABLE_STAGES = [1, 2, 3, 5, 6];
+
+function normalizeGatedStages(input) {
+  // Default mirrors prior hard-coded behavior: gate stages 1, 2, 3.
+  if (input === undefined || input === null) return [1, 2, 3];
+  if (!Array.isArray(input)) {
+    throw new Error('gatedStages must be an array of stage numbers');
+  }
+  const cleaned = [];
+  for (const raw of input) {
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 7) {
+      throw new Error(`gatedStages must contain integers between 1 and 7 (got ${raw})`);
+    }
+    if (!GATEABLE_STAGES.includes(n)) continue; // silently drop non-gateable stages
+    if (!cleaned.includes(n)) cleaned.push(n);
+  }
+  cleaned.sort((a, b) => a - b);
+  return cleaned;
+}
+
+async function createPipeline({ projectId, name, specInput, gatedStages }) {
   if (!projectId) throw new Error('projectId required');
   if (!name) throw new Error('name required');
   if (!specInput) throw new Error('specInput required');
 
   const id = `pipe_${crypto.randomBytes(8).toString('hex')}`;
   const branchName = sanitizeBranchName(name);
+  const stages = normalizeGatedStages(gatedStages);
 
   const result = await query(
-    `INSERT INTO pipelines (id, name, project_id, branch_name, status, spec_input)
-     VALUES ($1, $2, $3, $4, 'draft', $5)
+    `INSERT INTO pipelines (id, name, project_id, branch_name, status, spec_input, gated_stages)
+     VALUES ($1, $2, $3, $4, 'draft', $5, $6::jsonb)
      RETURNING *`,
-    [id, name, projectId, branchName, specInput]
+    [id, name, projectId, branchName, specInput, JSON.stringify(stages)]
   );
-  const pipeline = result.rows[0];
+  const pipeline = hydratePipelineRow(result.rows[0]);
 
   for (const stage of ALL_STAGES) {
     await query(
@@ -59,9 +83,21 @@ async function createPipeline({ projectId, name, specInput }) {
   return pipeline;
 }
 
+// JSONB columns sometimes round-trip as strings depending on the driver path.
+// Normalize so consumers always get a JS array.
+function hydratePipelineRow(row) {
+  if (!row) return row;
+  if (typeof row.gated_stages === 'string') {
+    try { row.gated_stages = JSON.parse(row.gated_stages); }
+    catch { row.gated_stages = [1, 2, 3]; }
+  }
+  if (!Array.isArray(row.gated_stages)) row.gated_stages = [1, 2, 3];
+  return row;
+}
+
 async function getPipeline(pipelineId) {
   const result = await query('SELECT * FROM pipelines WHERE id = $1', [pipelineId]);
-  return result.rows[0] || null;
+  return hydratePipelineRow(result.rows[0]) || null;
 }
 
 async function listPipelines(projectId) {
@@ -69,7 +105,7 @@ async function listPipelines(projectId) {
     'SELECT * FROM pipelines WHERE project_id = $1 ORDER BY created_at DESC',
     [projectId]
   );
-  return result.rows;
+  return result.rows.map(hydratePipelineRow);
 }
 
 async function updateStatus(pipelineId, { status, currentStage, prUrl, prCreationError, completedAt }) {
@@ -234,6 +270,16 @@ async function findChunkBySessionId(sessionId) {
   return result.rows[0] || null;
 }
 
+async function findActiveSessionForStage(pipelineId, stage) {
+  const result = await query(
+    `SELECT id FROM sessions
+     WHERE pipeline_id = $1 AND pipeline_stage = $2 AND status != 'ended'
+     ORDER BY created_at DESC LIMIT 1`,
+    [pipelineId, stage]
+  );
+  return result.rows[0]?.id || null;
+}
+
 async function incrementFixCycleCount(pipelineId) {
   const result = await query(
     `UPDATE pipelines SET fix_cycle_count = COALESCE(fix_cycle_count, 0) + 1
@@ -275,6 +321,8 @@ async function resolveEscalation(escalationId) {
 module.exports = {
   sanitizeBranchName,
   loadDefaultPrompt,
+  normalizeGatedStages,
+  GATEABLE_STAGES,
   createPipeline,
   getPipeline,
   listPipelines,
@@ -293,6 +341,7 @@ module.exports = {
   markChunkRunning,
   markChunkCompleted,
   findChunkBySessionId,
+  findActiveSessionForStage,
   incrementFixCycleCount,
   createEscalation,
   listOpenEscalations,

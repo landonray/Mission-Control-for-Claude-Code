@@ -55,14 +55,24 @@ describe('pipelineOrchestrator', () => {
     }
     deps = {
       createBranch: vi.fn().mockResolvedValue(undefined),
-      startSession: vi.fn().mockImplementation(async () => {
+      startSession: vi.fn().mockImplementation(async ({ pipelineId, pipelineStage }) => {
         const sessionId = await insertStubSession();
+        await query(
+          `UPDATE sessions SET pipeline_id = $1, pipeline_stage = $2 WHERE id = $3`,
+          [pipelineId, pipelineStage, sessionId]
+        );
         return { sessionId };
       }),
       readFileExists: vi.fn().mockReturnValue(true),
       createPullRequest: vi.fn().mockResolvedValue({
         url: 'https://github.com/example/repo/pull/1',
         existed: false,
+      }),
+      endSession: vi.fn().mockImplementation(async (sessionId) => {
+        await query(
+          `UPDATE sessions SET status = 'ended', ended_at = NOW() WHERE id = $1`,
+          [sessionId]
+        );
       }),
     };
     orchestrator = orchestratorMod.create(deps);
@@ -668,6 +678,187 @@ describe('pipelineOrchestrator', () => {
     });
   });
 
+  describe('configurable gating', () => {
+    const VALID_BUILD_PLAN = [
+      '## Chunk 1: only',
+      '- Files: a.js',
+      '- QA Scenarios: a',
+      '- Dependencies: none',
+      '- Complexity: small',
+      '',
+      'body',
+    ].join('\n');
+
+    it('skips the pause when stage 1 is not in gated_stages and auto-advances to stage 2', async () => {
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID,
+        name: 'No gates',
+        specInput: 's',
+        gatedStages: [], // nothing gated
+      });
+      deps.startSession.mockClear();
+
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_mock',
+        pipelineId: pipeline.id,
+        pipelineStage: 1,
+      });
+
+      const updated = await repo.getPipeline(pipeline.id);
+      expect(updated.status).toBe('running');
+      expect(updated.current_stage).toBe(2);
+      expect(deps.startSession).toHaveBeenCalledWith(
+        expect.objectContaining({ pipelineStage: 2 })
+      );
+    });
+
+    it('still pauses on a stage that IS in gated_stages', async () => {
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID,
+        name: 'Gate 2 only',
+        specInput: 's',
+        gatedStages: [2],
+      });
+
+      // Stage 1 is not gated → auto-advances.
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_mock',
+        pipelineId: pipeline.id,
+        pipelineStage: 1,
+      });
+      let after = await repo.getPipeline(pipeline.id);
+      expect(after.current_stage).toBe(2);
+      expect(after.status).toBe('running');
+
+      // Stage 2 is gated → pauses.
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_mock',
+        pipelineId: pipeline.id,
+        pipelineStage: 2,
+      });
+      after = await repo.getPipeline(pipeline.id);
+      expect(after.status).toBe('paused_for_approval');
+      expect(after.current_stage).toBe(2);
+    });
+
+    it('auto-advances through stage 3 into chunked implementation when stage 3 is not gated', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID,
+        name: 'Skip gate 3',
+        specInput: 's',
+        gatedStages: [],
+      });
+      // Walk through 1, 2, 3 — all auto-advance because nothing is gated.
+      for (const stage of [1, 2, 3]) {
+        await orchestrator.handleSessionComplete({
+          sessionId: 'sess_mock',
+          pipelineId: pipeline.id,
+          pipelineStage: stage,
+        });
+      }
+
+      const after = await repo.getPipeline(pipeline.id);
+      expect(after.current_stage).toBe(4);
+      expect(after.status).toBe('running');
+      const chunks = await repo.listChunks(pipeline.id);
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0].status).toBe('running');
+    });
+
+    it('pauses on stage 5 when gated, then routes to fix cycle on approval if QA failed', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn().mockReturnValue('Overall: fail\n');
+      orchestrator = orchestratorMod.create(deps);
+
+      // Gate only stage 5; let stages 1-3 auto-advance.
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID,
+        name: 'Gate QA',
+        specInput: 's',
+        gatedStages: [5],
+      });
+      for (const stage of [1, 2, 3]) {
+        await orchestrator.handleSessionComplete({
+          sessionId: 'sess_mock',
+          pipelineId: pipeline.id,
+          pipelineStage: stage,
+        });
+      }
+      // Stage 4 chunk completes.
+      const chunkSessionId = (await repo.listChunks(pipeline.id))[0].session_id;
+      await orchestrator.handleSessionComplete({
+        sessionId: chunkSessionId,
+        pipelineId: pipeline.id,
+        pipelineStage: 4,
+      });
+
+      // Stage 5 finishes → should pause (gated) instead of auto-routing.
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_qa',
+        pipelineId: pipeline.id,
+        pipelineStage: 5,
+      });
+      let after = await repo.getPipeline(pipeline.id);
+      expect(after.status).toBe('paused_for_approval');
+      expect(after.current_stage).toBe(5);
+
+      // On approval, the pipeline should still honor the QA verdict — fail → fix cycle.
+      await orchestrator.approveCurrentStage(pipeline.id);
+      after = await repo.getPipeline(pipeline.id);
+      expect(after.current_stage).toBe(7);
+      expect(after.fix_cycle_count).toBe(1);
+    });
+
+    it('pauses on stage 6 when gated, then completes on approval if blockers are zero', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn()
+        .mockReturnValueOnce('Overall: pass\n')      // stage 5 auto-routes
+        .mockReturnValueOnce('Blockers: 0\n');       // stage 6 approval reads
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID,
+        name: 'Gate review',
+        specInput: 's',
+        gatedStages: [6],
+      });
+      for (const stage of [1, 2, 3]) {
+        await orchestrator.handleSessionComplete({
+          sessionId: 'sess_mock',
+          pipelineId: pipeline.id,
+          pipelineStage: stage,
+        });
+      }
+      const chunkSessionId = (await repo.listChunks(pipeline.id))[0].session_id;
+      await orchestrator.handleSessionComplete({
+        sessionId: chunkSessionId,
+        pipelineId: pipeline.id,
+        pipelineStage: 4,
+      });
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_qa',
+        pipelineId: pipeline.id,
+        pipelineStage: 5,
+      });
+      // Stage 6 finishes → paused for approval.
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_review',
+        pipelineId: pipeline.id,
+        pipelineStage: 6,
+      });
+      let after = await repo.getPipeline(pipeline.id);
+      expect(after.status).toBe('paused_for_approval');
+      expect(after.current_stage).toBe(6);
+
+      await orchestrator.approveCurrentStage(pipeline.id);
+      after = await repo.getPipeline(pipeline.id);
+      expect(after.status).toBe('completed');
+    });
+  });
+
   describe('parseQaOverall / parseReviewBlockers', () => {
     it('parses pass and fail from the trailing line', () => {
       const { _parseQaOverall } = orchestratorMod;
@@ -690,6 +881,199 @@ describe('pipelineOrchestrator', () => {
     it('returns a large fallback when no marker is present', () => {
       const { _parseReviewBlockers } = orchestratorMod;
       expect(_parseReviewBlockers('No marker here.')).toBeGreaterThan(0);
+    });
+  });
+
+  describe('session close behavior', () => {
+    const VALID_BUILD_PLAN = [
+      '## Chunk 1: only',
+      '- Files: a.js',
+      '- QA Scenarios: a',
+      '- Dependencies: none',
+      '- Complexity: small',
+      '',
+      'body',
+    ].join('\n');
+
+    async function getSessionStatus(sessionId) {
+      const r = await query('SELECT status FROM sessions WHERE id = $1', [sessionId]);
+      return r.rows[0]?.status || null;
+    }
+
+    it('does NOT close the session when a gated stage completes (paused for approval)', async () => {
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'Gated keep-open', specInput: 's',
+      });
+      const stage1SessionId = deps.startSession.mock.results[0].value
+        ? (await deps.startSession.mock.results[0].value).sessionId
+        : null;
+
+      await orchestrator.handleSessionComplete({
+        sessionId: stage1SessionId, pipelineId: pipeline.id, pipelineStage: 1,
+      });
+
+      const updated = await repo.getPipeline(pipeline.id);
+      expect(updated.status).toBe('paused_for_approval');
+      expect(deps.endSession).not.toHaveBeenCalledWith(stage1SessionId);
+      expect(await getSessionStatus(stage1SessionId)).toBe('idle');
+    });
+
+    it('closes the gated session when the stage is approved', async () => {
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'Gated approve', specInput: 's',
+      });
+      const stage1SessionId = (await deps.startSession.mock.results[0].value).sessionId;
+
+      await orchestrator.handleSessionComplete({
+        sessionId: stage1SessionId, pipelineId: pipeline.id, pipelineStage: 1,
+      });
+      expect(await getSessionStatus(stage1SessionId)).toBe('idle');
+
+      await orchestrator.approveCurrentStage(pipeline.id);
+
+      expect(deps.endSession).toHaveBeenCalledWith(stage1SessionId);
+      expect(await getSessionStatus(stage1SessionId)).toBe('ended');
+    });
+
+    it('closes the gated session when the stage is rejected', async () => {
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'Gated reject', specInput: 's',
+      });
+      const stage1SessionId = (await deps.startSession.mock.results[0].value).sessionId;
+
+      await orchestrator.handleSessionComplete({
+        sessionId: stage1SessionId, pipelineId: pipeline.id, pipelineStage: 1,
+      });
+
+      await orchestrator.rejectCurrentStage(pipeline.id, 'Try again with more detail.');
+
+      expect(deps.endSession).toHaveBeenCalledWith(stage1SessionId);
+      expect(await getSessionStatus(stage1SessionId)).toBe('ended');
+    });
+
+    it('closes the chunk session when an implementation chunk completes', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'Chunk close', specInput: 's',
+      });
+      // Walk through stages 1-3 with approvals.
+      for (const stage of [1, 2, 3]) {
+        const sessId = (await deps.startSession.mock.results[deps.startSession.mock.results.length - 1].value).sessionId;
+        await orchestrator.handleSessionComplete({
+          sessionId: sessId, pipelineId: pipeline.id, pipelineStage: stage,
+        });
+        if (stage < 3) await orchestrator.approveCurrentStage(pipeline.id);
+      }
+      await orchestrator.approveCurrentStage(pipeline.id); // stage 3 approval → start stage 4
+
+      const chunkSessionId = (await repo.listChunks(pipeline.id))[0].session_id;
+      expect(await getSessionStatus(chunkSessionId)).toBe('idle');
+
+      await orchestrator.handleSessionComplete({
+        sessionId: chunkSessionId, pipelineId: pipeline.id, pipelineStage: 4,
+      });
+
+      expect(deps.endSession).toHaveBeenCalledWith(chunkSessionId);
+      expect(await getSessionStatus(chunkSessionId)).toBe('ended');
+    });
+
+    it('closes the QA session when stage 5 completes (non-gated)', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn().mockReturnValue('Overall: pass\n');
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'QA close', specInput: 's',
+      });
+      for (const stage of [1, 2, 3]) {
+        const sessId = (await deps.startSession.mock.results[deps.startSession.mock.results.length - 1].value).sessionId;
+        await orchestrator.handleSessionComplete({
+          sessionId: sessId, pipelineId: pipeline.id, pipelineStage: stage,
+        });
+        if (stage < 3) await orchestrator.approveCurrentStage(pipeline.id);
+      }
+      await orchestrator.approveCurrentStage(pipeline.id);
+      // Complete the only chunk → starts stage 5
+      const chunkSessionId = (await repo.listChunks(pipeline.id))[0].session_id;
+      await orchestrator.handleSessionComplete({
+        sessionId: chunkSessionId, pipelineId: pipeline.id, pipelineStage: 4,
+      });
+
+      const qaSessionId = await repo.findActiveSessionForStage(pipeline.id, 5);
+      expect(qaSessionId).toBeTruthy();
+      expect(await getSessionStatus(qaSessionId)).toBe('idle');
+
+      await orchestrator.handleSessionComplete({
+        sessionId: qaSessionId, pipelineId: pipeline.id, pipelineStage: 5,
+      });
+
+      expect(deps.endSession).toHaveBeenCalledWith(qaSessionId);
+      expect(await getSessionStatus(qaSessionId)).toBe('ended');
+    });
+
+    it('closes the fix-cycle session when stage 7 completes', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn().mockReturnValue('Overall: fail\n');
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'Fix close', specInput: 's',
+      });
+      for (const stage of [1, 2, 3]) {
+        const sessId = (await deps.startSession.mock.results[deps.startSession.mock.results.length - 1].value).sessionId;
+        await orchestrator.handleSessionComplete({
+          sessionId: sessId, pipelineId: pipeline.id, pipelineStage: stage,
+        });
+        if (stage < 3) await orchestrator.approveCurrentStage(pipeline.id);
+      }
+      await orchestrator.approveCurrentStage(pipeline.id);
+      const chunkSessionId = (await repo.listChunks(pipeline.id))[0].session_id;
+      await orchestrator.handleSessionComplete({
+        sessionId: chunkSessionId, pipelineId: pipeline.id, pipelineStage: 4,
+      });
+      // Stage 5 fails → spawns stage 7 (fix cycle)
+      const qaSessionId = await repo.findActiveSessionForStage(pipeline.id, 5);
+      await orchestrator.handleSessionComplete({
+        sessionId: qaSessionId, pipelineId: pipeline.id, pipelineStage: 5,
+      });
+
+      const fixSessionId = await repo.findActiveSessionForStage(pipeline.id, 7);
+      expect(fixSessionId).toBeTruthy();
+
+      await orchestrator.handleSessionComplete({
+        sessionId: fixSessionId, pipelineId: pipeline.id, pipelineStage: 7,
+      });
+
+      expect(deps.endSession).toHaveBeenCalledWith(fixSessionId);
+      expect(await getSessionStatus(fixSessionId)).toBe('ended');
+    });
+
+    it('closes the session when an output file is missing twice (escalation path)', async () => {
+      deps.readFileExists.mockReturnValue(false);
+      const pipeline = await orchestrator.createAndStart({
+        projectId: TEST_PROJECT_ID, name: 'Missing file close', specInput: 's',
+      });
+      const firstSessionId = (await deps.startSession.mock.results[0].value).sessionId;
+
+      // First failure → close + retry
+      await orchestrator.handleSessionComplete({
+        sessionId: firstSessionId, pipelineId: pipeline.id, pipelineStage: 1,
+      });
+      expect(deps.endSession).toHaveBeenCalledWith(firstSessionId);
+      expect(await getSessionStatus(firstSessionId)).toBe('ended');
+
+      // The retry spawned a new session — second failure escalates.
+      const retrySessionId = (await deps.startSession.mock.results[deps.startSession.mock.results.length - 1].value).sessionId;
+      await orchestrator.handleSessionComplete({
+        sessionId: retrySessionId, pipelineId: pipeline.id, pipelineStage: 1,
+      });
+
+      expect(deps.endSession).toHaveBeenCalledWith(retrySessionId);
+      expect(await getSessionStatus(retrySessionId)).toBe('ended');
+      const final = await repo.getPipeline(pipeline.id);
+      expect(final.status).toBe('paused_for_failure');
     });
   });
 });

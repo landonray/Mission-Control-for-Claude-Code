@@ -110,3 +110,66 @@
   border-radius: 4px;
   font-size: 13px;
 }
+
+.gateHelp {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+  font-weight: 400;
+}
+
+.stageList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+}
+
+.stageRow {
+  border-bottom: 1px solid var(--border);
+}
+.stageRow:last-child { border-bottom: none; }
+
+.stageRow label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  margin: 0;
+}
+
+.stageRowDisabled label {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.stageRow input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  cursor: pointer;
+}
+.stageRowDisabled input[type="checkbox"] { cursor: default; }
+
+.stageNumber {
+  font-weight: 600;
+  min-width: 60px;
+  color: var(--text-secondary);
+}
+
+.stageName {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.stageRowDisabled .stageName { color: var(--text-muted); }
+
+.stageNote {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}

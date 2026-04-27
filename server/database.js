@@ -239,6 +239,7 @@ async function initializeDb() {
       fix_cycle_count INTEGER DEFAULT 0,
       pr_url TEXT,
       spec_input TEXT NOT NULL,
+      gated_stages JSONB DEFAULT '[1,2,3]'::jsonb,
       created_at TEXT DEFAULT NOW(),
       updated_at TEXT DEFAULT NOW(),
       completed_at TEXT
@@ -340,6 +341,7 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_stage INTEGER`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
     `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS pr_creation_error TEXT`,
+    `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS gated_stages JSONB DEFAULT '[1,2,3]'::jsonb`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
