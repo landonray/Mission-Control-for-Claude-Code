@@ -90,6 +90,12 @@ describe('PipelineDetail', () => {
     expect(screen.getByText(/Stage 7: Fix Cycle/i)).toBeTruthy();
   });
 
+  it('shows the awaiting-approval state pill with stage name', async () => {
+    api.get.mockResolvedValue(mockPipeline);
+    renderAt();
+    await waitFor(() => expect(screen.getByText(/Awaiting your approval — Stage 1 of 7: Spec Refinement/i)).toBeTruthy());
+  });
+
   it('renders chunks for stage 4 and shows escalation banner', async () => {
     const fullPipeline = {
       pipeline: {
@@ -114,42 +120,64 @@ describe('PipelineDetail', () => {
     expect(screen.getByText(/Stuck after 3 fix cycles/i)).toBeTruthy();
     expect(screen.getByText(/Chunk 1:/)).toBeTruthy();
     expect(screen.getByText(/Chunk 2:/)).toBeTruthy();
-    expect(screen.getByText(/fix cycles of 3 to pass QA/i)).toBeTruthy();
+    expect(screen.getByText(/Needs your attention — Stage 7 of 7: Fix Cycle/i)).toBeTruthy();
+    expect(screen.getByText(/3 of 3 used/i)).toBeTruthy();
   });
 
-  it('shows the completion banner with PR link when pipeline is completed and pr_url is set', async () => {
+  it('shows the completed-with-PR state pill and a clickable PR link', async () => {
     api.get.mockResolvedValue({
       pipeline: {
-        id: 'p3', name: 'Done feature', status: 'completed', current_stage: 6,
+        id: 'p3', name: 'Done feature', status: 'completed', current_stage: 7,
         fix_cycle_count: 1, spec_input: 'x', branch_name: 'pipeline-done', project_id: 'proj1',
         pr_url: 'https://github.com/example/repo/pull/99',
         pr_creation_error: null,
         completed_at: '2026-04-27T10:00:00Z',
       },
       outputs: [], prompts: {}, sessions: [], chunks: [], escalations: [],
+      github_repo: 'example/repo',
     });
     renderAt('/pipelines/p3');
-    await waitFor(() => expect(screen.getByText(/Pipeline complete/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Completed — pull request opened/i)).toBeTruthy());
     const prLink = screen.getByRole('link', { name: /view pull request/i });
     expect(prLink.getAttribute('href')).toBe('https://github.com/example/repo/pull/99');
-    expect(screen.getByText(/Took/i)).toBeTruthy();
+    expect(screen.getByText(/All 7 stages completed/i)).toBeTruthy();
+    expect(screen.getByText(/1 of 3 used to pass QA/i)).toBeTruthy();
+    const branchLink = screen.getByRole('link', { name: /view branch on github/i });
+    expect(branchLink.getAttribute('href')).toBe('https://github.com/example/repo/tree/pipeline-done');
+    const diffLink = screen.getByRole('link', { name: /view diff/i });
+    expect(diffLink.getAttribute('href')).toBe('https://github.com/example/repo/compare/main...pipeline-done');
   });
 
-  it('shows a Create pull request button when pipeline is completed without a PR', async () => {
+  it('shows the PR-creation-failed state with retry button when pipeline completed without a PR', async () => {
     api.get.mockResolvedValue({
       pipeline: {
-        id: 'p4', name: 'Done feature', status: 'completed', current_stage: 6,
+        id: 'p4', name: 'Done feature', status: 'completed', current_stage: 7,
         fix_cycle_count: 0, spec_input: 'x', branch_name: 'pipeline-done', project_id: 'proj1',
         pr_url: null, pr_creation_error: 'gh not authed',
         completed_at: '2026-04-27T10:00:00Z',
       },
       outputs: [], prompts: {}, sessions: [], chunks: [], escalations: [],
+      github_repo: null,
     });
     api.post.mockResolvedValue({ ok: true, url: 'https://github.com/example/repo/pull/101' });
     renderAt('/pipelines/p4');
-    await waitFor(() => expect(screen.getByText(/Pipeline complete/i)).toBeTruthy());
-    expect(screen.getByText(/gh not authed/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /create pull request/i }));
+    await waitFor(() => expect(screen.getByText(/Completed — but PR creation failed/i)).toBeTruthy());
+    expect(screen.getByText(/PR couldn't be created: gh not authed/i)).toBeTruthy();
+    const retryBtn = screen.getByRole('button', { name: /retry pull request creation/i });
+    fireEvent.click(retryBtn);
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/pipelines/p4/create-pr'));
+  });
+
+  it('shows running state pill with stage name', async () => {
+    api.get.mockResolvedValue({
+      pipeline: {
+        id: 'p5', name: 'Live feature', status: 'running', current_stage: 4,
+        fix_cycle_count: 0, spec_input: 'x', branch_name: 'pipeline-live', project_id: 'proj1',
+      },
+      outputs: [], prompts: {}, sessions: [], chunks: [], escalations: [],
+    });
+    renderAt('/pipelines/p5');
+    await waitFor(() => expect(screen.getByText(/Running — Stage 4 of 7: Implementation/i)).toBeTruthy());
+    expect(screen.getByText(/Stage 4 of 7 — Implementation/i)).toBeTruthy();
   });
 });
