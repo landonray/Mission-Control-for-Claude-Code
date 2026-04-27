@@ -34,7 +34,7 @@ function _resetForTests() { _chatCompletion = (...args) => llmGateway.chatComple
 
 const BATCH_SYSTEM_PROMPT = `You are synthesizing structured PR extractions into an intermediate roll-up document.
 
-You will receive a chronological batch of up to 25 per-PR extractions for a single project. Each extraction lists what changed, why, product decisions, architectural decisions, patterns established, and patterns broken.
+You will receive a chronological batch of up to 25 per-PR extractions for a single project. Each extraction lists what changed, why, product decisions, architectural decisions, patterns established, patterns broken, and what it supersedes (replaces, removes, or reverses from earlier work). PRs are ordered oldest first.
 
 Produce a structured intermediate roll-up that the final synthesis pass can merge with other batches. Use this exact format:
 
@@ -46,8 +46,8 @@ Produce a structured intermediate roll-up that the final synthesis pass can merg
 ## Architectural decisions and patterns
 - bullet — current approach (cite PR numbers)
 
-## Patterns abandoned or replaced
-- bullet — old pattern → new pattern (cite PR numbers)
+## Superseded within this batch
+- bullet — current state as of the latest PR (#X, date), overrode previous approach from (#Y, date). Briefly explain why if the PRs make it clear.
 
 ## Mechanical-only PRs
 - comma-separated list of PR numbers that had no significant decisions
@@ -55,8 +55,11 @@ Produce a structured intermediate roll-up that the final synthesis pass can merg
 ## Areas of uncertainty
 - bullet — note where the PR signal is ambiguous or thin
 
-Rules:
-- Resolve contradictions in favor of the chronologically later PR.
+Conflict resolution rules — read carefully:
+- If two PRs in this batch describe conflicting state about the same feature, decision, or pattern, treat the most recent PR as the current state. Do not list both as if they coexist.
+- Pay close attention to the "supersedes" field on each extraction — that is an explicit signal that something earlier was overridden.
+- Also infer supersession when later PRs change behavior even if "supersedes" is empty (e.g., a feature mentioned in PR #5 is removed by PR #20 even if #20 didn't call it out).
+- When supersession is found, describe ONLY the current state in the relevant theme/decision section. Record the override in "Superseded within this batch" with both PR numbers and dates.
 - Skip mechanical PRs from the themes/decisions sections.
 - Be specific. Use the project's terminology directly. Avoid generic phrases like "improved code quality".
 - One sentence per bullet.
@@ -86,6 +89,7 @@ PRODUCT.md must use this top-level structure:
 ## Key features and current state
 ## Product decisions and rationale
 ## Scoping decisions
+## Superseded product decisions
 ## Open questions and known gaps
 
 ARCHITECTURE.md must use this top-level structure:
@@ -101,8 +105,14 @@ ARCHITECTURE.md must use this top-level structure:
 ## Integration points
 ## Key technical decisions
 
+Conflict resolution rules — read carefully:
+- The batch roll-ups you receive are ordered chronologically and labeled with their date ranges. Earlier batches describe earlier state; later batches describe later state.
+- Each batch may include a "Superseded within this batch" section. Honor those — the current state is the later one in each pair.
+- ALSO compare claims across batches. If batch 1 says feature X works one way and batch 5 says feature X works another way, the batch 5 version is the current truth. The batch 1 version belongs in "Superseded product decisions" or "Patterns tried and abandoned" — never present both as if they coexist.
+- When you record a supersession, write it as: "Current state: <later approach> (#X, YYYY-MM-DD). Previously: <earlier approach> (#Y, YYYY-MM-DD). Reason: <if clear>." Skip the reason line if not clear.
+- Do not assume something still exists just because an early PR introduced it. Verify it survived through the latest batch.
+
 Rules for both documents:
-- Resolve contradictions by recency — the latest signal wins. Note older approaches in "Patterns tried and abandoned" if they're instructive.
 - Cite PR numbers in parens (e.g., "(see #12, #34)") sparingly — only where the citation is clearly grounding the claim.
 - Keep bullet points to one or two sentences each.
 - If a section truly has no content from the input, write a single italic line "_No signal yet — fill in during review._" rather than inventing content.
@@ -143,6 +153,10 @@ function formatExtractionForPrompt(row) {
     lines.push('Patterns broken:');
     for (const p of e.patterns_broken) lines.push(`  - ${p}`);
   }
+  if (e.supersedes?.length) {
+    lines.push('Supersedes (overrides earlier work):');
+    for (const s of e.supersedes) lines.push(`  - ${s}`);
+  }
   return lines.join('\n');
 }
 
@@ -152,12 +166,32 @@ function buildBatchUserPrompt(projectName, batchIndex, totalBatches, extractions
   return `${header}Extractions:\n\n${body}`;
 }
 
-function buildFinalUserPrompt(projectName, batchOutputs, totalPrs) {
-  const header = `Project: ${projectName}\nTotal PRs analyzed: ${totalPrs}\nBatches: ${batchOutputs.length}\n\n`;
-  const body = batchOutputs
-    .map((b, i) => `## Batch ${i + 1} roll-up\n\n${b}`)
+function buildFinalUserPrompt(projectName, batchSummaries, totalPrs) {
+  const header = `Project: ${projectName}\nTotal PRs analyzed: ${totalPrs}\nBatches: ${batchSummaries.length}\n\n`;
+  const body = batchSummaries
+    .map((b, i) => {
+      const range = formatDateRange(b.dateRange);
+      const suffix = range ? ` (PRs merged ${range})` : '';
+      return `## Batch ${i + 1} roll-up${suffix}\n\n${b.output}`;
+    })
     .join('\n\n---\n\n');
-  return `${header}${body}\n\nNow synthesize PRODUCT.md and ARCHITECTURE.md following the rules in the system prompt.`;
+  return `${header}${body}\n\nNow synthesize PRODUCT.md and ARCHITECTURE.md following the rules in the system prompt. Remember: later batches override earlier ones when they conflict.`;
+}
+
+function formatDateRange(range) {
+  if (!range) return null;
+  const start = formatDate(range.start);
+  const end = formatDate(range.end);
+  if (!start && !end) return null;
+  if (start === end) return start;
+  return `${start || '?'} to ${end || '?'}`;
+}
+
+function formatDate(value) {
+  if (!value) return null;
+  const s = String(value);
+  // Accept ISO timestamps or plain date strings; keep just the date portion.
+  return s.slice(0, 10);
 }
 
 function extractBlock(text, beginMarker, endMarker) {
@@ -202,13 +236,19 @@ async function rollupBatch(projectName, batchIndex, totalBatches, extractions, o
  * Final synthesis — merge all batch outputs into PRODUCT.md + ARCHITECTURE.md.
  *
  * @param {string} projectName
- * @param {string[]} batchOutputs
+ * @param {Array<string | { output: string, dateRange?: { start, end } }>} batchSummaries
+ *   Each entry is either a raw markdown string (legacy) or an object with the
+ *   batch markdown and the date range of PRs in that batch. Date ranges let
+ *   the synthesis pass apply recency-wins resolution across batches.
  * @param {number} totalPrs
  * @param {object} [opts] — { signal }
  * @returns {Promise<{ product: string, architecture: string }>}
  */
-async function rollupFinal(projectName, batchOutputs, totalPrs, opts = {}) {
-  const userPrompt = buildFinalUserPrompt(projectName, batchOutputs, totalPrs);
+async function rollupFinal(projectName, batchSummaries, totalPrs, opts = {}) {
+  const normalized = batchSummaries.map(b =>
+    typeof b === 'string' ? { output: b, dateRange: null } : b
+  );
+  const userPrompt = buildFinalUserPrompt(projectName, normalized, totalPrs);
   const raw = await _chatCompletion({
     model: ROLLUP_MODEL,
     max_tokens: FINAL_MAX_TOKENS,

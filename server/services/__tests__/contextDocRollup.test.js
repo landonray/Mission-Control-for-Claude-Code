@@ -59,6 +59,19 @@ describe('contextDocRollup', () => {
       });
       expect(out).toContain('Mechanical: yes');
     });
+
+    it('includes supersedes section when present', () => {
+      const out = rollup.formatExtractionForPrompt({
+        pr_number: 9,
+        pr_title: 'Refactor',
+        extraction: {
+          what_changed: 'rewrote thing',
+          supersedes: ['Removes the legacy thing approach from #3'],
+        },
+      });
+      expect(out).toContain('Supersedes (overrides earlier work):');
+      expect(out).toContain('Removes the legacy thing approach from #3');
+    });
   });
 
   describe('rollupBatch', () => {
@@ -98,6 +111,27 @@ describe('contextDocRollup', () => {
       const out = await rollup.rollupFinal('myproj', ['batch1'], 5);
       expect(out.product).toBe('# Product\nBody line one.');
       expect(out.architecture).toBe('# Architecture\nArch body.');
+    });
+
+    it('renders date ranges per batch when batchSummaries include them', async () => {
+      chat.mockResolvedValue(wellFormed);
+      await rollup.rollupFinal('myproj', [
+        { output: 'first', dateRange: { start: '2026-01-01T00:00:00Z', end: '2026-02-01T00:00:00Z' } },
+        { output: 'second', dateRange: { start: '2026-02-15', end: '2026-03-30' } },
+      ], 50);
+      const userMsg = chat.mock.calls[0][0].messages[0].content;
+      expect(userMsg).toContain('Batch 1 roll-up (PRs merged 2026-01-01 to 2026-02-01)');
+      expect(userMsg).toContain('Batch 2 roll-up (PRs merged 2026-02-15 to 2026-03-30)');
+      expect(userMsg).toContain('first');
+      expect(userMsg).toContain('second');
+    });
+
+    it('still works when batchSummaries are plain strings (legacy)', async () => {
+      chat.mockResolvedValue(wellFormed);
+      await rollup.rollupFinal('myproj', ['only-batch'], 1);
+      const userMsg = chat.mock.calls[0][0].messages[0].content;
+      expect(userMsg).toContain('Batch 1 roll-up\n');
+      expect(userMsg).toContain('only-batch');
     });
 
     it('throws when output is missing the architecture block (e.g., truncated)', async () => {
