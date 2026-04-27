@@ -104,7 +104,7 @@ describe('handleRpcRequest — protocol layer', () => {
     expect(res).toBeNull();
   });
 
-  it('lists all four Phase 1 tools including mc_list_projects', async () => {
+  it('lists all five tools including mc_list_projects and mc_get_project_context', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 2, method: 'tools/list' },
       {}
@@ -114,6 +114,7 @@ describe('handleRpcRequest — protocol layer', () => {
     expect(names).toContain('mc_start_session');
     expect(names).toContain('mc_send_message');
     expect(names).toContain('mc_get_session_status');
+    expect(names).toContain('mc_get_project_context');
   });
 
   it('mc_list_projects returns the projects array', async () => {
@@ -218,6 +219,133 @@ describe('handleRpcRequest — protocol layer', () => {
     );
     expect(res.result.isError).toBe(false);
     expect(mockGetStatus).toHaveBeenCalledWith('sess');
+  });
+
+  it('mc_get_project_context returns both docs by default', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-ctx-'));
+    fs.writeFileSync(path.join(tmp, 'PRODUCT.md'), '# Product\n\nWhat we build.\n');
+    fs.writeFileSync(path.join(tmp, 'ARCHITECTURE.md'), '# Arch\n\nHow we build it.\n');
+
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'proj-A', name: 'Alpha', root_path: tmp }],
+      rowCount: 1,
+    }));
+
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 30, method: 'tools/call',
+        params: { name: 'mc_get_project_context', arguments: { project_id: 'proj-A' } },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(false);
+    const payload = JSON.parse(res.result.content[0].text);
+    expect(payload.project_id).toBe('proj-A');
+    expect(payload.product.exists).toBe(true);
+    expect(payload.product.content).toContain('What we build');
+    expect(payload.architecture.exists).toBe(true);
+    expect(payload.architecture.content).toContain('How we build it');
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('mc_get_project_context document="product" returns only product', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-ctx-'));
+    fs.writeFileSync(path.join(tmp, 'PRODUCT.md'), '# Product\n\nP\n');
+
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'proj-B', name: 'Beta', root_path: tmp }],
+      rowCount: 1,
+    }));
+
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 31, method: 'tools/call',
+        params: { name: 'mc_get_project_context', arguments: { project_id: 'proj-B', document: 'product' } },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(false);
+    const payload = JSON.parse(res.result.content[0].text);
+    expect(payload.product.exists).toBe(true);
+    expect(payload.architecture).toBeUndefined();
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('mc_get_project_context flags missing files with exists=false', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mc-ctx-'));
+    // No files in directory.
+
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'proj-C', name: 'Gamma', root_path: tmp }],
+      rowCount: 1,
+    }));
+
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 32, method: 'tools/call',
+        params: { name: 'mc_get_project_context', arguments: { project_id: 'proj-C' } },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(false);
+    const payload = JSON.parse(res.result.content[0].text);
+    expect(payload.product.exists).toBe(false);
+    expect(payload.product.content).toBeNull();
+    expect(payload.architecture.exists).toBe(false);
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('mc_get_project_context errors when project_id missing', async () => {
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 33, method: 'tools/call',
+        params: { name: 'mc_get_project_context', arguments: {} },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/project_id is required/i);
+  });
+
+  it('mc_get_project_context errors when project not found', async () => {
+    mockQuery.mockImplementationOnce(async () => ({ rows: [], rowCount: 0 }));
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 34, method: 'tools/call',
+        params: { name: 'mc_get_project_context', arguments: { project_id: 'missing' } },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/Project not found/);
+  });
+
+  it('mc_get_project_context errors on invalid document value', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'proj-D', name: 'Delta', root_path: '/tmp/__nope__' }],
+      rowCount: 1,
+    }));
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 35, method: 'tools/call',
+        params: { name: 'mc_get_project_context', arguments: { project_id: 'proj-D', document: 'sideways' } },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/document must be one of/i);
   });
 
   it('returns method-not-found for unknown method', async () => {

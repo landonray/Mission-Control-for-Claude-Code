@@ -65,6 +65,7 @@ function buildPlanningPrompt({ systemPrompt, task, contextSections }) {
 
 Do not spawn sub-agents, background processes, or parallel tasks on your own. If you need work done in parallel, if a task is too large for a single session, or if you need a different perspective (planning, QA, code review), use the Mission Control MCP tools to start a new session. All work must be visible in Mission Control. Starting your own sub-agents outside of Mission Control is not allowed.
 
+
 ## Escalation rules
 
 After reasoning through the question, assess whether you can answer confidently or whether this needs to be escalated to the project owner.
