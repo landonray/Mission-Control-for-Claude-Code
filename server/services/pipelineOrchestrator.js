@@ -11,11 +11,19 @@ const retryAttempts = new Map();
 const FIX_CYCLE_CAP = 3;
 
 function create(deps) {
-  if (!deps || !deps.createBranch || !deps.startSession || !deps.readFileExists || !deps.endSession) {
+  if (
+    !deps ||
+    !deps.createBranchAndWorktree ||
+    !deps.startSession ||
+    !deps.readFileExists ||
+    !deps.endSession
+  ) {
     throw new Error(
-      'pipelineOrchestrator.create requires deps: createBranch, startSession, readFileExists, endSession'
+      'pipelineOrchestrator.create requires deps: createBranchAndWorktree, startSession, readFileExists, endSession'
     );
   }
+  // removeWorktree is optional — tests that don't exercise PR creation can omit it.
+  const removeWorktree = deps.removeWorktree || (() => {});
 
   async function safeEndSession(sessionId) {
     if (!sessionId) return;
@@ -49,6 +57,14 @@ function create(deps) {
     const r = await query('SELECT root_path FROM projects WHERE id = $1', [projectId]);
     if (!r.rows[0]) throw new Error(`Project not found: ${projectId}`);
     return r.rows[0].root_path;
+  }
+
+  // Pipelines created before per-pipeline worktrees existed have no
+  // worktree_path set. For those, fall back to the project root so the
+  // pipeline can still complete on its current path.
+  async function getPipelineWorkingDir(pipeline) {
+    if (pipeline.worktree_path) return pipeline.worktree_path;
+    return getProjectRootPath(pipeline.project_id);
   }
 
   async function startStage({ pipeline, stage, rejectionFeedback, chunk, iteration }) {
@@ -129,6 +145,8 @@ function create(deps) {
       throw new Error(`Stage ${stage} not supported`);
     }
 
+    const workingDirectory = await getPipelineWorkingDir(pipeline);
+
     return deps.startSession({
       projectId: pipeline.project_id,
       sessionType: promptBuilder.sessionTypeForStage(stage),
@@ -136,27 +154,27 @@ function create(deps) {
       task,
       pipelineId: pipeline.id,
       pipelineStage: stage,
-      branchName: pipeline.branch_name,
+      workingDirectory,
       rejectionFeedback: rejectionFeedback || null,
       chunk: chunk || null,
     });
   }
 
   async function createAndStart({ projectId, name, specInput, gatedStages }) {
-    const active = await repo.getActivePipelineForProject(projectId);
-    if (active) {
-      throw new Error(
-        `Project already has an active pipeline (${active.id} — "${active.name}"). ` +
-          `Wait for it to complete before starting a new one.`
-      );
-    }
-
     const projectRootPath = await getProjectRootPath(projectId);
     const pipeline = await repo.createPipeline({ projectId, name, specInput, gatedStages });
 
-    await deps.createBranch({ branchName: pipeline.branch_name, projectRootPath });
-    await repo.updateStatus(pipeline.id, { status: 'running', currentStage: 1 });
-    await startStage({ pipeline, stage: 1 });
+    const worktreePath = await deps.createBranchAndWorktree({
+      branchName: pipeline.branch_name,
+      projectRootPath,
+    });
+    await repo.updateStatus(pipeline.id, {
+      status: 'running',
+      currentStage: 1,
+      worktreePath,
+    });
+    const refreshed = await repo.getPipeline(pipeline.id);
+    await startStage({ pipeline: refreshed, stage: 1 });
 
     return repo.getPipeline(pipeline.id);
   }
@@ -190,8 +208,8 @@ function create(deps) {
     // Stages with a tracked output document (1, 2, 3, 5, 6) — verify the file
     // was written, retry once on failure, then escalate.
     const outputPath = promptBuilder.outputPathFor(pipelineStage, pipeline.name);
-    const projectRootPath = await getProjectRootPath(pipeline.project_id);
-    const fullPath = path.join(projectRootPath, outputPath);
+    const workingDir = await getPipelineWorkingDir(pipeline);
+    const fullPath = path.join(workingDir, outputPath);
     const exists = deps.readFileExists(fullPath);
 
     if (!exists) {
@@ -290,9 +308,13 @@ function create(deps) {
     const pipeline = await repo.getPipeline(pipelineId);
     if (!pipeline) return { ok: false, error: 'Pipeline not found' };
     const projectRootPath = await getProjectRootPath(pipeline.project_id);
+    // Push from the worktree (the branch is checked out there with all the
+    // pipeline's commits). Fall back to project root for legacy pipelines
+    // that ran before per-pipeline worktrees existed.
+    const pushFromPath = pipeline.worktree_path || projectRootPath;
     try {
       const result = await createPullRequest({
-        projectRootPath,
+        projectRootPath: pushFromPath,
         branchName: pipeline.branch_name,
         pipelineName: pipeline.name,
         pipelineId: pipeline.id,
@@ -302,6 +324,18 @@ function create(deps) {
         prUrl: result.url,
         prCreationError: null,
       });
+
+      // Clean up the worktree now that the branch is pushed and the PR is open —
+      // the working state is no longer needed locally.
+      if (pipeline.worktree_path) {
+        try {
+          removeWorktree({ projectRootPath, worktreePath: pipeline.worktree_path });
+          await repo.updateStatus(pipelineId, { worktreePath: null });
+        } catch (err) {
+          console.error(`Pipeline ${pipelineId}: worktree cleanup failed:`, err.message);
+        }
+      }
+
       return { ok: true, url: result.url, existed: !!result.existed };
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
@@ -398,16 +432,16 @@ function create(deps) {
     // depends on the stage output file. Re-resolve the path the same way
     // handleSessionComplete did so proceedFromStage can read it.
     const outputPath = promptBuilder.outputPathFor(stage, pipeline.name);
-    const projectRootPath = await getProjectRootPath(pipeline.project_id);
-    const fullPath = path.join(projectRootPath, outputPath);
+    const workingDir = await getPipelineWorkingDir(pipeline);
+    const fullPath = path.join(workingDir, outputPath);
 
     await proceedFromStage(pipelineId, stage, fullPath);
   }
 
   async function advanceFromStage3(pipeline) {
-    const projectRootPath = await getProjectRootPath(pipeline.project_id);
+    const workingDir = await getPipelineWorkingDir(pipeline);
     const buildPlanRel = promptBuilder.outputPathFor(3, pipeline.name);
-    const buildPlanFull = path.join(projectRootPath, buildPlanRel);
+    const buildPlanFull = path.join(workingDir, buildPlanRel);
 
     let chunks;
     try {

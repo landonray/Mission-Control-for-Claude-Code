@@ -65,12 +65,12 @@ describe('NewPipelineDialog', () => {
   });
 
   it('shows the server error message on failure', async () => {
-    mockApi.post.mockRejectedValue(new Error('Project already has an active pipeline'));
+    mockApi.post.mockRejectedValue(new Error('Failed to create branch on disk'));
     render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/pipeline name/i), { target: { value: 'X' } });
     fireEvent.change(screen.getByLabelText('Spec'), { target: { value: 'Spec.' } });
     fireEvent.click(screen.getByRole('button', { name: /start pipeline/i }));
-    await waitFor(() => expect(screen.getByText(/already has an active pipeline/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/failed to create branch on disk/i)).toBeTruthy());
   });
 
   describe('Approval gates', () => {

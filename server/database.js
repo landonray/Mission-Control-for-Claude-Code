@@ -337,6 +337,7 @@ async function initializeDb() {
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS owner_answered_at TEXT`,
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS dismissed_at TEXT`,
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS decided_by TEXT`,
+    `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS worktree_path TEXT`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_id TEXT REFERENCES pipelines(id) ON DELETE SET NULL`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_stage INTEGER`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
