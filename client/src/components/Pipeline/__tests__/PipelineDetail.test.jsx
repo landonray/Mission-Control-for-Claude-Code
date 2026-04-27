@@ -168,6 +168,21 @@ describe('PipelineDetail', () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/pipelines/p4/create-pr'));
   });
 
+  it('shows Stage 7 as "In progress" (not "Pending") when fix_cycle_count > 0 and current_stage is back at 5', async () => {
+    api.get.mockResolvedValue({
+      pipeline: {
+        id: 'p6', name: 'Mid fix cycle', status: 'running', current_stage: 5,
+        fix_cycle_count: 2, spec_input: 'x', branch_name: 'pipeline-fixing', project_id: 'proj1',
+      },
+      outputs: [], prompts: {}, sessions: [], chunks: [], escalations: [],
+    });
+    renderAt('/pipelines/p6');
+    await waitFor(() => expect(screen.getByText(/Stage 7: Fix Cycle/i)).toBeTruthy());
+    const stage7Card = screen.getByText(/Stage 7: Fix Cycle/i).closest('div');
+    expect(stage7Card.textContent).toMatch(/In progress/i);
+    expect(stage7Card.textContent).not.toMatch(/^Pending$/);
+  });
+
   it('shows running state pill with stage name', async () => {
     api.get.mockResolvedValue({
       pipeline: {
