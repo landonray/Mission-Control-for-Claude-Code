@@ -340,6 +340,7 @@ async function initializeDb() {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_id TEXT REFERENCES pipelines(id) ON DELETE SET NULL`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_stage INTEGER`,
     `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
+    `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS pr_creation_error TEXT`,
     `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS gated_stages JSONB DEFAULT '[1,2,3]'::jsonb`,
   ];
   for (const migration of migrations) {

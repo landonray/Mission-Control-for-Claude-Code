@@ -108,13 +108,14 @@ async function listPipelines(projectId) {
   return result.rows.map(hydratePipelineRow);
 }
 
-async function updateStatus(pipelineId, { status, currentStage, prUrl, completedAt }) {
+async function updateStatus(pipelineId, { status, currentStage, prUrl, prCreationError, completedAt }) {
   const fields = [];
   const values = [];
   let idx = 1;
   if (status !== undefined) { fields.push(`status = $${idx++}`); values.push(status); }
   if (currentStage !== undefined) { fields.push(`current_stage = $${idx++}`); values.push(currentStage); }
   if (prUrl !== undefined) { fields.push(`pr_url = $${idx++}`); values.push(prUrl); }
+  if (prCreationError !== undefined) { fields.push(`pr_creation_error = $${idx++}`); values.push(prCreationError); }
   if (completedAt !== undefined) { fields.push(`completed_at = $${idx++}`); values.push(completedAt); }
   fields.push(`updated_at = NOW()`);
   values.push(pipelineId);

@@ -63,6 +63,21 @@ export default function PipelineDetail() {
     await refresh();
   }
 
+  const [creatingPr, setCreatingPr] = useState(false);
+  async function handleCreatePr() {
+    setActionError(null);
+    setCreatingPr(true);
+    try {
+      const res = await api.post(`/api/pipelines/${id}/create-pr`);
+      if (res && res.url) window.open(res.url, '_blank', 'noopener,noreferrer');
+      await refresh();
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setCreatingPr(false);
+    }
+  }
+
   if (error) return <div className={styles.error}>{error}</div>;
   if (!data) return <div className={styles.loading}>Loading…</div>;
 
@@ -70,6 +85,11 @@ export default function PipelineDetail() {
   const sessionsByStage = (stage) => sessions.filter((s) => s.pipeline_stage === stage);
   const outputForStage = (stage) =>
     outputs.filter((o) => o.stage === stage).sort((a, b) => b.iteration - a.iteration)[0] || null;
+
+  const isCompleted = pipeline.status === 'completed';
+  const formattedCompletedAt = pipeline.completed_at
+    ? new Date(pipeline.completed_at).toLocaleString()
+    : null;
 
   return (
     <div className={styles.page}>
@@ -80,7 +100,12 @@ export default function PipelineDetail() {
           <p className={styles.meta}>
             Branch: <code>{pipeline.branch_name}</code> · Status: <strong>{pipeline.status}</strong>
             {pipeline.fix_cycle_count > 0 && (
-              <span> · Fix cycles used: <strong>{pipeline.fix_cycle_count}</strong> / 3</span>
+              <span>
+                {' '}· {isCompleted ? 'Took' : 'Used'}{' '}
+                <strong>{pipeline.fix_cycle_count}</strong>{' '}
+                {pipeline.fix_cycle_count === 1 ? 'fix cycle' : 'fix cycles'}
+                {' '}of 3 to pass QA
+              </span>
             )}
           </p>
         </div>
@@ -90,6 +115,46 @@ export default function PipelineDetail() {
       </div>
 
       {actionError && <div className={styles.error}>{actionError}</div>}
+
+      {isCompleted && (
+        <div className={styles.completionBanner}>
+          <h4>Pipeline complete</h4>
+          <p className={styles.completionLine}>
+            All seven stages finished
+            {formattedCompletedAt ? ` on ${formattedCompletedAt}` : ''}.
+            The build lives on branch <code>{pipeline.branch_name}</code>.
+          </p>
+          <div className={styles.completionActions}>
+            {pipeline.pr_url ? (
+              <a
+                href={pipeline.pr_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.prLink}
+              >
+                View pull request →
+              </a>
+            ) : (
+              <button
+                onClick={handleCreatePr}
+                disabled={creatingPr}
+                className={styles.createPrButton}
+              >
+                {creatingPr ? 'Creating PR…' : 'Create pull request'}
+              </button>
+            )}
+            <span className={styles.completionMetric}>
+              {outputs.length} stage outputs · {chunks.length} build chunks
+              {pipeline.fix_cycle_count > 0 ? ` · ${pipeline.fix_cycle_count} fix cycles` : ''}
+            </span>
+          </div>
+          {pipeline.pr_creation_error && !pipeline.pr_url && (
+            <p className={styles.completionWarn}>
+              Couldn't auto-create PR: {pipeline.pr_creation_error}
+            </p>
+          )}
+        </div>
+      )}
 
       {escalations.length > 0 && (
         <div className={styles.escalationBanner}>

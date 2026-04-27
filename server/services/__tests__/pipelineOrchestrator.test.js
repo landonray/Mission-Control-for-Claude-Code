@@ -64,6 +64,10 @@ describe('pipelineOrchestrator', () => {
         return { sessionId };
       }),
       readFileExists: vi.fn().mockReturnValue(true),
+      createPullRequest: vi.fn().mockResolvedValue({
+        url: 'https://github.com/example/repo/pull/1',
+        existed: false,
+      }),
       endSession: vi.fn().mockImplementation(async (sessionId) => {
         await query(
           `UPDATE sessions SET status = 'ended', ended_at = NOW() WHERE id = $1`,
@@ -470,6 +474,63 @@ describe('pipelineOrchestrator', () => {
       const final = await repo.getPipeline(pipeline.id);
       expect(final.status).toBe('completed');
       expect(final.completed_at).not.toBeNull();
+      expect(deps.createPullRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          branchName: final.branch_name,
+          pipelineId: final.id,
+          pipelineName: final.name,
+        })
+      );
+      expect(final.pr_url).toBe('https://github.com/example/repo/pull/1');
+      expect(final.pr_creation_error).toBeNull();
+    });
+
+    it('still marks pipeline completed if PR creation fails, recording the error', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn()
+        .mockReturnValueOnce('# QA\n\nOverall: pass\n')
+        .mockReturnValueOnce('# Review\n\nClean.\n\nBlockers: 0\n');
+      deps.createPullRequest = vi.fn().mockRejectedValue(new Error('gh not authed'));
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await runThroughStage5Pass(orchestrator);
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_review', pipelineId: pipeline.id, pipelineStage: 6,
+      });
+
+      const final = await repo.getPipeline(pipeline.id);
+      expect(final.status).toBe('completed');
+      expect(final.pr_url).toBeNull();
+      expect(final.pr_creation_error).toMatch(/gh not authed/);
+    });
+
+    it('tryCreatePullRequest can be invoked manually after completion to retry PR creation', async () => {
+      deps.readBuildPlan = vi.fn().mockReturnValue(VALID_BUILD_PLAN);
+      deps.readStageOutput = vi.fn()
+        .mockReturnValueOnce('# QA\n\nOverall: pass\n')
+        .mockReturnValueOnce('# Review\n\nClean.\n\nBlockers: 0\n');
+      // First (auto) attempt fails; second (manual) attempt succeeds.
+      deps.createPullRequest = vi.fn()
+        .mockRejectedValueOnce(new Error('first failure'))
+        .mockResolvedValueOnce({ url: 'https://github.com/example/repo/pull/42', existed: false });
+      orchestrator = orchestratorMod.create(deps);
+
+      const pipeline = await runThroughStage5Pass(orchestrator);
+      await orchestrator.handleSessionComplete({
+        sessionId: 'sess_review', pipelineId: pipeline.id, pipelineStage: 6,
+      });
+
+      const failed = await repo.getPipeline(pipeline.id);
+      expect(failed.pr_url).toBeNull();
+      expect(failed.pr_creation_error).toMatch(/first failure/);
+
+      const result = await orchestrator.tryCreatePullRequest(pipeline.id);
+      expect(result.ok).toBe(true);
+      expect(result.url).toBe('https://github.com/example/repo/pull/42');
+
+      const fixed = await repo.getPipeline(pipeline.id);
+      expect(fixed.pr_url).toBe('https://github.com/example/repo/pull/42');
+      expect(fixed.pr_creation_error).toBeNull();
     });
 
     it('triggers fix cycle when code review reports Blockers: > 0', async () => {

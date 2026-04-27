@@ -126,6 +126,13 @@ async function rejectAndBroadcast(pipelineId, feedback) {
   broadcastPipelineChanged(pipelineId);
 }
 
+async function createPrAndBroadcast(pipelineId) {
+  if (!started) throw new Error('pipelineRuntime not started');
+  const result = await started.orchestrator.tryCreatePullRequest(pipelineId);
+  broadcastPipelineChanged(pipelineId);
+  return result;
+}
+
 // True if there is a live tmux session AND a Claude process is still running
 // in its current pane. Returns false on any failure (no tmux, dead session,
 // pane on a different command).
@@ -278,6 +285,7 @@ module.exports = {
   getOrchestrator,
   approveAndBroadcast,
   rejectAndBroadcast,
+  createPrAndBroadcast,
   reconcileStuckSessions,
   _internal: { defaultIsTmuxSessionRunning },
 };
