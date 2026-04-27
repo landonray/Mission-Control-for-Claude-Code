@@ -133,6 +133,21 @@ router.post('/:id/approve', async (req, res) => {
   }
 });
 
+// POST /api/pipelines/:id/recover
+// Reconcile any orphaned pipeline sessions for this pipeline. Used as an
+// escape hatch when a session's tmux process died but its DB row is still
+// stuck in 'working' (e.g. after an unclean server restart).
+router.post('/:id/recover', async (req, res) => {
+  try {
+    const pipeline = await repo.getPipeline(req.params.id);
+    if (!pipeline) return res.status(404).json({ error: 'Pipeline not found' });
+    const reconciled = await runtime.reconcileStuckSessions({ pipelineId: req.params.id });
+    res.json({ ok: true, reconciled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/:id/reject', async (req, res) => {
   try {
     const feedback = req.body && req.body.feedback;

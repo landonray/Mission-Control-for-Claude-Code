@@ -290,6 +290,26 @@ async function rejectStageTool(args, _ctx) {
   return { ok: true, current_stage: pipeline.current_stage, status: pipeline.status };
 }
 
+async function recoverPipelineTool(args, _ctx) {
+  if (!args.pipeline_id) throw new Error('pipeline_id is required');
+  const pipeline = await pipelineRepo.getPipeline(args.pipeline_id);
+  if (!pipeline) throw new Error(`Pipeline ${args.pipeline_id} not found`);
+  const reconciled = await pipelineRuntime.reconcileStuckSessions({ pipelineId: args.pipeline_id });
+  const refreshed = await pipelineRepo.getPipeline(args.pipeline_id);
+  return {
+    pipeline_id: args.pipeline_id,
+    status: refreshed.status,
+    current_stage: refreshed.current_stage,
+    reconciled_sessions: reconciled.length,
+    actions: reconciled.map((r) => ({
+      session_id: r.sessionId,
+      stage: r.stage,
+      action: r.action,
+      error: r.error,
+    })),
+  };
+}
+
 const TOOL_DEFINITIONS = [
   {
     name: 'mc_list_projects',
@@ -439,6 +459,19 @@ const TOOL_DEFINITIONS = [
     },
     handler: rejectStageTool,
   },
+  {
+    name: 'mc_recover_pipeline',
+    description:
+      "Reconcile a pipeline whose stage session was interrupted (e.g. by a server restart) and is now stuck. For each orphaned session it finds, this tool either records the produced output and advances the pipeline, or pauses the pipeline with a clear escalation if the work can't be safely resumed. Safe to call on a healthy pipeline — it's a no-op when there are no orphans. Use this if mc_get_pipeline_status shows a session stuck in 'working' but no progress is being made.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pipeline_id: { type: 'string', description: 'Pipeline ID to recover.' },
+      },
+      required: ['pipeline_id'],
+    },
+    handler: recoverPipelineTool,
+  },
 ];
 
 module.exports = {
@@ -453,4 +486,5 @@ module.exports = {
   getPipelineStatusTool,
   approveStageTool,
   rejectStageTool,
+  recoverPipelineTool,
 };

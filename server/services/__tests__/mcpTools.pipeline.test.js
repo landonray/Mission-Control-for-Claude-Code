@@ -239,13 +239,47 @@ describe('pipeline MCP tools', () => {
     });
   });
 
+  describe('mc_recover_pipeline', () => {
+    it('errors without pipeline_id', async () => {
+      await expect(mcpTools.recoverPipelineTool({})).rejects.toThrow(/pipeline_id/i);
+    });
+
+    it('errors when the pipeline does not exist', async () => {
+      await expect(mcpTools.recoverPipelineTool({ pipeline_id: 'no-such-pipeline' }))
+        .rejects.toThrow(/not found/i);
+    });
+
+    it('returns the reconciliation summary and refreshed pipeline status', async () => {
+      const spy = vi.spyOn(runtime, 'reconcileStuckSessions').mockResolvedValue([
+        { sessionId: 'sess-1', pipelineId: 'p1', stage: 1, action: 'recovered' },
+      ]);
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'Z', specInput: 's' });
+      await repo.updateStatus(p.id, { status: 'running', currentStage: 1 });
+
+      const result = await mcpTools.recoverPipelineTool({ pipeline_id: p.id });
+
+      expect(spy).toHaveBeenCalledWith({ pipelineId: p.id });
+      expect(result).toMatchObject({
+        pipeline_id: p.id,
+        status: 'running',
+        current_stage: 1,
+        reconciled_sessions: 1,
+      });
+      expect(result.actions).toEqual([
+        { session_id: 'sess-1', stage: 1, action: 'recovered', error: undefined },
+      ]);
+      spy.mockRestore();
+    });
+  });
+
   describe('TOOL_DEFINITIONS', () => {
-    it('registers the four pipeline tools', () => {
+    it('registers the five pipeline tools', () => {
       const names = mcpTools.TOOL_DEFINITIONS.map((t) => t.name);
       expect(names).toContain('mc_start_pipeline');
       expect(names).toContain('mc_get_pipeline_status');
       expect(names).toContain('mc_approve_stage');
       expect(names).toContain('mc_reject_stage');
+      expect(names).toContain('mc_recover_pipeline');
     });
 
     it('mc_start_pipeline schema: required is [project_id, name] and both spec and spec_file are in properties', () => {
