@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../../utils/api';
 import { colorForSessionType, badgeForSessionType, labelForSessionType } from '../../utils/sessionColors';
 import styles from './StageCard.module.css';
@@ -98,7 +100,11 @@ export default function StageCard({ pipeline, stage, output, sessions, chunks, o
             {output.iteration > 1 && <span className={styles.iteration}> (iteration {output.iteration})</span>}
           </div>
           {contentError && <div className={styles.error}>{contentError}</div>}
-          {content && <pre className={styles.content}>{content}</pre>}
+          {content && (
+            <div className={styles.markdown}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
+          )}
         </div>
       )}
       {isPausedForApproval && (
