@@ -236,6 +236,7 @@ async function startPipelineTool(args, _ctx) {
     projectId: args.project_id,
     name: args.name,
     specInput,
+    gatedStages: args.gated_stages,
   });
   return {
     pipeline_id: pipeline.id,
@@ -243,6 +244,7 @@ async function startPipelineTool(args, _ctx) {
     status: pipeline.status,
     current_stage: pipeline.current_stage,
     branch_name: pipeline.branch_name,
+    gated_stages: pipeline.gated_stages,
   };
 }
 
@@ -379,7 +381,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_start_pipeline',
     description:
-      'Create and start a Mission Control pipeline that will take a raw spec through spec refinement, QA design, implementation planning, implementation, QA execution, code review, and (if needed) fix cycles. Stages 1-3 are user-gated; stages 4-7 run autonomously. Returns the pipeline_id; use mc_get_pipeline_status to track progress and mc_approve_stage / mc_reject_stage to act on gated stages. Provide the spec as raw text via spec, or as a project-relative path to a text/markdown file via spec_file when the spec already exists as a file in the project.',
+      'Create and start a Mission Control pipeline that will take a raw spec through spec refinement, QA design, implementation planning, implementation, QA execution, code review, and (if needed) fix cycles. Approval gates are configured per-pipeline via gated_stages — at each gated stage the pipeline pauses for owner approval before continuing; non-gated stages run autonomously. Defaults to gating stages 1, 2, and 3. Stages 4 (chunked implementation) and 7 (fix cycle) are always autonomous and cannot be gated. Returns the pipeline_id; use mc_get_pipeline_status to track progress and mc_approve_stage / mc_reject_stage to act on gated stages. Provide the spec as raw text via spec, or as a project-relative path to a text/markdown file via spec_file when the spec already exists as a file in the project.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -387,6 +389,11 @@ const TOOL_DEFINITIONS = [
         name: { type: 'string', description: 'Short label for the pipeline (e.g. "Add pagination support"). Required.' },
         spec: { type: 'string', description: 'Raw spec text. Provide either this or spec_file, not both.' },
         spec_file: { type: 'string', description: "Project-relative path to a plain text or markdown file to use as the spec (e.g. 'docs/specs/my-feature.md'). Provide either spec or spec_file, not both." },
+        gated_stages: {
+          type: 'array',
+          items: { type: 'integer', minimum: 1, maximum: 7 },
+          description: 'Stage numbers (1-7) that should pause for owner approval. Stages 4 and 7 are always autonomous and are ignored if included. Defaults to [1, 2, 3].',
+        },
       },
       required: ['project_id', 'name'],
     },
