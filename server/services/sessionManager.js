@@ -210,63 +210,6 @@ class SessionProcess {
     this._currentAssistantMsgId = null; // DB row id for the current assistant message
     this._currentAssistantCliMsgId = null; // CLI message ID (msg_xxx) to detect same vs new message
     this._processedToolUseIds = new Set(); // track which tool_use blocks we've already processed
-    this._seenEventUuids = new Set(); // track which event UUIDs we've already inserted into stream_events
-  }
-
-  /**
-   * Seed the dedup state from existing DB rows. Called on recovery so that
-   * re-reading the JSONL output file from the beginning doesn't insert
-   * duplicate stream_events or assistant messages. Without this, a server
-   * restart mid-session causes the new tail to either skip output (if
-   * starting from end-of-file) or duplicate it (if starting from beginning
-   * with no dedup).
-   */
-  async _seedDedupStateFromDb() {
-    try {
-      const eventsResult = await query(
-        'SELECT event_data FROM stream_events WHERE session_id = $1 ORDER BY timestamp ASC',
-        [this.id]
-      );
-      let lastAssistantCliMsgId = null;
-      let lastAssistantContent = null;
-      for (const row of eventsResult.rows) {
-        let ev;
-        try {
-          ev = typeof row.event_data === 'string' ? JSON.parse(row.event_data) : row.event_data;
-        } catch (_) { continue; }
-        if (ev?.uuid) this._seenEventUuids.add(ev.uuid);
-        if (ev?.type === 'assistant' && ev.message?.id) {
-          lastAssistantCliMsgId = ev.message.id;
-          if (Array.isArray(ev.message.content)) {
-            const text = ev.message.content
-              .filter(b => b.type === 'text')
-              .map(b => b.text)
-              .join('\n');
-            if (text) lastAssistantContent = text;
-          }
-          if (Array.isArray(ev.message.content)) {
-            for (const block of ev.message.content) {
-              if (block.type === 'tool_use' && block.id) {
-                this._processedToolUseIds.add(block.id);
-              }
-            }
-          }
-        }
-      }
-
-      if (lastAssistantCliMsgId && lastAssistantContent) {
-        const msgResult = await query(
-          "SELECT id FROM messages WHERE session_id = $1 AND role = 'assistant' AND content = $2 ORDER BY id DESC LIMIT 1",
-          [this.id, sanitizeAssistantText(lastAssistantContent)]
-        );
-        if (msgResult.rows.length > 0) {
-          this._currentAssistantCliMsgId = lastAssistantCliMsgId;
-          this._currentAssistantMsgId = msgResult.rows[0].id;
-        }
-      }
-    } catch (e) {
-      console.error(`[Session ${this.id.slice(0, 8)}] Failed to seed dedup state:`, e.message);
-    }
   }
 
   addListener(callback) {
@@ -519,12 +462,13 @@ class SessionProcess {
   }
 
   startOutputTail(outputFile) {
-    // Always tail from the start of the file. For fresh spawns the file is
-    // empty so this is a no-op. For recovered sessions (server restart), the
-    // file may already contain output written by the previous server; reading
-    // from the start ensures none of that is missed. The dedup set built by
-    // _seedDedupStateFromDb prevents duplicate inserts.
+    // Track file position for reading new content
     let filePos = 0;
+    try {
+      const stats = fs.statSync(outputFile);
+      filePos = stats.size;
+    } catch (e) {}
+
     let partialLine = '';
 
     const readNewContent = () => {
@@ -850,13 +794,6 @@ class SessionProcess {
   }
 
   processStreamEvent(event) {
-    // Skip events we've already inserted (e.g. when re-tailing the output file
-    // after a server restart). Each Claude CLI event has a unique uuid; we
-    // dedup against the in-memory set, which is seeded from the DB on recovery.
-    if (event.uuid && this._seenEventUuids.has(event.uuid)) {
-      return;
-    }
-
     // Fire-and-forget async DB operations — errors logged but don't block event processing
     this._processStreamEventAsync(event).catch(e => console.error('Stream event DB error:', e.message));
 
@@ -872,7 +809,6 @@ class SessionProcess {
 
     // Persist stream event to DB for CLI history on reload
     if (event.type === 'tool_use' || event.type === 'tool_result' || event.type === 'assistant' || event.type === 'user' || event.type === 'system' || event.type === 'result') {
-      if (event.uuid) this._seenEventUuids.add(event.uuid);
       query(
         `INSERT INTO stream_events (session_id, event_type, event_data, timestamp) VALUES ($1, $2, $3, NOW())`,
         [this.id, event.type, JSON.stringify(event)]
@@ -2065,10 +2001,6 @@ async function recoverTmuxSessions() {
 
     const outputFile = session.getOutputFilePath();
     if (fs.existsSync(outputFile)) {
-      // Seed dedup state from DB before tailing — the tail re-reads the
-      // entire file from the start, so we need to know which events have
-      // already been persisted to avoid duplicate inserts.
-      await session._seedDedupStateFromDb();
       session.startOutputTail(outputFile);
     }
 
