@@ -70,7 +70,7 @@ async function loadPipelineForApproval(pipelineId) {
 
 router.post('/', async (req, res) => {
   try {
-    const { project_id, name, spec_input } = req.body || {};
+    const { project_id, name, spec_input, gated_stages } = req.body || {};
     if (!project_id || !name || !spec_input) {
       return res.status(400).json({ error: 'project_id, name, and spec_input are required' });
     }
@@ -79,12 +79,16 @@ router.post('/', async (req, res) => {
       projectId: project_id,
       name,
       specInput: spec_input,
+      gatedStages: gated_stages,
     });
     res.status(201).json(pipeline);
   } catch (err) {
     console.error('POST /api/pipelines failed:', err);
     if (/already has an active pipeline/i.test(err.message)) {
       return res.status(409).json({ error: err.message });
+    }
+    if (/gatedStages/i.test(err.message)) {
+      return res.status(400).json({ error: err.message });
     }
     res.status(500).json({ error: err.message });
   }

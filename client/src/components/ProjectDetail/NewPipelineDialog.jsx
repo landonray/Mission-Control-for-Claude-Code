@@ -8,9 +8,22 @@ function isFileAccepted(file) {
   return ['md', 'txt', 'markdown'].includes(ext);
 }
 
+const PIPELINE_STAGES = [
+  { stage: 1, name: 'Spec Refinement', gateable: true },
+  { stage: 2, name: 'QA Design', gateable: true },
+  { stage: 3, name: 'Implementation Planning', gateable: true },
+  { stage: 4, name: 'Implementation', gateable: false, note: 'always autonomous' },
+  { stage: 5, name: 'QA Execution', gateable: true },
+  { stage: 6, name: 'Code Review', gateable: true },
+  { stage: 7, name: 'Fix Cycle', gateable: false, note: 'always autonomous' },
+];
+
+const DEFAULT_GATED = [1, 2, 3];
+
 export default function NewPipelineDialog({ projectId, onClose, onCreated }) {
   const [name, setName] = useState('');
   const [specInput, setSpecInput] = useState('');
+  const [gatedStages, setGatedStages] = useState(DEFAULT_GATED);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [attachedFile, setAttachedFile] = useState(null);
@@ -18,6 +31,14 @@ export default function NewPipelineDialog({ projectId, onClose, onCreated }) {
   const fileInputRef = useRef(null);
 
   const canSubmit = name.trim() && specInput.trim() && !submitting;
+
+  function toggleGate(stage) {
+    setGatedStages((prev) =>
+      prev.includes(stage)
+        ? prev.filter((s) => s !== stage)
+        : [...prev, stage].sort((a, b) => a - b)
+    );
+  }
 
   function handleFileChange(e) {
     const file = e.target.files[0];
@@ -49,6 +70,7 @@ export default function NewPipelineDialog({ projectId, onClose, onCreated }) {
         project_id: projectId,
         name: name.trim(),
         spec_input: specInput,
+        gated_stages: gatedStages,
       });
       onCreated(result);
     } catch (err) {
@@ -112,6 +134,36 @@ export default function NewPipelineDialog({ projectId, onClose, onCreated }) {
             {attachError && (
               <div className={styles.attachError}>{attachError}</div>
             )}
+          </div>
+
+          <div className={styles.field}>
+            <span>Approval gates</span>
+            <p className={styles.gateHelp}>
+              Choose the stages where the pipeline should pause and wait for your approval. Unchecked stages run automatically.
+            </p>
+            <ul className={styles.stageList}>
+              {PIPELINE_STAGES.map((s) => {
+                const checked = s.gateable && gatedStages.includes(s.stage);
+                return (
+                  <li
+                    key={s.stage}
+                    className={`${styles.stageRow} ${!s.gateable ? styles.stageRowDisabled : ''}`}
+                  >
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!s.gateable || submitting}
+                        onChange={() => toggleGate(s.stage)}
+                      />
+                      <span className={styles.stageNumber}>Stage {s.stage}</span>
+                      <span className={styles.stageName}>{s.name}</span>
+                      {s.note && <span className={styles.stageNote}>{s.note}</span>}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
           {error && <div className={styles.error}>{error}</div>}
           <div className={styles.actions}>

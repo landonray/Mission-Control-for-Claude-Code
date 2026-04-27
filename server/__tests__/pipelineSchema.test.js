@@ -31,7 +31,7 @@ describe('pipeline schema', () => {
     const columns = result.rows.map((r) => r.column_name);
     expect(columns).toEqual(expect.arrayContaining([
       'id', 'name', 'project_id', 'branch_name', 'status', 'current_stage',
-      'fix_cycle_count', 'pr_url', 'spec_input',
+      'fix_cycle_count', 'pr_url', 'spec_input', 'gated_stages',
       'created_at', 'updated_at', 'completed_at',
     ]));
   });
