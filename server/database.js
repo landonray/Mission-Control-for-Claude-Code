@@ -342,6 +342,7 @@ async function initializeDb() {
     `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
     `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS pr_creation_error TEXT`,
     `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS gated_stages JSONB DEFAULT '[1,2,3]'::jsonb`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cli_session_id TEXT`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

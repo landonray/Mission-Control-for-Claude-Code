@@ -982,7 +982,15 @@ class SessionProcess {
 
       case 'system':
         if (event.subtype === 'init' && event.session_id) {
+          const previousCliSessionId = this.cliSessionId;
           this.cliSessionId = event.session_id;
+          // Persist so server restart / cold resume can pass --resume on next spawn.
+          // Without this, recovery loses the CLI session ID and the next user message
+          // launches a fresh Claude that has no memory of the conversation.
+          if (previousCliSessionId !== event.session_id) {
+            query('UPDATE sessions SET cli_session_id = $1 WHERE id = $2', [event.session_id, this.id])
+              .catch(e => console.error(`[Session ${this.id.slice(0, 8)}] Failed to persist cli_session_id:`, e.message));
+          }
           // When --worktree is used, Claude CLI creates a worktree and reports
           // the actual cwd in the init event. Update our working directory so
           // the files panel and git operations point at the worktree, not main.
@@ -1858,6 +1866,13 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
       tmuxSessionName: sessionRow.tmux_session_name || null
     });
 
+    // Restore the Claude CLI session ID so the resume spawn passes --resume
+    // and Claude picks up exactly where it left off — no synthetic transcript
+    // preamble, no "I'll do this" lazy turns.
+    if (sessionRow.cli_session_id) {
+      session.cliSessionId = sessionRow.cli_session_id;
+    }
+
     session.resuming = true;
     activeSessions.set(sessionId, session);
 
@@ -2016,6 +2031,13 @@ async function recoverTmuxSessions() {
       mcpConnections: [],
       tmuxSessionName: tmuxName
     });
+
+    // Restore the Claude CLI session ID so the next spawnTmuxProcess passes
+    // --resume and Claude continues with full conversation memory instead of
+    // starting fresh and reading a synthetic transcript preamble.
+    if (sessionRow.cli_session_id) {
+      session.cliSessionId = sessionRow.cli_session_id;
+    }
 
     // The tmux session may still be running a claude process
     // We set it as active and start tailing the output
