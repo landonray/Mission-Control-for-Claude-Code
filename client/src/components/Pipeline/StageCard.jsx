@@ -135,6 +135,15 @@ export default function StageCard({ pipeline, stage, output, sessions, chunks, o
 }
 
 function computeStageStatus(pipeline, stage, output) {
+  // Stage 7 (fix cycle) is special: once fix_cycle_count > 0, work has happened
+  // on it even though current_stage gets reset to 5 between cycles for re-QA.
+  // Without this, stage 7 misleadingly reads "Pending" mid-loop.
+  if (stage === 7 && (pipeline.fix_cycle_count || 0) > 0) {
+    if (pipeline.status === 'completed') return 'completed';
+    if (pipeline.status === 'paused_for_escalation') return 'escalated';
+    if (pipeline.status === 'paused_for_failure') return 'failed';
+    return 'in_progress';
+  }
   if (pipeline.status === 'completed' && stage <= pipeline.current_stage) return 'completed';
   if (stage < pipeline.current_stage) return 'completed';
   if (stage > pipeline.current_stage) return 'pending';
