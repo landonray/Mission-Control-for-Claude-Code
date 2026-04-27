@@ -66,6 +66,7 @@ async function ensureFixSession(projectId, deps = {}) {
     }),
     useWorktree: true,
     permissionMode: 'auto',
+    sessionType: 'implementation',
   });
 
   // Claim the session only if no other caller raced us to it. If the claim
