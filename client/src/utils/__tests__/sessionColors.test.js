@@ -29,6 +29,12 @@ describe('sessionColors', () => {
     expect(colorForSessionType('eval_gatherer')).toBe('gray');
   });
 
+  it('maps manual to its own teal color and "M" badge', () => {
+    expect(colorForSessionType('manual')).toBe('manual');
+    expect(badgeForSessionType('manual')).toBe('M');
+    expect(labelForSessionType('manual')).toBe('Manual');
+  });
+
   it('returns the manual color for unknown / null types', () => {
     expect(colorForSessionType(null)).toBe('manual');
     expect(colorForSessionType('something_new')).toBe('manual');
