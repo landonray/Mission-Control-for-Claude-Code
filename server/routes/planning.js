@@ -7,6 +7,13 @@ const { query } = require('../database');
 const decisionLog = require('../services/decisionLog');
 const { appendOwnerDecisionToContextDoc } = require('../services/contextDocAppender');
 
+function broadcastDecisionsChanged(payload) {
+  try {
+    const websocket = require('../websocket');
+    websocket.broadcastToAll({ type: 'decisions_changed', source: 'planning', ...payload });
+  } catch { /* websocket may not be initialized in tests */ }
+}
+
 // decisionChat is ESM — use lazy dynamic import
 // Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
 function unwrapDefault(mod) {
@@ -301,6 +308,7 @@ router.post('/escalations/:id/answer', async (req, res) => {
       reasoning_summary: '',
       addToContextDoc,
     });
+    broadcastDecisionsChanged({ questionId: id });
     res.json(result);
   } catch (err) {
     if (err.statusCode === 404) {
@@ -390,6 +398,7 @@ router.post('/escalations/:id/dismiss', async (req, res) => {
        WHERE id = $1`,
       [id]
     );
+    broadcastDecisionsChanged({ questionId: id });
     res.json({ status: 'dismissed' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -441,6 +450,7 @@ router.post('/escalations/:id/finalize', async (req, res) => {
       reasoning_summary: (reasoning_summary || '').trim(),
       addToContextDoc: addToContextDoc || 'neither',
     });
+    broadcastDecisionsChanged({ questionId: req.params.id });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -13,7 +13,7 @@ export default function DecisionsDashboard() {
       </div>
       <h1>Decisions</h1>
       <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
-        Pending decisions from planning sessions across all projects, grouped by project. Oldest projects appear first.
+        Everything waiting on you — planning escalations and pipeline stages awaiting approval — across all projects, grouped by project. Oldest first.
       </p>
       <DecisionsList groupByProject />
     </div>

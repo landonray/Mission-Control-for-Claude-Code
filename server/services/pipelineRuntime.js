@@ -12,6 +12,9 @@ let started = null;
 function broadcastPipelineChanged(pipelineId) {
   try {
     websocket.broadcastToAll({ type: 'pipeline_status_changed', pipelineId });
+    // The unified Decisions dashboard listens for this generic event so a
+    // single subscription covers both planning escalations and pipelines.
+    websocket.broadcastToAll({ type: 'decisions_changed', source: 'pipeline', pipelineId });
   } catch (err) {
     // websocket may not be initialized yet (e.g. in tests) — silent fallback
   }

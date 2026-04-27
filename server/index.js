@@ -35,6 +35,7 @@ app.use('/api/transcribe', require('./routes/transcribe'));
 app.use('/api/mcp-tokens', require('./routes/mcpTokens'));
 app.use('/api/planning', require('./routes/planning'));
 app.use('/api/pipelines', require('./routes/pipelines'));
+app.use('/api/decisions', require('./routes/decisions'));
 app.use('/mcp', require('./routes/mcpServer'));
 
 // Model config

@@ -8,6 +8,14 @@ vi.mock('../../utils/api.js', () => ({
   api: { get: vi.fn() },
 }));
 
+class StubWebSocket {
+  constructor() {}
+  close() {}
+  set onmessage(_fn) {}
+  set onopen(_fn) {}
+}
+globalThis.WebSocket = StubWebSocket;
+
 describe('usePendingDecisionsCount', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -24,7 +32,7 @@ describe('usePendingDecisionsCount', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(result.current.count).toBe(4);
-    expect(api.get).toHaveBeenCalledWith('/api/planning/escalations/count');
+    expect(api.get).toHaveBeenCalledWith('/api/decisions/pending/count');
   });
 
   it('polls every 30 seconds', async () => {

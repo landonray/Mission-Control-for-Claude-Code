@@ -1,10 +1,72 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const router = express.Router();
 const repo = require('../services/pipelineRepo');
 const runtime = require('../services/pipelineRuntime');
 const { query } = require('../database');
+
+const STAGE_NAMES = {
+  1: 'Spec Refinement',
+  2: 'QA Design',
+  3: 'Implementation Planning',
+  4: 'Implementation',
+  5: 'QA Execution',
+  6: 'Code Review',
+  7: 'Fix Cycle',
+};
+
+// decisionChat is an ESM module — load lazily to handle the CJS/ESM bridge.
+function unwrapDefault(mod) {
+  if (!mod) return mod;
+  if (typeof mod.buildPipelineStagePrompt === 'function') return mod;
+  if (mod.default && typeof mod.default === 'object') return mod.default;
+  return mod;
+}
+let _decisionChat;
+async function getDecisionChat() {
+  if (!_decisionChat) {
+    _decisionChat = unwrapDefault(await import('../services/decisionChat.js'));
+  }
+  return _decisionChat;
+}
+
+async function loadProjectDocs(projectRoot) {
+  const read = (filename) => {
+    if (!projectRoot) return '';
+    const fp = path.join(projectRoot, 'docs', filename);
+    try { return fs.readFileSync(fp, 'utf8'); } catch { return ''; }
+  };
+  return {
+    productMd: read('PRODUCT.md'),
+    architectureMd: read('ARCHITECTURE.md'),
+    decisionsMd: read('decisions.md'),
+  };
+}
+
+async function loadPipelineForApproval(pipelineId) {
+  const pipeline = await repo.getPipeline(pipelineId);
+  if (!pipeline) return { error: 'Pipeline not found', status: 404 };
+  if (pipeline.status !== 'paused_for_approval') {
+    return { error: 'Pipeline is not awaiting approval', status: 409 };
+  }
+  const stage = pipeline.current_stage;
+  const output = await repo.getLatestStageOutput(pipelineId, stage);
+  const projectRow = await query('SELECT root_path FROM projects WHERE id = $1', [pipeline.project_id]);
+  const projectRoot = projectRow.rows[0]?.root_path;
+  let stageOutput = '';
+  if (output && output.output_path && projectRoot) {
+    const fp = path.join(projectRoot, output.output_path);
+    try { stageOutput = fs.readFileSync(fp, 'utf8'); } catch { /* best effort */ }
+  }
+  return {
+    pipeline,
+    stage: { stage, name: STAGE_NAMES[stage] || `Stage ${stage}`, output_path: output?.output_path || null },
+    stageOutput,
+    projectRoot,
+  };
+}
 
 router.post('/', async (req, res) => {
   try {
@@ -109,6 +171,140 @@ router.get('/:id/output/:stage', async (req, res) => {
     res.json({ content, output_path: output.output_path, status: output.status, iteration: output.iteration });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/pipelines/:id/approval-chat
+// Returns the chat history for the current paused stage.
+router.get('/:id/approval-chat', async (req, res) => {
+  try {
+    const ctx = await loadPipelineForApproval(req.params.id);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    const subjectId = `${ctx.pipeline.id}:${ctx.stage.stage}`;
+    const result = await query(
+      `SELECT id, role, content, created_at FROM decision_chats
+       WHERE subject_type = 'pipeline_stage' AND subject_id = $1
+       ORDER BY created_at ASC`,
+      [subjectId]
+    );
+    res.json({
+      stage: ctx.stage,
+      pipeline: { id: ctx.pipeline.id, name: ctx.pipeline.name, status: ctx.pipeline.status },
+      messages: result.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pipelines/:id/approval-chat
+// Body: { message: string }
+// Appends the user message, runs an LLM turn with the stage doc as context,
+// stores the assistant reply, and returns both messages.
+router.post('/:id/approval-chat', async (req, res) => {
+  const { message } = req.body || {};
+  if (!message || !String(message).trim()) {
+    return res.status(400).json({ error: 'message is required' });
+  }
+  try {
+    const ctx = await loadPipelineForApproval(req.params.id);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+    const subjectId = `${ctx.pipeline.id}:${ctx.stage.stage}`;
+
+    const userId = randomUUID();
+    await query(
+      `INSERT INTO decision_chats (id, subject_type, subject_id, role, content, created_at)
+       VALUES ($1, 'pipeline_stage', $2, 'user', $3, NOW())`,
+      [userId, subjectId, String(message).trim()]
+    );
+
+    const history = await query(
+      `SELECT role, content FROM decision_chats
+       WHERE subject_type = 'pipeline_stage' AND subject_id = $1
+       ORDER BY created_at ASC`,
+      [subjectId]
+    );
+
+    const docs = await loadProjectDocs(ctx.projectRoot);
+    const { buildPipelineStagePrompt, sendChatTurn } = await getDecisionChat();
+    const systemPrompt = buildPipelineStagePrompt({
+      pipeline: ctx.pipeline,
+      stage: ctx.stage,
+      stageOutput: ctx.stageOutput,
+      docs,
+    });
+    const reply = await sendChatTurn({ systemPrompt, messages: history.rows });
+
+    const assistantId = randomUUID();
+    await query(
+      `INSERT INTO decision_chats (id, subject_type, subject_id, role, content, created_at)
+       VALUES ($1, 'pipeline_stage', $2, 'assistant', $3, NOW())`,
+      [assistantId, subjectId, reply]
+    );
+
+    res.json({
+      user: { id: userId, role: 'user', content: String(message).trim() },
+      assistant: { id: assistantId, role: 'assistant', content: reply },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/pipelines/:id/send-back
+// Body: { feedback?: string }
+// If feedback is provided, use it directly. Otherwise, summarize the chat
+// history into a feedback string. Persists the feedback on the rejected
+// stage output, then calls the existing reject-and-rerun flow.
+router.post('/:id/send-back', async (req, res) => {
+  try {
+    const ctx = await loadPipelineForApproval(req.params.id);
+    if (ctx.error) return res.status(ctx.status).json({ error: ctx.error });
+
+    let feedback = req.body && req.body.feedback ? String(req.body.feedback).trim() : '';
+
+    if (!feedback) {
+      const subjectId = `${ctx.pipeline.id}:${ctx.stage.stage}`;
+      const history = await query(
+        `SELECT role, content FROM decision_chats
+         WHERE subject_type = 'pipeline_stage' AND subject_id = $1
+         ORDER BY created_at ASC`,
+        [subjectId]
+      );
+      if (history.rows.length === 0) {
+        return res.status(400).json({ error: 'feedback is required (or chat with the thinking partner first)' });
+      }
+      const docs = await loadProjectDocs(ctx.projectRoot);
+      const { buildPipelineStagePrompt, draftStageFeedback } = await getDecisionChat();
+      const systemPrompt = buildPipelineStagePrompt({
+        pipeline: ctx.pipeline,
+        stage: ctx.stage,
+        stageOutput: ctx.stageOutput,
+        docs,
+      });
+      const drafted = await draftStageFeedback({ systemPrompt, messages: history.rows });
+      feedback = (drafted.feedback || '').trim();
+      if (!feedback) {
+        return res.status(500).json({ error: 'Failed to summarize feedback from chat' });
+      }
+    }
+
+    // Persist the feedback on the latest stage output for audit trail.
+    await query(
+      `UPDATE pipeline_stage_outputs
+         SET rejection_feedback = $1
+         WHERE id = (
+           SELECT id FROM pipeline_stage_outputs
+           WHERE pipeline_id = $2 AND stage = $3
+           ORDER BY iteration DESC LIMIT 1
+         )`,
+      [feedback, ctx.pipeline.id, ctx.stage.stage]
+    );
+
+    await runtime.rejectAndBroadcast(ctx.pipeline.id, feedback);
+    res.json({ ok: true, feedback });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 });
 

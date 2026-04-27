@@ -142,3 +142,56 @@ export async function draftFinalAnswer({
     reasoning_summary: raw.slice(reasoningIdx + 'REASONING:'.length).trim(),
   };
 }
+
+/**
+ * Build a system prompt for a pipeline-stage approval chat. The thinking
+ * partner is helping the owner decide whether to approve a stage's output
+ * document or send it back to the agent with feedback.
+ */
+export function buildPipelineStagePrompt({ pipeline, stage, stageOutput, docs }) {
+  return [
+    'You are helping the project owner review a pipeline stage output and decide whether to approve it or send it back with feedback.',
+    'Be concise. Push back if their reasoning seems off. If the document looks correct, say so. If they want changes, help them sharpen the feedback into something the agent can act on.',
+    '',
+    `## Pipeline: ${pipeline.name}`,
+    `Current stage awaiting approval: ${stage.name} (stage ${stage.stage}).`,
+    '',
+    '## Stage output document',
+    truncate(stageOutput || '(empty)'),
+    '',
+    '## Project PRODUCT.md',
+    truncate(docs.productMd),
+    '',
+    '## Project ARCHITECTURE.md',
+    truncate(docs.architectureMd),
+    '',
+    '## Project decisions.md',
+    truncate(docs.decisionsMd),
+  ].join('\n');
+}
+
+/**
+ * Summarize a stage-approval chat into a concise feedback string for the agent.
+ */
+export async function draftStageFeedback({
+  llmGateway = { chatCompletion },
+  systemPrompt,
+  messages,
+  model = DEFAULT_MODEL,
+}) {
+  const draftPrompt = [
+    ...messages,
+    {
+      role: 'user',
+      content: 'Based on this conversation, write the feedback the agent needs to revise the stage output. Be specific and actionable in 2-5 sentences. Do not add any other text or labels — just the feedback itself.',
+    },
+  ];
+  const raw = await llmGateway.chatCompletion({
+    system: systemPrompt,
+    messages: draftPrompt,
+    model,
+    max_tokens: 600,
+  });
+  return { feedback: (raw || '').trim() };
+}
+
