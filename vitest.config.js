@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 import { existsSync } from 'fs';
+import dotenv from 'dotenv';
+
+// Load environment variables for tests
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 // React lives in client/node_modules — resolve from there to avoid version mismatch
 // with root node_modules (which may have a different React version).

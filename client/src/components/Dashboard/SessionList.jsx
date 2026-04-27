@@ -4,7 +4,8 @@ import { useApp } from '../../context/AppContext';
 import { api } from '../../utils/api';
 import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../utils/format';
 import NewSessionModal from './NewSessionModal';
-import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight, ExternalLink, CheckSquare } from 'lucide-react';
+import { usePendingDecisionsCount } from '../../hooks/usePendingDecisionsCount.js';
 import styles from './SessionList.module.css';
 
 function renderLastAction(summary) {
@@ -33,6 +34,7 @@ export default function SessionList() {
   const searchTimerRef = useRef(null);
   const navigate = useNavigate();
   const { id: activeId } = useParams();
+  const { count: pendingDecisions } = usePendingDecisionsCount();
 
   useEffect(() => {
     loadSessions();
@@ -124,6 +126,28 @@ export default function SessionList() {
       <div className="panel-header">
         <h2>Sessions</h2>
         <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => navigate('/decisions')}
+            title="Decisions"
+            style={{ position: 'relative' }}
+          >
+            <CheckSquare size={14} />
+            {pendingDecisions > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: -4, right: -4,
+                background: 'var(--danger, #d33)',
+                color: 'white',
+                borderRadius: 10,
+                fontSize: 10,
+                padding: '0 5px',
+                minWidth: 16,
+                textAlign: 'center',
+                lineHeight: '16px',
+              }}>{pendingDecisions}</span>
+            )}
+          </button>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => navigate('/settings')}

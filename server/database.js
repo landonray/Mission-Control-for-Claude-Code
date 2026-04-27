@@ -221,6 +221,14 @@ async function initializeDb() {
       UNIQUE(project_id, pr_number)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_context_doc_extractions_project ON context_doc_extractions(project_id, pr_merged_at)`,
+    `CREATE TABLE IF NOT EXISTS decision_chats (
+      id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL REFERENCES planning_questions(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_decision_chats_question_id ON decision_chats(question_id, created_at)`,
     `CREATE TABLE IF NOT EXISTS pipelines (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
