@@ -14,6 +14,16 @@ const STATUS_LABELS = {
   failed: 'Failed',
 };
 
+const STAGE_LABELS = {
+  1: 'Spec Refinement',
+  2: 'QA Design',
+  3: 'Implementation Planning',
+  4: 'Implementation',
+  5: 'QA Execution',
+  6: 'Code Review',
+  7: 'Fix Cycle',
+};
+
 export default function PipelinesPanel({ projectId }) {
   const [pipelines, setPipelines] = useState(null);
   const [showDialog, setShowDialog] = useState(false);
@@ -56,7 +66,12 @@ export default function PipelinesPanel({ projectId }) {
               <span className={`${styles.status} ${styles[`status_${p.status}`] || ''}`}>
                 {STATUS_LABELS[p.status] || p.status}
               </span>
-              <span className={styles.stage}>Stage {p.current_stage || 0} / 3</span>
+              <span className={styles.stage}>
+                Stage {p.current_stage || 0} / 7
+                {p.current_stage > 0 && STAGE_LABELS[p.current_stage]
+                  ? ` · ${STAGE_LABELS[p.current_stage]}`
+                  : ''}
+              </span>
               <span className={styles.created}>{new Date(p.created_at).toLocaleString()}</span>
             </li>
           ))}

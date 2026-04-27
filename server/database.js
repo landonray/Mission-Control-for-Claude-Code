@@ -262,7 +262,36 @@ async function initializeDb() {
       prompt TEXT NOT NULL,
       updated_at TEXT DEFAULT NOW(),
       UNIQUE(pipeline_id, stage)
-    )`
+    )`,
+    `CREATE TABLE IF NOT EXISTS pipeline_chunks (
+      id SERIAL PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      chunk_index INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      files TEXT,
+      qa_scenarios TEXT,
+      dependencies TEXT,
+      complexity TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+      started_at TEXT,
+      completed_at TEXT,
+      created_at TEXT DEFAULT NOW(),
+      UNIQUE(pipeline_id, chunk_index)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_chunks_pipeline ON pipeline_chunks(pipeline_id, chunk_index)`,
+    `CREATE TABLE IF NOT EXISTS pipeline_escalations (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL,
+      summary TEXT NOT NULL,
+      detail TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT DEFAULT NOW(),
+      resolved_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_escalations_pipeline ON pipeline_escalations(pipeline_id, status)`
   ];
 
   for (const stmt of statements) {

@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
 const orchestrator = require('./planningSessionOrchestrator');
+const pipelineRepo = require('./pipelineRepo');
+const pipelineRuntime = require('./pipelineRuntime');
 
 /**
  * Tool handlers for the Mission Control MCP server (Phase 1).
@@ -139,6 +141,74 @@ async function getStatusTool(args, _ctx) {
   };
 }
 
+async function startPipelineTool(args, _ctx) {
+  if (!args.project_id) {
+    throw new Error('project_id is required. Call mc_list_projects to discover available projects.');
+  }
+  if (!args.name || !String(args.name).trim()) {
+    throw new Error('name is required (a short label for the pipeline).');
+  }
+  if (!args.spec || !String(args.spec).trim()) {
+    throw new Error('spec is required (the raw spec text the pipeline will refine and build).');
+  }
+  await assertProjectExists(args.project_id);
+  const orch = pipelineRuntime.getOrchestrator();
+  const pipeline = await orch.createAndStart({
+    projectId: args.project_id,
+    name: args.name,
+    specInput: args.spec,
+  });
+  return {
+    pipeline_id: pipeline.id,
+    name: pipeline.name,
+    status: pipeline.status,
+    current_stage: pipeline.current_stage,
+    branch_name: pipeline.branch_name,
+  };
+}
+
+async function getPipelineStatusTool(args, _ctx) {
+  if (!args.pipeline_id) throw new Error('pipeline_id is required');
+  const pipeline = await pipelineRepo.getPipeline(args.pipeline_id);
+  if (!pipeline) throw new Error(`Pipeline ${args.pipeline_id} not found`);
+  const outputs = await pipelineRepo.listStageOutputs(pipeline.id);
+  const chunks = await pipelineRepo.listChunks(pipeline.id);
+  const escalations = await pipelineRepo.listOpenEscalations(pipeline.id);
+  return {
+    pipeline_id: pipeline.id,
+    name: pipeline.name,
+    status: pipeline.status,
+    current_stage: pipeline.current_stage,
+    fix_cycle_count: pipeline.fix_cycle_count || 0,
+    branch_name: pipeline.branch_name,
+    completed_at: pipeline.completed_at,
+    outputs: outputs.map((o) => ({
+      stage: o.stage, iteration: o.iteration, output_path: o.output_path, status: o.status,
+    })),
+    chunks: chunks.map((c) => ({
+      chunk_index: c.chunk_index, name: c.name, status: c.status,
+    })),
+    escalations: escalations.map((e) => ({ stage: e.stage, summary: e.summary, detail: e.detail })),
+  };
+}
+
+async function approveStageTool(args, _ctx) {
+  if (!args.pipeline_id) throw new Error('pipeline_id is required');
+  await pipelineRuntime.approveAndBroadcast(args.pipeline_id);
+  const pipeline = await pipelineRepo.getPipeline(args.pipeline_id);
+  return { ok: true, current_stage: pipeline.current_stage, status: pipeline.status };
+}
+
+async function rejectStageTool(args, _ctx) {
+  if (!args.pipeline_id) throw new Error('pipeline_id is required');
+  if (!args.feedback || !String(args.feedback).trim()) {
+    throw new Error('feedback is required (a concrete description of what to change).');
+  }
+  await pipelineRuntime.rejectAndBroadcast(args.pipeline_id, args.feedback);
+  const pipeline = await pipelineRepo.getPipeline(args.pipeline_id);
+  return { ok: true, current_stage: pipeline.current_stage, status: pipeline.status };
+}
+
 const TOOL_DEFINITIONS = [
   {
     name: 'mc_list_projects',
@@ -209,6 +279,61 @@ const TOOL_DEFINITIONS = [
     },
     handler: getStatusTool,
   },
+  {
+    name: 'mc_start_pipeline',
+    description:
+      'Create and start a Mission Control pipeline that will take a raw spec through spec refinement, QA design, implementation planning, implementation, QA execution, code review, and (if needed) fix cycles. Stages 1-3 are user-gated; stages 4-7 run autonomously. Returns the pipeline_id; use mc_get_pipeline_status to track progress and mc_approve_stage / mc_reject_stage to act on gated stages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'Mission Control project ID. Required. Call mc_list_projects to discover available projects.' },
+        name: { type: 'string', description: 'Short label for the pipeline (e.g. "Add pagination support"). Required.' },
+        spec: { type: 'string', description: 'Raw spec text the pipeline will refine and build. Required.' },
+      },
+      required: ['project_id', 'name', 'spec'],
+    },
+    handler: startPipelineTool,
+  },
+  {
+    name: 'mc_get_pipeline_status',
+    description:
+      'Get the current state of a pipeline: status, current stage, stage outputs produced so far, chunk progress for stage 4, fix cycle count, and any open escalations the project owner needs to resolve. Status values: draft, running, paused_for_approval (gated stage waiting for the owner), paused_for_failure (output never produced), paused_for_escalation (fix cycle cap exceeded), completed, failed.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pipeline_id: { type: 'string', description: 'Pipeline ID returned by mc_start_pipeline.' },
+      },
+      required: ['pipeline_id'],
+    },
+    handler: getPipelineStatusTool,
+  },
+  {
+    name: 'mc_approve_stage',
+    description:
+      'Approve the current paused stage of a pipeline so it advances to the next stage. Only works when the pipeline is paused_for_approval. After mc_approve_stage on stage 3, the pipeline parses the build plan and starts the autonomous implementation phase.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pipeline_id: { type: 'string' },
+      },
+      required: ['pipeline_id'],
+    },
+    handler: approveStageTool,
+  },
+  {
+    name: 'mc_reject_stage',
+    description:
+      'Reject the current paused stage of a pipeline and re-run it with the supplied feedback added to the prompt. Only works when the pipeline is paused_for_approval. Use this when the stage output has the wrong shape or scope and you want the same stage to try again.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pipeline_id: { type: 'string' },
+        feedback: { type: 'string', description: 'What to change. Be specific so the next attempt addresses it.' },
+      },
+      required: ['pipeline_id', 'feedback'],
+    },
+    handler: rejectStageTool,
+  },
 ];
 
 module.exports = {
@@ -218,4 +343,8 @@ module.exports = {
   getStatusTool,
   listProjectsTool,
   readDescription,
+  startPipelineTool,
+  getPipelineStatusTool,
+  approveStageTool,
+  rejectStageTool,
 };

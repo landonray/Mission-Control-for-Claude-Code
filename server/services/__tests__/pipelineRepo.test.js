@@ -125,5 +125,107 @@ describe('pipelineRepo', () => {
       expect(prompts['1']).toBe('CUSTOM PROMPT FOR STAGE 1');
       expect(prompts['2']).not.toBe('CUSTOM PROMPT FOR STAGE 1');
     });
+
+    it('seeds default prompts for stages 4-7 too', async () => {
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 'spec' });
+      const prompts = await repo.getStagePrompts(p.id);
+      for (const stage of ['4', '5', '6', '7']) {
+        expect(prompts[stage]).toBeDefined();
+        expect(prompts[stage].length).toBeGreaterThan(50);
+      }
+    });
+  });
+
+  describe('chunks', () => {
+    it('creates and lists chunks in order', async () => {
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'Chunky', specInput: 'spec' });
+      await repo.createChunks(p.id, [
+        { index: 1, name: 'first', body: 'do this', files: 'a.js', qaScenarios: 'a', dependencies: 'none', complexity: 'small' },
+        { index: 2, name: 'second', body: 'then this', files: 'b.js', qaScenarios: 'b', dependencies: '1', complexity: 'medium' },
+      ]);
+      const list = await repo.listChunks(p.id);
+      expect(list).toHaveLength(2);
+      expect(list[0].chunk_index).toBe(1);
+      expect(list[0].name).toBe('first');
+      expect(list[1].chunk_index).toBe(2);
+      expect(list[1].complexity).toBe('medium');
+    });
+
+    it('marks a chunk running and completed', async () => {
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'Chunky', specInput: 'spec' });
+      await repo.createChunks(p.id, [
+        { index: 1, name: 'one', body: 'b', files: '', qaScenarios: '', dependencies: '', complexity: '' },
+      ]);
+      const next = await repo.getNextPendingChunk(p.id);
+      expect(next.chunk_index).toBe(1);
+      expect(next.status).toBe('pending');
+
+      const sessionId = `sess-${crypto.randomBytes(4).toString('hex')}`;
+      await query(
+        `INSERT INTO sessions (id, name, status) VALUES ($1, 'fake', 'idle')`,
+        [sessionId]
+      );
+      await repo.markChunkRunning(p.id, 1, sessionId);
+      const running = (await repo.listChunks(p.id))[0];
+      expect(running.status).toBe('running');
+      expect(running.session_id).toBe(sessionId);
+      expect(running.started_at).not.toBeNull();
+
+      await repo.markChunkCompleted(p.id, 1);
+      const done = (await repo.listChunks(p.id))[0];
+      expect(done.status).toBe('completed');
+      expect(done.completed_at).not.toBeNull();
+
+      const noNext = await repo.getNextPendingChunk(p.id);
+      expect(noNext).toBeNull();
+
+      await query('DELETE FROM sessions WHERE id = $1', [sessionId]);
+    });
+
+    it('finds a chunk by session id', async () => {
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'Chunky', specInput: 'spec' });
+      await repo.createChunks(p.id, [
+        { index: 1, name: 'one', body: 'b', files: '', qaScenarios: '', dependencies: '', complexity: '' },
+      ]);
+      const sessionId = `sess-${crypto.randomBytes(4).toString('hex')}`;
+      await query(
+        `INSERT INTO sessions (id, name, status) VALUES ($1, 'fake', 'idle')`,
+        [sessionId]
+      );
+      await repo.markChunkRunning(p.id, 1, sessionId);
+      const found = await repo.findChunkBySessionId(sessionId);
+      expect(found).not.toBeNull();
+      expect(found.pipeline_id).toBe(p.id);
+      expect(found.chunk_index).toBe(1);
+      await query('DELETE FROM sessions WHERE id = $1', [sessionId]);
+    });
+  });
+
+  describe('fix cycle', () => {
+    it('increments fix_cycle_count', async () => {
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 'spec' });
+      const after1 = await repo.incrementFixCycleCount(p.id);
+      expect(after1).toBe(1);
+      const after2 = await repo.incrementFixCycleCount(p.id);
+      expect(after2).toBe(2);
+    });
+  });
+
+  describe('escalation', () => {
+    it('records and resolves an escalation', async () => {
+      const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 'spec' });
+      const esc = await repo.createEscalation({
+        pipelineId: p.id, stage: 7, summary: 'Stuck after 3 fix cycles', detail: 'QA still failing',
+      });
+      expect(esc.id).toBeDefined();
+      expect(esc.status).toBe('open');
+
+      const open = await repo.listOpenEscalations(p.id);
+      expect(open).toHaveLength(1);
+
+      await repo.resolveEscalation(esc.id);
+      const after = await repo.listOpenEscalations(p.id);
+      expect(after).toHaveLength(0);
+    });
   });
 });

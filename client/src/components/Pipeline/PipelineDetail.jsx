@@ -66,7 +66,7 @@ export default function PipelineDetail() {
   if (error) return <div className={styles.error}>{error}</div>;
   if (!data) return <div className={styles.loading}>Loading…</div>;
 
-  const { pipeline, outputs, prompts, sessions } = data;
+  const { pipeline, outputs, prompts, sessions, chunks = [], escalations = [] } = data;
   const sessionsByStage = (stage) => sessions.filter((s) => s.pipeline_stage === stage);
   const outputForStage = (stage) =>
     outputs.filter((o) => o.stage === stage).sort((a, b) => b.iteration - a.iteration)[0] || null;
@@ -79,6 +79,9 @@ export default function PipelineDetail() {
           <h2>{pipeline.name}</h2>
           <p className={styles.meta}>
             Branch: <code>{pipeline.branch_name}</code> · Status: <strong>{pipeline.status}</strong>
+            {pipeline.fix_cycle_count > 0 && (
+              <span> · Fix cycles used: <strong>{pipeline.fix_cycle_count}</strong> / 3</span>
+            )}
           </p>
         </div>
         <button onClick={() => setShowPrompts((s) => !s)}>
@@ -88,18 +91,31 @@ export default function PipelineDetail() {
 
       {actionError && <div className={styles.error}>{actionError}</div>}
 
+      {escalations.length > 0 && (
+        <div className={styles.escalationBanner}>
+          <h4>Pipeline needs your attention</h4>
+          {escalations.map((esc) => (
+            <div key={esc.id} className={styles.escalation}>
+              <div><strong>Stage {esc.stage}:</strong> {esc.summary}</div>
+              {esc.detail && <pre className={styles.escalationDetail}>{esc.detail}</pre>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {showPrompts && (
         <StagePromptEditor prompts={prompts} onSave={handlePromptUpdate} />
       )}
 
       <div className={styles.stages}>
-        {[1, 2, 3].map((stage) => (
+        {[1, 2, 3, 4, 5, 6, 7].map((stage) => (
           <StageCard
             key={stage}
             pipeline={pipeline}
             stage={stage}
             output={outputForStage(stage)}
             sessions={sessionsByStage(stage)}
+            chunks={stage === 4 ? chunks : []}
             onApprove={handleApprove}
             onReject={handleReject}
           />
