@@ -211,6 +211,46 @@ describe('pipelineRepo', () => {
     });
   });
 
+  describe('gated_stages', () => {
+    it('normalizeGatedStages returns the default when input is undefined', () => {
+      expect(repo.normalizeGatedStages(undefined)).toEqual([1, 2, 3]);
+      expect(repo.normalizeGatedStages(null)).toEqual([1, 2, 3]);
+    });
+
+    it('normalizeGatedStages dedupes, sorts, and drops non-gateable stages 4 and 7', () => {
+      expect(repo.normalizeGatedStages([3, 1, 2, 1])).toEqual([1, 2, 3]);
+      expect(repo.normalizeGatedStages([4, 5, 7, 6])).toEqual([5, 6]);
+      expect(repo.normalizeGatedStages([])).toEqual([]);
+    });
+
+    it('normalizeGatedStages rejects non-array and out-of-range values', () => {
+      expect(() => repo.normalizeGatedStages('123')).toThrow(/array/);
+      expect(() => repo.normalizeGatedStages([0])).toThrow(/between 1 and 7/);
+      expect(() => repo.normalizeGatedStages([8])).toThrow(/between 1 and 7/);
+      expect(() => repo.normalizeGatedStages(['x'])).toThrow(/between 1 and 7/);
+    });
+
+    it('createPipeline persists gated_stages when provided and defaults to [1,2,3] when omitted', async () => {
+      const a = await repo.createPipeline({
+        projectId: TEST_PROJECT_ID,
+        name: 'Default gates',
+        specInput: 'spec',
+      });
+      expect(a.gated_stages).toEqual([1, 2, 3]);
+
+      const b = await repo.createPipeline({
+        projectId: TEST_PROJECT_ID,
+        name: 'Custom gates',
+        specInput: 'spec',
+        gatedStages: [1, 5],
+      });
+      expect(b.gated_stages).toEqual([1, 5]);
+
+      const reloaded = await repo.getPipeline(b.id);
+      expect(reloaded.gated_stages).toEqual([1, 5]);
+    });
+  });
+
   describe('escalation', () => {
     it('records and resolves an escalation', async () => {
       const p = await repo.createPipeline({ projectId: TEST_PROJECT_ID, name: 'X', specInput: 'spec' });

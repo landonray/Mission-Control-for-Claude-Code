@@ -547,18 +547,25 @@ class SessionProcess {
 
     // Emit session_complete so the pipeline orchestrator (and any other listener)
     // can react. Includes pipeline metadata when the session is part of a pipeline.
-    query('SELECT pipeline_id, pipeline_stage FROM sessions WHERE id = $1', [this.id])
-      .then((r) => {
-        const row = r.rows[0] || {};
-        globalEvents.emit('session_complete', {
-          sessionId: this.id,
-          pipelineId: row.pipeline_id || null,
-          pipelineStage: row.pipeline_stage || null,
+    // Only fire once per session: implementation sessions re-enter this function
+    // after each quality-review iteration (sendMessage respawns the agent), and a
+    // duplicate emit would cause the pipeline orchestrator to spawn duplicate
+    // downstream sessions (e.g. two stage-5 QA sessions after a stage-7 fix cycle).
+    if (!this._sessionCompleteEmitted) {
+      this._sessionCompleteEmitted = true;
+      query('SELECT pipeline_id, pipeline_stage FROM sessions WHERE id = $1', [this.id])
+        .then((r) => {
+          const row = r.rows[0] || {};
+          globalEvents.emit('session_complete', {
+            sessionId: this.id,
+            pipelineId: row.pipeline_id || null,
+            pipelineStage: row.pipeline_stage || null,
+          });
+        })
+        .catch((err) => {
+          console.error(`[Session ${this.id.slice(0, 8)}] Failed to emit session_complete:`, err.message);
         });
-      })
-      .catch((err) => {
-        console.error(`[Session ${this.id.slice(0, 8)}] Failed to emit session_complete:`, err.message);
-      });
+    }
 
     const wasInterrupted = this._interrupted;
     this._interrupted = false;
@@ -2068,6 +2075,7 @@ async function recoverTmuxSessions() {
 const { VALID_MODELS, DEFAULT_MODEL, MODEL_ROLES, isValidModel } = require('../config/models');
 
 const VALID_SESSION_TYPES = [
+  'manual',
   'implementation',
   'planning',
   'extraction',
@@ -2078,6 +2086,9 @@ const VALID_SESSION_TYPES = [
   'qa_execution',
   'code_review',
 ];
+
+// Session types that perform real code work and should run post-session quality checks.
+const CODING_SESSION_TYPES = new Set(['manual', 'implementation']);
 
 async function createSession(options = {}) {
   const id = uuidv4();
@@ -2092,7 +2103,7 @@ async function createSession(options = {}) {
     throw new Error(`Invalid effort "${options.effort}". Must be one of: high, xhigh, max`);
   }
 
-  const sessionType = options.sessionType || 'implementation';
+  const sessionType = options.sessionType || 'manual';
   if (!VALID_SESSION_TYPES.includes(sessionType)) {
     throw new Error(`Invalid session_type "${sessionType}". Must be one of: ${VALID_SESSION_TYPES.join(', ')}`);
   }
@@ -2131,7 +2142,8 @@ async function createSession(options = {}) {
   session.askingSessionId = options.askingSessionId || null;
   // Planning, extraction, and eval_gatherer sessions are short-lived and read-only;
   // skip the post-session quality review loop so they can complete predictably.
-  session.skipQualityChecks = sessionType !== 'implementation';
+  // Manual and implementation sessions both do real code work and run quality checks.
+  session.skipQualityChecks = !CODING_SESSION_TYPES.has(sessionType);
   activeSessions.set(id, session);
   session.start();
 

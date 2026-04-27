@@ -135,7 +135,7 @@ function create(deps) {
     });
   }
 
-  async function createAndStart({ projectId, name, specInput }) {
+  async function createAndStart({ projectId, name, specInput, gatedStages }) {
     const active = await repo.getActivePipelineForProject(projectId);
     if (active) {
       throw new Error(
@@ -145,7 +145,7 @@ function create(deps) {
     }
 
     const projectRootPath = await getProjectRootPath(projectId);
-    const pipeline = await repo.createPipeline({ projectId, name, specInput });
+    const pipeline = await repo.createPipeline({ projectId, name, specInput, gatedStages });
 
     await deps.createBranch({ branchName: pipeline.branch_name, projectRootPath });
     await repo.updateStatus(pipeline.id, { status: 'running', currentStage: 1 });
@@ -154,9 +154,15 @@ function create(deps) {
     return repo.getPipeline(pipeline.id);
   }
 
-  function isGatedStage(stage) {
-    // Stages 1, 2, 3 are user-gated. Stages 4-7 run autonomously.
-    return stage >= 1 && stage <= 3;
+  function isGatedStage(pipeline, stage) {
+    // Per-pipeline configuration. Older pipelines without the column fall back
+    // to the original behavior of gating stages 1-3.
+    let stages = pipeline && pipeline.gated_stages;
+    if (typeof stages === 'string') {
+      try { stages = JSON.parse(stages); } catch { stages = null; }
+    }
+    if (!Array.isArray(stages)) stages = [1, 2, 3];
+    return stages.includes(stage);
   }
 
   async function handleSessionComplete({ sessionId, pipelineId, pipelineStage }) {
@@ -218,16 +224,36 @@ function create(deps) {
 
     await repo.recordStageOutput({ pipelineId, stage: pipelineStage, iteration, outputPath });
 
-    if (isGatedStage(pipelineStage)) {
+    if (isGatedStage(pipeline, pipelineStage)) {
       // Leave the session OPEN — it stays available while the user reviews
       // the output. It will be closed when the stage is approved or rejected.
       await repo.updateStatus(pipelineId, { status: 'paused_for_approval' });
       return;
     }
 
-    if (pipelineStage === 5) {
+    await safeEndSession(sessionId);
+    await proceedFromStage(pipelineId, pipelineStage, fullPath);
+  }
+
+  // Advances the pipeline past a completed (non-gated or just-approved) stage.
+  // Stage 4 (chunks) and stage 7 (fix cycle) follow their own paths and never
+  // funnel through here.
+  async function proceedFromStage(pipelineId, stage, fullPath) {
+    if (stage === 1 || stage === 2) {
+      const next = stage + 1;
+      await repo.updateStatus(pipelineId, { status: 'running', currentStage: next });
+      const refreshed = await repo.getPipeline(pipelineId);
+      await startStage({ pipeline: refreshed, stage: next });
+      return;
+    }
+
+    if (stage === 3) {
+      const refreshed = await repo.getPipeline(pipelineId);
+      return advanceFromStage3(refreshed);
+    }
+
+    if (stage === 5) {
       const overall = parseQaOverall(readStageOutput(fullPath));
-      await safeEndSession(sessionId);
       if (overall === 'pass') {
         await repo.updateStatus(pipelineId, { status: 'running', currentStage: 6 });
         const refreshed = await repo.getPipeline(pipelineId);
@@ -238,9 +264,8 @@ function create(deps) {
       return;
     }
 
-    if (pipelineStage === 6) {
+    if (stage === 6) {
       const blockers = parseReviewBlockers(readStageOutput(fullPath));
-      await safeEndSession(sessionId);
       if (blockers === 0) {
         await repo.updateStatus(pipelineId, {
           status: 'completed',
@@ -334,14 +359,14 @@ function create(deps) {
     const gatedSessionId = await repo.findActiveSessionForStage(pipelineId, stage);
     await safeEndSession(gatedSessionId);
 
-    if (stage === 3) {
-      return advanceFromStage3(pipeline);
-    }
+    // For stages 5 and 6, the downstream branching (QA pass/fail, blocker count)
+    // depends on the stage output file. Re-resolve the path the same way
+    // handleSessionComplete did so proceedFromStage can read it.
+    const outputPath = promptBuilder.outputPathFor(stage, pipeline.name);
+    const projectRootPath = await getProjectRootPath(pipeline.project_id);
+    const fullPath = path.join(projectRootPath, outputPath);
 
-    const nextStage = stage + 1;
-    await repo.updateStatus(pipelineId, { status: 'running', currentStage: nextStage });
-    const refreshed = await repo.getPipeline(pipelineId);
-    await startStage({ pipeline: refreshed, stage: nextStage });
+    await proceedFromStage(pipelineId, stage, fullPath);
   }
 
   async function advanceFromStage3(pipeline) {

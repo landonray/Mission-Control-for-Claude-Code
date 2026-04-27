@@ -38,7 +38,7 @@ describe('NewPipelineDialog', () => {
   it('renders name and spec input fields', () => {
     render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={() => {}} />);
     expect(screen.getByLabelText(/pipeline name/i)).toBeTruthy();
-    expect(screen.getByLabelText(/spec/i)).toBeTruthy();
+    expect(screen.getByLabelText('Spec')).toBeTruthy();
   });
 
   it('disables submit while name or spec is empty', () => {
@@ -47,7 +47,7 @@ describe('NewPipelineDialog', () => {
     expect(button.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText(/pipeline name/i), { target: { value: 'Name' } });
     expect(button.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText(/spec/i), { target: { value: 'Spec text' } });
+    fireEvent.change(screen.getByLabelText('Spec'), { target: { value: 'Spec text' } });
     expect(button.disabled).toBe(false);
   });
 
@@ -56,10 +56,10 @@ describe('NewPipelineDialog', () => {
     const onCreated = vi.fn();
     render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={onCreated} />);
     fireEvent.change(screen.getByLabelText(/pipeline name/i), { target: { value: 'Add foo' } });
-    fireEvent.change(screen.getByLabelText(/spec/i), { target: { value: 'Build foo widget.' } });
+    fireEvent.change(screen.getByLabelText('Spec'), { target: { value: 'Build foo widget.' } });
     fireEvent.click(screen.getByRole('button', { name: /start pipeline/i }));
     await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/pipelines', {
-      project_id: 'p1', name: 'Add foo', spec_input: 'Build foo widget.',
+      project_id: 'p1', name: 'Add foo', spec_input: 'Build foo widget.', gated_stages: [1, 2, 3],
     }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ id: 'pipe_new', status: 'running' }));
   });
@@ -68,9 +68,62 @@ describe('NewPipelineDialog', () => {
     mockApi.post.mockRejectedValue(new Error('Project already has an active pipeline'));
     render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={() => {}} />);
     fireEvent.change(screen.getByLabelText(/pipeline name/i), { target: { value: 'X' } });
-    fireEvent.change(screen.getByLabelText(/spec/i), { target: { value: 'Spec.' } });
+    fireEvent.change(screen.getByLabelText('Spec'), { target: { value: 'Spec.' } });
     fireEvent.click(screen.getByRole('button', { name: /start pipeline/i }));
     await waitFor(() => expect(screen.getByText(/already has an active pipeline/i)).toBeTruthy());
+  });
+
+  describe('Approval gates', () => {
+    function getStageCheckbox(stageNumber) {
+      // Each stage row's <label> wraps the checkbox; query the input nested inside the row.
+      const rows = document.querySelectorAll('li');
+      for (const row of rows) {
+        if (row.textContent.includes(`Stage ${stageNumber}`)) {
+          return row.querySelector('input[type="checkbox"]');
+        }
+      }
+      return null;
+    }
+
+    it('renders all 7 stages with checkboxes for 1, 2, 3, 5, 6 and disabled checkboxes for 4 and 7', () => {
+      render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={() => {}} />);
+      expect(getStageCheckbox(1).disabled).toBe(false);
+      expect(getStageCheckbox(2).disabled).toBe(false);
+      expect(getStageCheckbox(3).disabled).toBe(false);
+      expect(getStageCheckbox(5).disabled).toBe(false);
+      expect(getStageCheckbox(6).disabled).toBe(false);
+      expect(getStageCheckbox(4).disabled).toBe(true);
+      expect(getStageCheckbox(7).disabled).toBe(true);
+    });
+
+    it('defaults to gating stages 1, 2, and 3', () => {
+      render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={() => {}} />);
+      expect(getStageCheckbox(1).checked).toBe(true);
+      expect(getStageCheckbox(2).checked).toBe(true);
+      expect(getStageCheckbox(3).checked).toBe(true);
+      expect(getStageCheckbox(5).checked).toBe(false);
+      expect(getStageCheckbox(6).checked).toBe(false);
+    });
+
+    it('submits the user-selected gated stages', async () => {
+      mockApi.post.mockResolvedValue({ id: 'pipe', status: 'running' });
+      render(<NewPipelineDialog projectId="p1" onClose={() => {}} onCreated={() => {}} />);
+      fireEvent.change(screen.getByLabelText(/pipeline name/i), { target: { value: 'X' } });
+      fireEvent.change(screen.getByLabelText('Spec'), { target: { value: 'spec' } });
+
+      // Uncheck stage 2 and 3, check stage 5.
+      fireEvent.click(getStageCheckbox(2));
+      fireEvent.click(getStageCheckbox(3));
+      fireEvent.click(getStageCheckbox(5));
+
+      fireEvent.click(screen.getByRole('button', { name: /start pipeline/i }));
+      await waitFor(() =>
+        expect(mockApi.post).toHaveBeenCalledWith(
+          '/api/pipelines',
+          expect.objectContaining({ gated_stages: [1, 5] })
+        )
+      );
+    });
   });
 
   describe('File attachment', () => {
@@ -99,7 +152,7 @@ describe('NewPipelineDialog', () => {
       const file = new File(['# My spec'], 'spec.md', { type: 'text/markdown' });
       attachFile(file);
       triggerFileLoad('# My spec');
-      expect(screen.getByLabelText(/spec/i).value).toBe('# My spec');
+      expect(screen.getByLabelText('Spec').value).toBe('# My spec');
       expect(screen.getByText(/spec\.md attached/)).toBeTruthy();
       expect(screen.getByRole('button', { name: /remove attachment/i })).toBeTruthy();
     });
@@ -110,7 +163,7 @@ describe('NewPipelineDialog', () => {
       const file = new File(['plain text spec'], 'notes.txt', { type: 'text/plain' });
       attachFile(file);
       triggerFileLoad('plain text spec');
-      expect(screen.getByLabelText(/spec/i).value).toBe('plain text spec');
+      expect(screen.getByLabelText('Spec').value).toBe('plain text spec');
       expect(screen.getByText(/notes\.txt attached/)).toBeTruthy();
     });
 
@@ -123,7 +176,7 @@ describe('NewPipelineDialog', () => {
       expect(screen.getByText(/spec\.md attached/)).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: /remove attachment/i }));
       expect(screen.queryByText(/spec\.md attached/)).toBeNull();
-      expect(screen.getByLabelText(/spec/i).value).toBe('# content');
+      expect(screen.getByLabelText('Spec').value).toBe('# content');
     });
 
     // QA 2.4 — second file overwrites first
@@ -132,12 +185,12 @@ describe('NewPipelineDialog', () => {
       const file1 = new File(['first content'], 'first.md', { type: 'text/markdown' });
       attachFile(file1);
       triggerFileLoad('first content');
-      expect(screen.getByLabelText(/spec/i).value).toBe('first content');
+      expect(screen.getByLabelText('Spec').value).toBe('first content');
 
       const file2 = new File(['second content'], 'second.md', { type: 'text/markdown' });
       attachFile(file2);
       triggerFileLoad('second content');
-      expect(screen.getByLabelText(/spec/i).value).toBe('second content');
+      expect(screen.getByLabelText('Spec').value).toBe('second content');
       expect(screen.getByText(/second\.md attached/)).toBeTruthy();
     });
 
@@ -149,10 +202,10 @@ describe('NewPipelineDialog', () => {
       const file = new File(['original spec'], 'spec.md', { type: 'text/markdown' });
       attachFile(file);
       triggerFileLoad('original spec');
-      fireEvent.change(screen.getByLabelText(/spec/i), { target: { value: 'edited spec' } });
+      fireEvent.change(screen.getByLabelText('Spec'), { target: { value: 'edited spec' } });
       fireEvent.click(screen.getByRole('button', { name: /start pipeline/i }));
       await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/api/pipelines', {
-        project_id: 'p1', name: 'My Pipeline', spec_input: 'edited spec',
+        project_id: 'p1', name: 'My Pipeline', spec_input: 'edited spec', gated_stages: [1, 2, 3],
       }));
     });
 
@@ -163,7 +216,7 @@ describe('NewPipelineDialog', () => {
       attachFile(file);
       expect(mockReadAsText).not.toHaveBeenCalled();
       expect(screen.getByText(/too large to attach/i)).toBeTruthy();
-      expect(screen.getByLabelText(/spec/i).value).toBe('');
+      expect(screen.getByLabelText('Spec').value).toBe('');
     });
 
     // QA 2.7 — non-text file rejected, FileReader not called
@@ -173,7 +226,7 @@ describe('NewPipelineDialog', () => {
       attachFile(file);
       expect(mockReadAsText).not.toHaveBeenCalled();
       expect(screen.getByText(/only plain text or markdown/i)).toBeTruthy();
-      expect(screen.getByLabelText(/spec/i).value).toBe('');
+      expect(screen.getByLabelText('Spec').value).toBe('');
     });
 
     // QA 2.8 — parameterized file type acceptance
@@ -218,7 +271,7 @@ describe('NewPipelineDialog', () => {
       triggerFileLoad('# spec');
       expect(submitBtn.disabled).toBe(false);
 
-      fireEvent.change(screen.getByLabelText(/spec/i), { target: { value: '' } });
+      fireEvent.change(screen.getByLabelText('Spec'), { target: { value: '' } });
       expect(submitBtn.disabled).toBe(true);
     });
 

@@ -1,4 +1,5 @@
 const COLOR_BY_TYPE = {
+  manual: 'manual',
   planning: 'blue',
   spec_refinement: 'blue',
   implementation_planning: 'blue',
@@ -11,6 +12,7 @@ const COLOR_BY_TYPE = {
 };
 
 const BADGE_BY_TYPE = {
+  manual: 'M',
   planning: 'P',
   spec_refinement: 'P',
   implementation_planning: 'P',
@@ -23,6 +25,7 @@ const BADGE_BY_TYPE = {
 };
 
 const LABEL_BY_TYPE = {
+  manual: 'Manual',
   planning: 'Planning',
   spec_refinement: 'Spec Refinement',
   qa_design: 'QA Design',
