@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
 const orchestrator = require('./planningSessionOrchestrator');
+const sessionManager = require('./sessionManager');
 const pipelineRepo = require('./pipelineRepo');
 const pipelineRuntime = require('./pipelineRuntime');
 const evalsRoute = require('../routes/evals');
@@ -225,11 +226,35 @@ async function startSessionTool(args, _ctx) {
   await assertProjectExists(args.project_id);
 
   const sessionType = args.session_type || 'planning';
-  if (!['planning', 'extraction', 'eval_gatherer'].includes(sessionType)) {
-    throw new Error(`session_type must be one of: planning, extraction, eval_gatherer (got "${sessionType}")`);
+  const allowedTypes = ['planning', 'implementation', 'extraction', 'eval_gatherer'];
+  if (!allowedTypes.includes(sessionType)) {
+    throw new Error(`session_type must be one of: ${allowedTypes.join(', ')} (got "${sessionType}")`);
   }
   if (!args.task || !String(args.task).trim()) {
     throw new Error('task is required');
+  }
+
+  if (sessionType === 'implementation') {
+    const project = await loadProject(args.project_id);
+    const initialPrompt = args.system_prompt
+      ? `${String(args.system_prompt).trim()}\n\n${String(args.task).trim()}`
+      : String(args.task).trim();
+    const session = await sessionManager.createSession({
+      name: `Implementation: ${String(args.task).trim().slice(0, 80)}`,
+      workingDirectory: project.root_path,
+      permissionMode: 'auto',
+      useWorktree: true,
+      sessionType: 'implementation',
+      askingSessionId: args.asking_session_id || null,
+      projectId: args.project_id,
+      initialPrompt,
+    });
+    return {
+      session_id: session.id,
+      status: session.status,
+      planning_question_id: null,
+      session_type: 'implementation',
+    };
   }
 
   const result = await orchestrator.startPlanningSession({
@@ -1158,18 +1183,22 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_start_session',
     description:
-      'Start a new Mission Control session in a specific project. Use session_type="planning" to escalate a product or architectural question that PRODUCT.md and ARCHITECTURE.md don\'t answer — Mission Control will spin up a read-only planning agent that already has the project\'s context documents loaded. The session appears in the dashboard, gets logged to docs/decisions.md when answered, and the user reviews it asynchronously. Call mc_list_projects first if you don\'t know which project_id to use.',
+      'Start a new Mission Control session in a specific project. Choose session_type based on what you need:\n\n' +
+      '- "planning" (default): a read-only agent that answers a product or architectural question PRODUCT.md and ARCHITECTURE.md don\'t cover. It can escalate to the project owner via the decision log. Use this when you need an answer, not code changes.\n' +
+      '- "implementation": a full-agency coding session that runs in its own worktree with permission_mode=auto and actually writes code. Use this when you want the work done, not planned. Equivalent to a manual session but kicked off via MCP.\n' +
+      '- "extraction" / "eval_gatherer": internal session types primarily triggered automatically (extraction on PR merge, eval_gatherer when armed evals run). Rarely needed via this tool.\n\n' +
+      'All sessions appear in the dashboard. Planning Q&A gets logged to docs/decisions.md. Call mc_list_projects first if you don\'t know which project_id to use.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: { type: 'string', description: 'Mission Control project ID. Required. Get this from mc_list_projects.' },
         session_type: {
           type: 'string',
-          enum: ['planning', 'extraction', 'eval_gatherer'],
-          description: 'Session type. Defaults to "planning".',
+          enum: ['planning', 'implementation', 'extraction', 'eval_gatherer'],
+          description: 'Session type. Defaults to "planning". Use "implementation" to start a coding session that actually does the work (auto permissions, dedicated worktree).',
         },
-        system_prompt: { type: 'string', description: 'Optional override for the planning agent\'s system prompt.' },
-        task: { type: 'string', description: 'The question or task to give the planning agent. Required.' },
+        system_prompt: { type: 'string', description: 'Optional override for the agent\'s system prompt. For planning sessions this replaces the default planning prompt; for implementation sessions it is prepended to the task.' },
+        task: { type: 'string', description: 'The question (for planning) or task description (for implementation) to give the agent. Required.' },
         context_files: {
           type: 'array',
           items: { type: 'string' },
