@@ -5,7 +5,7 @@ import { ArrowLeft, Github, Folder, Rocket, ExternalLink, RefreshCw, X, Wrench, 
 import styles from './ProjectDetail.module.css';
 import MCPPanel from './MCPPanel';
 import TestRunsPanel from './TestRunsPanel';
-import DecisionsNeeded from './DecisionsNeeded';
+import DecisionsList from '../Decisions/DecisionsList.jsx';
 import UsageCard from './UsageCard';
 import ContextDocsPanel from './ContextDocsPanel';
 
@@ -201,7 +201,7 @@ export default function ProjectDetail() {
             <span className={styles.countBadge}>{decisionsCount}</span>
           )}
         </h2>
-        <DecisionsNeeded projectId={project.id} onChange={setDecisionsCount} />
+        <DecisionsList projectId={project.id} onChange={setDecisionsCount} />
       </section>
 
       <section className={styles.section}>
