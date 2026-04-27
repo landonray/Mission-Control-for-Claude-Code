@@ -47,14 +47,18 @@ router.get('/', async (req, res) => {
   } else {
     // Active rows are returned unconditionally; only ended rows are capped, so a
     // backlog of test/ended sessions can never push real active work off the page.
-    sql = `(SELECT s.*, p.name AS project_table_name FROM sessions s
-            LEFT JOIN projects p ON s.project_id = p.id
-            WHERE s.status != 'ended')
-           UNION ALL
-           (SELECT s.*, p.name AS project_table_name FROM sessions s
-            LEFT JOIN projects p ON s.project_id = p.id
-            WHERE s.status = 'ended'
-            ORDER BY s.created_at DESC LIMIT $1)`;
+    // Outer ORDER BY keeps newest sessions first across the union.
+    sql = `SELECT * FROM (
+             (SELECT s.*, p.name AS project_table_name FROM sessions s
+              LEFT JOIN projects p ON s.project_id = p.id
+              WHERE s.status != 'ended')
+             UNION ALL
+             (SELECT s.*, p.name AS project_table_name FROM sessions s
+              LEFT JOIN projects p ON s.project_id = p.id
+              WHERE s.status = 'ended'
+              ORDER BY s.created_at DESC LIMIT $1)
+           ) combined
+           ORDER BY created_at DESC`;
     params = [limit];
   }
 
