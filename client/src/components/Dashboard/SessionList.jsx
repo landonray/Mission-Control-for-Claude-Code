@@ -6,6 +6,7 @@ import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../uti
 import NewSessionModal from './NewSessionModal';
 import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight, ExternalLink, CheckSquare } from 'lucide-react';
 import { usePendingDecisionsCount } from '../../hooks/usePendingDecisionsCount.js';
+import { useCollapsedProjects } from '../../hooks/useCollapsedProjects';
 import { colorForSessionType, badgeForSessionType, labelForSessionType } from '../../utils/sessionColors';
 import styles from './SessionList.module.css';
 
@@ -31,7 +32,7 @@ export default function SessionList() {
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [contentMatchIds, setContentMatchIds] = useState(new Set());
-  const [collapsedProjects, setCollapsedProjects] = useState(new Set());
+  const { collapsedProjects, toggleProject } = useCollapsedProjects();
   const searchTimerRef = useRef(null);
   const navigate = useNavigate();
   const { id: activeId } = useParams();
@@ -95,15 +96,6 @@ export default function SessionList() {
       return true;
     });
   }, [sessions, showEnded, showArchived, searchQuery, contentMatchIds]);
-
-  const toggleProject = (projectName) => {
-    setCollapsedProjects(prev => {
-      const next = new Set(prev);
-      if (next.has(projectName)) next.delete(projectName);
-      else next.add(projectName);
-      return next;
-    });
-  };
 
   const groupedSessions = useMemo(() => {
     const groups = new Map();
