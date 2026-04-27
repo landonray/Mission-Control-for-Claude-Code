@@ -9,7 +9,7 @@ import cliAgent from './cliAgent.js';
 
 // ─── Schema reference data ────────────────────────────────────────────────────
 
-const EVIDENCE_TYPES = {
+export const EVIDENCE_TYPES = {
   log_query: {
     description: 'Read from a log file or session log',
     fields: {
@@ -41,7 +41,7 @@ const EVIDENCE_TYPES = {
   },
 };
 
-const CHECK_TYPES = {
+export const CHECK_TYPES = {
   regex_match: {
     description: 'Evidence must match a regular expression',
     fields: {
