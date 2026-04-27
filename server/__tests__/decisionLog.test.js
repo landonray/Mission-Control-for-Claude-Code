@@ -89,6 +89,28 @@ describe('decisionLog round-trip parse', () => {
     expect(parsed.answer).toBe(original.answer);
   });
 
+  it('round-trips an entry with reasoning through format -> parse', () => {
+    const entry = {
+      timestamp: '2026-04-26T12:00:00Z',
+      askingSessionId: 'sess-1',
+      planningSessionId: 'plan-1',
+      workingFiles: ['server/payments.js'],
+      projectName: 'Storefront',
+      question: 'Stripe or LemonSqueezy?',
+      answer: 'Use Stripe.',
+      reasoning: 'Wider support.',
+      decidedBy: 'owner',
+    };
+    const formatted = formatDecisionEntry(entry);
+    const FILE_HEADER = '# Project Decisions\n\n';
+    const parsed = parseDecisions(FILE_HEADER + formatted);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].answer).toBe('Use Stripe.');
+    // Crucial: reasoning is NOT bleeding into the answer field.
+    expect(parsed[0].answer).not.toContain('Reasoning');
+    expect(parsed[0].reasoning).toBe('Wider support.');
+  });
+
   it('parses multiple appended entries from one file', () => {
     const e1 = formatDecisionEntry({
       timestamp: '2026-04-24T10:00:00Z', askingSessionId: 'a1', planningSessionId: 'p1',
