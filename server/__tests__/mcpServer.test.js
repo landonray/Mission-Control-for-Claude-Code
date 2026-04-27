@@ -23,6 +23,7 @@ const mockSendAndAwait = vi.fn(async () => ({
   status: 'completed',
   durationSeconds: 1.23,
 }));
+const mockDeliverMessage = vi.fn(async () => ({ sessionId: 'test-session-id', planningQuestionId: null }));
 const mockGetStatus = vi.fn(async (sessionId) => ({
   sessionId,
   status: 'completed',
@@ -50,6 +51,7 @@ require.cache[orchestratorPath] = {
   exports: {
     startPlanningSession: mockStartPlanningSession,
     sendAndAwait: mockSendAndAwait,
+    deliverMessage: mockDeliverMessage,
     getStatus: mockGetStatus,
   },
 };
@@ -61,6 +63,7 @@ describe('handleRpcRequest — protocol layer', () => {
     mockQuery.mockClear();
     mockStartPlanningSession.mockClear();
     mockSendAndAwait.mockClear();
+    mockDeliverMessage.mockClear();
     mockGetStatus.mockClear();
     mockQuery.mockImplementation(async () => ({ rows: [], rowCount: 0 }));
   });
@@ -193,7 +196,7 @@ describe('handleRpcRequest — protocol layer', () => {
     expect(res.result.content[0].text).toMatch(/task is required/);
   });
 
-  it('mc_send_message routes to orchestrator.sendAndAwait without scoping', async () => {
+  it('mc_send_message routes to orchestrator.deliverMessage and returns immediately', async () => {
     const res = await mcpServer.handleRpcRequest(
       {
         jsonrpc: '2.0', id: 8, method: 'tools/call',
@@ -202,11 +205,16 @@ describe('handleRpcRequest — protocol layer', () => {
       {}
     );
     expect(res.result.isError).toBe(false);
-    expect(mockSendAndAwait).toHaveBeenCalledWith(
+    expect(mockDeliverMessage).toHaveBeenCalledWith(
       'test-session-id',
       'follow up?',
       expect.any(Object)
     );
+    const result = JSON.parse(res.result.content[0].text);
+    expect(result.status).toBe('delivered');
+    expect(result.session_id).toBe('test-session-id');
+    expect(result.instructions).toMatch(/mc_get_session_status/);
+    expect(result.instructions).toMatch(/mc_get_session_summary/);
   });
 
   it('mc_get_session_status returns status from orchestrator', async () => {

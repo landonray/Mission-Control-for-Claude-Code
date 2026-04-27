@@ -253,16 +253,14 @@ async function sendMessageTool(args, _ctx) {
   if (!args.session_id) throw new Error('session_id is required');
   if (!args.message || !String(args.message).trim()) throw new Error('message is required');
 
-  const result = await orchestrator.sendAndAwait(args.session_id, args.message, {
-    timeoutSeconds: args.timeout_seconds,
+  await orchestrator.deliverMessage(args.session_id, args.message, {
     askingSessionId: args.asking_session_id || null,
     workingFiles: args.working_files || null,
   });
   return {
-    response: result.response,
-    status: result.status,
-    duration_seconds: Math.round(result.durationSeconds * 100) / 100,
-    error: result.error,
+    status: 'delivered',
+    session_id: args.session_id,
+    instructions: `Message delivered to session ${args.session_id}. The session is now processing asynchronously. To check progress, call \`mc_get_session_status\` with this session_id. Once status is complete, call \`mc_get_session_summary\` to get the full result.`,
   };
 }
 
@@ -1192,7 +1190,7 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_send_message',
     description:
-      'Send a message to any Mission Control session (planning or implementation) and synchronously wait for the response. Works whether the session is currently active or cold — cold sessions are automatically resumed before the message is sent. For planning sessions, the Q&A is also recorded to the planning_questions table and the project decision log. Blocks until the session responds. Use mc_get_session_status to poll instead if you don\'t want to block.',
+      'Send a message to any Mission Control session and return immediately — does not wait for the session to respond. Works whether the session is active or cold; cold sessions are automatically resumed before the message is delivered. Returns a confirmation with session_id and instructions for following up: use mc_get_session_status to poll progress, then mc_get_session_summary once complete. For planning sessions, decision logging runs in the background.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1200,7 +1198,6 @@ const TOOL_DEFINITIONS = [
         message: { type: 'string', description: 'The message to send.' },
         asking_session_id: { type: 'string' },
         working_files: { type: 'array', items: { type: 'string' } },
-        timeout_seconds: { type: 'number', description: 'Optional cap on how long to wait. Omit (or 0) to wait indefinitely (recommended).' },
       },
       required: ['session_id', 'message'],
     },
