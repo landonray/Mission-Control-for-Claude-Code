@@ -5,6 +5,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
 const { getGitPipeline } = require('../services/fileWatcher');
+const { sanitizeAssistantText } = require('../utils/sanitizeAssistantText');
 
 // Resolve a session's display project name. Prefer the linked projects-table name
 // (authoritative — survives path-case differences and worktrees). Fall back to
@@ -411,6 +412,14 @@ router.get('/:id/messages', async (req, res) => {
       ORDER BY timestamp ASC
       LIMIT $2 OFFSET $3
     `, [req.params.id, limit, offset])).rows;
+
+    // Belt-and-suspenders: strip fake harness tags from any historical
+    // assistant rows that pre-date sanitize-on-write, so they never reach the UI.
+    for (const m of messages) {
+      if (m.role === 'assistant' && typeof m.content === 'string') {
+        m.content = sanitizeAssistantText(m.content);
+      }
+    }
 
     const total = (await query('SELECT COUNT(*) as count FROM messages WHERE session_id = $1', [req.params.id])).rows[0];
 
