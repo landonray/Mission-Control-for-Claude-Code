@@ -9,7 +9,7 @@
 }
 
 .dialog {
-  background: var(--color-surface, #fff);
+  background: var(--bg-secondary);
   border-radius: 8px;
   padding: 24px;
   width: 90%;
@@ -26,11 +26,13 @@
 .field input, .field textarea {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid var(--color-border, #cbd5e1);
+  border: 1px solid var(--border);
   border-radius: 4px;
   font-size: 14px;
   font-family: inherit;
   box-sizing: border-box;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 .field textarea { font-family: ui-monospace, SFMono-Regular, monospace; resize: vertical; }
 
@@ -40,21 +42,71 @@
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  border: 1px solid var(--color-border, #cbd5e1);
-  background: white;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
 }
 .actions button[type="submit"] {
-  background: var(--color-primary, #3b82f6);
+  background: var(--accent);
   color: white;
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--accent);
 }
+.actions button[type="submit"]:hover { background: var(--accent-hover); }
 .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .error {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: rgba(196, 64, 64, 0.1);
+  color: var(--error);
   padding: 8px 12px;
   border-radius: 4px;
   margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.fileAttach {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.attachButton {
+  align-self: flex-start;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.attachButton:hover { color: var(--text-primary); }
+
+.attachmentIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.clearAttach {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 0;
+  line-height: 1;
+}
+
+.clearAttach:hover { color: var(--text-primary); }
+
+.attachError {
+  background: rgba(196, 64, 64, 0.1);
+  color: var(--error);
+  padding: 8px 12px;
+  border-radius: 4px;
   font-size: 13px;
 }
