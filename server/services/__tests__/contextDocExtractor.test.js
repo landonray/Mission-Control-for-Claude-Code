@@ -45,8 +45,19 @@ describe('contextDocExtractor', () => {
       const out = extractor.normalizeExtraction({});
       expect(out.what_changed).toBe('');
       expect(out.product_decisions).toEqual([]);
+      expect(out.supersedes).toEqual([]);
       expect(out.is_mechanical).toBe(false);
       expect(out.files_touched).toEqual([]);
+    });
+
+    it('preserves supersedes bullets when present', () => {
+      const out = extractor.normalizeExtraction({
+        supersedes: ['Removes the X feature added in #5', '  Replaces the Y approach  '],
+      });
+      expect(out.supersedes).toEqual([
+        'Removes the X feature added in #5',
+        'Replaces the Y approach',
+      ]);
     });
 
     it('caps files_touched at 25 entries', () => {

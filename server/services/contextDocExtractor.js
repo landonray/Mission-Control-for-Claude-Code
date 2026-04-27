@@ -36,12 +36,14 @@ Return ONLY valid JSON with the following shape — no prose, no markdown fences
   "architectural_decisions": ["bullet", "bullet"],
   "patterns_established": ["bullet", "bullet"],
   "patterns_broken": ["bullet", "bullet"],
+  "supersedes": ["bullet describing what this PR replaces, removes, reverses, or materially changes about prior code, features, or decisions; cite earlier PR numbers if visible"],
   "files_touched": ["server/foo.js", "client/bar.jsx"],
   "is_mechanical": false
 }
 
 Rules:
 - Be conservative. Only record decisions that are clearly visible in the PR. Don't invent intent.
+- "supersedes" is for ANY change that overrides earlier work — feature removals, behavior reversals, replaced approaches, deprecated decisions, renamed concepts. Look for clues like "replaces", "removes", "reverts", "deprecates", "no longer", "instead of", or files being deleted. If nothing is being superseded, return an empty array.
 - For mechanical PRs (dependency bumps, typo fixes, version pins, CI tweaks, lockfile-only changes), set "is_mechanical": true and leave the decision arrays empty. Still fill "what_changed" and "files_touched".
 - Each bullet should be one sentence. No nested arrays. No long paragraphs.
 - Use the project's terminology directly — don't generalize names.
@@ -63,6 +65,7 @@ const EMPTY_EXTRACTION = {
   architectural_decisions: [],
   patterns_established: [],
   patterns_broken: [],
+  supersedes: [],
   files_touched: [],
   is_mechanical: false,
 };
@@ -78,6 +81,7 @@ function normalizeExtraction(raw) {
     architectural_decisions: arr(raw.architectural_decisions),
     patterns_established: arr(raw.patterns_established),
     patterns_broken: arr(raw.patterns_broken),
+    supersedes: arr(raw.supersedes),
     files_touched: arr(raw.files_touched).slice(0, 25),
     is_mechanical: !!raw.is_mechanical,
   };

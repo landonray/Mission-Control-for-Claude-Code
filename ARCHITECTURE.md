@@ -4,305 +4,260 @@
 
 ## System overview
 
-Command Center is a Node.js web application with React frontend that manages Claude Code CLI sessions remotely. The system architecture consists of:
+**Backend:** Node.js/Express server with Neon serverless Postgres, WebSocket (ws library) for real-time updates, tmux for session process management. (#1, #2, #12, #22)
 
-- **Backend**: Express server with Postgres database (via @neondatabase/serverless), WebSocket server for real-time communication, tmux session management
-- **Frontend**: React SPA with mobile-responsive PWA capabilities, single shared WebSocket connection
-- **Claude CLI integration**: Subprocess invocation with --print --input-format stream-json --output-format stream-json for bidirectional JSON communication
-- **MCP layer**: Mission Control MCP server runs as part of main app sharing database/session infrastructure; supports both HTTP (main UI) and stdio (Claude Desktop) protocols via bridge
+**Frontend:** React 18 with Vite, react-router-dom for routing, mobile-responsive with 100dvh for proper mobile viewport handling. React pinned to 18.3.1 via npm overrides to prevent testing-library conflicts. (#1, #3, #148)
 
-Key subsystems:
-- Session lifecycle (spawn, resume, interrupt, cleanup)
-- Quality assurance (evals, rules, enforcement)
-- Pipeline orchestration (multi-stage workflow)
-- Context document generation (PR history → living docs)
-- Railway deployment integration
-- Test run detection and parsing
+**Session execution:** Claude CLI invoked with `--permission-mode` (acceptEdits default), `--model` for per-session model choice, `--mcp-config` for structured JSON MCP configuration, `--worktree` for isolated Git worktrees. (#2, #7, #11, #20)
+
+**External integrations:**
+- LLM Gateway at https://llm-gateway.replit.app for all LLM features (requires LLM_GATEWAY_KEY env var) (#41, #129)
+- Railway GraphQL API for one-click deployment and status tracking (#137)
+- GitHub CLI (gh) for PR operations and repository detection (#179, #157)
+
+**Authentication:** Bearer token comparison on all /api routes except /health, opt-in via MC_AUTH_TOKEN env var. Timing-safe comparison to prevent timing attacks. (#53)
+
+**MCP server:** JSON-RPC 2.0 over HTTP with app-wide bearer auth via mcp_tokens table. Stdio-to-HTTP bridge (mcp-stdio-bridge.js) translates between Claude Desktop stdio protocol and Mission Control HTTP endpoint. (#145, #147, #167)
 
 ## Data model
 
-**Core tables**
-- `sessions`: session_id, project_id, session_type (default/planning), session_name, working_directory, tmux_session_name, status (idle/working/reviewing/ended), lines_added, lines_removed, uncommitted_count, pipeline_id, pipeline_stage, created_at, last_activity_at, has_spec
-- `messages`: session_id, role (user/assistant/quality), content, attachments (JSON), timestamp
-- `stream_events`: session_id, event_type, event_data (JSON), timestamp — persisted immediately on broadcast for replay on resume
-- `projects`: project_id, name, directory, projects_directory, github_repo, has_deployment, deployment_status, deployment_logs
-- `servers`: server_id, name, directory, owner_project_id — MCP servers auto-discovered from filesystem
-- `queued_messages`: session_id, message_id, content, timestamp — persists queued chat messages across restarts
+**Core tables:**
+- `sessions` — session metadata including tmux_session_name, cli_session_id, working_directory, worktree_name, model, status, session_type, pipeline_id, pipeline_stage, has_spec, railway_project_id, deployment_url
+- `messages` — chat messages with role, content, attachments (JSON), created_at; linked to sessions
+- `quality_results` — quality check results with analysis; merged client-side with messages by timestamp (#61, #62)
+- `stream_events` — CLI panel tool invocation history; replayed from DB on resume to initialize dedup state (#42, #59)
+- `queued_messages` — persisted message queue with content, attachments (JSON), queued_at; rehydrated on server startup and session resume (#154)
 
-**Quality assurance**
-- `quality_rules`: rule_id, rule_name, trigger_type, execution_mode (cli/gateway), enabled, config (JSON with tool permissions, timeouts)
-- `quality_reviews`: session_id, rule_name, status (running/passed/failed), analysis_content, iteration_count, started_at, completed_at
-- `evals`: eval_id, project_id, name, description, yaml_path, is_draft, triggers (JSON)
-- `eval_runs`: run_id, eval_id, session_id, status, started_at, completed_at
-- `context_doc_runs`: run_id, project_id, status (running/completed/failed), progress, started_at
-- `context_doc_extractions`: project_id, pr_number, extraction (JSON) — cached per-PR analysis
+**Quality and evals:**
+- `quality_rules` — rules with hook_type, execution_mode (cli/api), send_fail_to_agent flag, send_fail_requires_spec flag, seed_version for migrations (#2, #9, #44, #63)
+- `evals` — eval definitions with folder organization, evidence config, checks, judge config, trigger types (#111, #115)
+- `context_doc_runs` — tracks generation runs with status, progress, error messages (#155)
+- `context_doc_extractions` — caches per-PR extraction results for idempotent retries (#155)
 
-**Pipeline orchestration**
-- `pipelines`: pipeline_id, project_id, spec_content, status, created_at
-- `pipeline_stage_outputs`: pipeline_id, stage_number, output_content, created_at
-- `pipeline_stage_prompts`: pipeline_id, stage_number, prompt_content, created_at
-- `pipeline_chunks`: pipeline_id, stage_number, chunk_number, status, output
-- `pipeline_escalations`: pipeline_id, stage_number, reason, created_at
+**Pipeline orchestration:**
+- `pipelines` — pipeline metadata including status, github_repo, gated_stages (JSONB), fix_cycles_used, pr_number, pr_url, railway_project_id (#165, #177, #179)
+- `pipeline_chunks` — parsed build plan chunks with status (pending/completed) (#165)
+- `pipeline_escalations` — escalations when retry cap exceeded or parse failures (#165)
+- `planning_questions` — seven columns for escalation tracking (question_1 through question_7) (#151)
+- `decision_chats` — polymorphic table with subject_type/subject_id for escalations and approvals (#163, #171)
 
-**Decisions and planning**
-- `decision_chats`: decision_id, question, draft_answer, final_answer, reasoning, messages (JSON), created_at, finalized_at
-- `slash_commands`: command_id, command, prompt, created_at — stored commands with REST CRUD API
+**Project management:**
+- `projects` — project metadata with root_path, github_repo, railway_project_id, deployment_url; linked to sessions via case-insensitive path matching (#14, #137, #158)
+- `mcp_tokens` — app-wide bearer auth tokens for MCP server (#147)
 
-**Settings and tokens**
-- `settings`: key, value — single row stores all app settings as JSON, backed up to .settings-backup.json on every save
-- `mcp_tokens`: token (app-wide scope, not per-project) — clients call mc_list_projects then specify project_id explicitly
+**Database technology:** Neon serverless Postgres with async/await throughout, query() wrapper for parameter placeholders ($1, $2), TIMESTAMPTZ for timestamps with automatic conversion, { fullResults: true } to expose rowCount metadata for UPDATE/DELETE validation. (#22, #25, #53, #125)
 
 ## Established patterns
 
-**Session lifecycle**
-- Sessions spawn inside tmux by default (`tmux new-session -d -s <session-name> <claude-command>`) with fallback to direct child processes (#12)
-- Server reconnects to existing tmux sessions on startup by listing tmux sessions and matching session names (#12)
-- Working directory persisted to database and restored on resume; context preambles built from prior messages for tmux-recovered sessions (#28, #37, #83, #85)
-- Session state cleanup (error, permission, message queue) happens at process lifecycle boundaries — exit handlers and message send (#27)
-- Session status reconciliation happens inline during API reads, marking stale sessions as ended when not found in memory (#5)
-- Resume guard uses try-finally for cleanup safety to prevent stuck resumeInProgress flags (#85)
+### Session lifecycle
+- Session creation is async and awaits database INSERT; in-memory session status takes precedence over DB with automatic reconciliation (#26)
+- Sessions persist via tmux send-keys for input and file-based .jsonl output tailing (100ms polling) (#12)
+- Tmux session recovery on server startup via recoverTmuxSessions(); must complete before HTTP server starts listening to prevent websocket race conditions (#12, #180)
+- Session resumption builds context preamble from summary, original task, key decisions JSON, modified files, last 5 exchanges, and git status (#12)
+- Resumed sessions enforce plan mode via prompt prefix injection since CLI --permission-mode flag ignored on --resume (#76)
+- Worktree recovery on resume: extract worktree_name from cwd path, check for branch locally/remotely, prune stale git records, recreate worktree with timeouts; fall back to parent only when both directory and branch are gone (#104)
+- Safety-net timer (5s) plus stale status detection prevents sessions stuck in 'working' when process exit sentinel missed (#64)
+- Safety-net verifies tmux pane liveness before resetting working sessions, instead of unconditional reset (#180)
+- Session-scoped mobile routes pattern /session/:id/{feature} with context-aware tab navigation (#19)
 
-**WebSocket communication**
-- Single shared WebSocket at /ws with subscribe_session/unsubscribe_session pattern (#53, #59)
-- Stream events persist to database immediately on broadcast and load from DB on session init (#42)
-- Duplicate detection via dbEventCountRef to handle WebSocket replay overlap (#42)
-- Session resumption replays stream_events_history from database to initialize deduplication state (#59)
-- WebSocket URLs derive from window.location.host to work behind Vite proxy on any hostname (#129)
+### Message and streaming
+- Chat streaming uses upsert pattern: INSERT on first assistant event per turn, UPDATE on subsequent events; turn boundaries detected on tool_result and new user messages (#103)
+- Message streaming uses Anthropic message.id for in-place updates, reconciles DB-loaded messages by content matching or extension in last 10 messages (#150)
+- Auto-scroll is conditional based on scroll position within 150px of bottom (#3)
+- Session message limit raised to 10,000; stream event history replayed from database on resume to initialize dedup state (#59)
+- Message queue drain only on process termination (#27)
+- Queued messages stored in `queued_messages` table, rehydrated on server startup and session resume; in-memory queue changed from strings to objects with {content, attachments, queueId} (#154)
 
-**Claude CLI invocation**
-- Base invocation: `claude --print --input-format stream-json --output-format stream-json` for bidirectional JSON communication (#2)
-- MCP servers configured via `--mcp-config <path>` with nested JSON structure instead of multiple --mcp flags (#2)
-- Tmux output polling at 100ms interval for reading session output (#12)
-- Plan mode enforcement on resumed sessions uses read-only prompt prefix since --permission-mode flag ignored by CLI on --resume (#76)
+### Quality and evals
+- Quality checks route through either CLI agent (`claude --print` subprocess) or LLM Gateway based on per-rule `execution_mode` setting; default is CLI (#44)
+- Quality checks track running state in server memory Map and expose via REST endpoint to survive page reloads and reconnects (#75, #77)
+- Quality review loop caps at 3 iterations per work cycle, resetting on manual user messages (#66)
+- Quality rule failures with `send_fail_to_agent` enabled are collected and sent back to agent as formatted user messages after 500ms delay (#40)
+- Quality checks skip entirely when send_fail_requires_spec set and no spec present (#63)
+- Quality checks determine working directory by checking toolInput.file_path first, then falling back to session.working_directory from database (#83)
+- Quality checks receive git context (commits, diffs) and conditional tool access based on hook_type='agent' flag (#57)
+- Composite triggers (PRCreated) match multiple command patterns server-side ('gh pr create', 'git push') with parallel execution via Promise.all and duplicate prevention via runningChecks map (#80, #81, #82)
+- Quality check cancellation uses AbortController pattern threaded through cliAgent.js and llmGateway.js, with server broadcasts as single source of truth for state updates (#89, #91, #94)
+- Evals pipeline: Evidence → Checks → Judge; evidence from logs/DB/files/sub-agents with per-type truncation strategies; checks (equals, contains, comparisons, numeric_score with JSON field extraction via dot notation); LLM judge with confidence levels (#111, #115)
+- Sub-agent evidence gathering uses sandboxed CLI: restricted tool set, plan-only permission mode, no MCP, scoped cwd; security hardened with path traversal prevention, read-only DB, parameterized SQL (#111)
+- Eval authoring via natural language: server-side CLI agent drafts definitions, drafts saved as .yaml.draft, preview-run before publish, WebSocket progress updates via broadcastToAll (#120)
+- Test runs detected/parsed/recorded in three pure modules, parsed via free Claude CLI agent, tracked with tool_use_id pairing, written immediately in 'parsing' status then updated async (#153)
 
-**Message and stream event handling**
-- Streaming events: INSERT on first assistant event + UPDATE on subsequent events to prevent duplicates (#103)
-- Assistant messages indexed by Anthropic message.id for in-place updates during streaming; DB-loaded messages reconciled by content match (#150)
-- Message deduplication checks last 10 messages by role and content instead of only most recent (#65, #69)
-- Sub-agent tool transcripts stripped from chat messages via sanitization utility duplicated across client and server (#152)
-- Queued messages persist in queued_messages table with CRUD service, queue rehydration on session recovery, sendMessage fromQueue flag to skip duplicate inserts (#154)
+### Pipeline orchestration
+- Pipeline stages execute as dedicated sessions with `session_type` values and link to parent via `pipeline_id` and `pipeline_stage` columns (#159)
+- Build plans parsed into chunks stored in `pipeline_chunks` table; QA reports parsed for 'Overall: pass|fail'; code reviews parsed for 'Blockers: N' to route autonomous stage transitions (#165)
+- Pipeline escalations stored in `pipeline_escalations` table when retry cap exceeded or parse failures occur, surfaced as top banner in UI (#165)
+- Planning escalations parsed from structured ESCALATE blocks, tracked in seven planning_questions columns, answered by owner via UI, logged to decisions.md and optionally appended to PRODUCT/ARCHITECTURE.md (#151)
+- Pipeline sessions close when work completes but stay open during approval pauses (#175)
+- Pipeline session recovery on startup checks tmux health (has-session + pane_current_command), marks orphans 'ended', resets stage-4 chunks to pending, hands other stages back to completion flow (#175)
+- Per-pipeline gate configuration stored as JSONB `gated_stages` column defaulting to [1,2,3]; GATEABLE_STAGES constant defines which stages can be gated (1,2,3,5,6) (#177)
+- PR creation is orchestrator-invoked at pipeline completion, encapsulated in pipelinePrCreator service with git/gh CLI test seams; failures stored but don't block completion (#179)
+- Branch names include last 8 chars of pipeline ID as suffix (pipeline-<slug>-<8-char-id>) for uniqueness (#184)
+- Pipeline state pills computed by pure describeState() function mapping status to {tone, label}; backend includes github_repo in GET /api/pipelines/:id for client-side URL construction (#186)
 
-**Quality assurance execution**
-- Quality checks broadcast 'quality_running' events immediately and transition sessions to 'reviewing' state separate from 'working'/'idle' (#75, #77)
-- Running checks tracked server-side in memory and restored on reconnection via GET endpoint (#75)
-- Quality rules check both has_spec database flag AND on-disk spec file presence; spec documents can come from chat attachments or filesystem (#63, #74)
-- Quality rules implemented as composite triggers (PRCreated) that pattern-match tool inputs server-side rather than generating Claude Code hooks (#80, #81)
-- Parallel execution via Promise.all for performance (#82)
-- AbortController pattern passed through cliAgent and llmGateway for surgical cancellation via AbortSignal (#89, #91, #94)
-- Session interrupt sets _interrupted flag to skip quality checks on user-initiated stops (#95, #102)
-- Quality review iteration counter tracks up to 3 retries per session and resets on manual user message (#66)
+### WebSocket and real-time updates
+- WebSocket architecture consolidated to single shared connection via AppContext with explicit subscribe/unsubscribe model instead of per-component connections (#53)
+- WebSocket URLs derive from `window.location.host` to inherit protocol/hostname and route through Vite dev proxy, fixing Tailscale connectivity (#129)
+- WebSocket events: session_name_updated, user_message, error, quality_result, session_status, message_queued, message_dequeued, message_deleted (#18, #25, #89, #92, #118)
+- SessionList and QualityScorecard use WebSocket-only updates instead of polling (#53)
+- Health-check polling pattern for detecting server availability during restarts (#16)
+- WebSocket reconnect keeps messages visible and only clears CLI panel (#129)
 
-**Evals pipeline**
-- Evidence gathering → automated checks → LLM judge flow with pluggable evidence modules (log, database, sub_agent, pr_diff, build_output) (#111)
-- YAML-based configuration, batch-based runs with atomic state tracking, trigger-based execution model (#111)
-- Sub-agents restricted to read-only tools in plan mode with no MCP, all file paths validated against project root, parameterized SQL queries, size caps enforced at evidence gathering (#111)
-- WebSocket-based real-time updates during AI-assisted authoring, agent investigation phase with Read/Glob/Grep tools, draft lifecycle as .yaml.draft files, preview runs before publishing (#120)
+### File operations and security
+- File attachments stored in /uploads directory with multer, metadata in messages.attachments JSON column, served via /api/uploads with traversal protection (#24)
+- File operations centralize path traversal protection in safeResolvePath() that validates paths stay within home directory, returns null for invalid paths triggering 403 responses (#97, #98)
+- MCP file tools use resolveProjectPath() to validate relative paths against project root, checking for absolute paths, .. escapes, and symlink escapes; writes restricted to PRODUCT.md and ARCHITECTURE.md (#182)
+- File tree walking capped at depth 10, file reads at 1 MB; binary files detected via NUL-byte heuristic and returned as base64 (#182)
+- Git operations use async exec with Promise.all parallelization, 10-second TTL cache, switched from execSync with shell interpolation to execFileSync with argument arrays for security hardening (#32, #101)
 
-**LLM integration**
-- Centralized through llmGateway.js service using OpenAI-compatible format instead of provider-specific SDKs (#41)
-- Hybrid execution: free claude --print CLI subprocess or paid LLM Gateway API based on execution_mode, maintaining identical prompt construction and result parsing (#44)
-- Voice transcription proxies through backend at /api/transcribe to keep LLM Gateway API key server-side only (#129)
-- Model configuration centralized in server/config/models.js with role-based environment overrides (MODEL_DEFAULT, MODEL_FAST, etc.) and dynamic /api/models endpoint (#121)
+### LLM integration
+- LLM Gateway centralized at https://llm-gateway.replit.app with OpenAI-compatible chat completions endpoint; requires LLM_GATEWAY_KEY env var (#41)
+- Voice transcription proxied through backend to LLM Gateway (keepAPIKeyServerSide) with multipart/form-data uploads limited to 25MB (#129)
+- Model configuration centralized in `server/config/models.js` with role mapping (default, fast, strong, quality) and env var overrides; frontend fetches from `/api/models` (#121)
+- Decision chat uses claude-sonnet-4-6 model with truncated project docs in system prompt (#163, #171)
+- Session auto-naming uses Claude Haiku (#18)
+- Context-doc generation uses Sonnet for per-PR extraction, processes in batches of 25, tracks runs in `context_doc_runs` table with WebSocket progress broadcasts (#155)
+- Final context-doc rollup emits delimited markdown blocks (===BEGIN/END===) instead of JSON to avoid escaping overhead and truncation, raised token budget to 12000 (#166)
 
-**Git and worktree management**
-- Git pipeline operations converted to async/await with parallel execution via Promise.all, 10-second TTL cache, worktreeReady guard to prevent stale status display (#32)
-- Diff stats calculated inline during assistant event processing by inspecting tool_use content blocks (#51)
-- Pipeline stages use independent presence checks instead of cascading statuses (#51)
-- Worktree lifecycle: attempt recreation from branches before fallback to parent directory, check both local and remote branch existence, preserve worktree_name in database (#104)
-- PR integration via gh CLI: backend uses gh pr list to detect open PRs before branch deletion, gracefully handles missing gh CLI (#107)
-- Worktree cleanup uses frontend-driven flow with modal for uncommitted changes; backend isolated in worktreeCleanup.js service using execFileSync for shell injection prevention (#101)
+### Merge-field and prompt injection
+- Merge-field system: {{field_name}} placeholders resolved server-side before CLI spawn; resolvers return string|null with context (workingDirectory, sessionId); unresolved fields remain as literals with explanatory note; {{last_pr}} resolver shells to gh CLI with 10s timeout (#126)
+- xHigh effort level restricted to Opus 4.7 with auto-downgrade for other models; effort level persisted per session and as app-wide default (#121, #126)
+- Plan mode on resumed sessions enforced via prompt prefix injection since CLI --permission-mode flag ignored on --resume (#76)
+- Context auto-injection: tracks _lastContextRatio and _compactionDetected flags, triggers when context drops 40%+ from above 40%, injects ~50k char conversation history prioritizing recent messages via buildCompactionPreamble() (#93)
+- Sub-agent tool transcripts stripped both server-side (before DB write) and client-side (during streaming) using boundary-marker parser with false-positive protection (#152)
+- Assistant message sanitization strips six harness tag types (system-reminder, command-name, etc.) on both server write and client read paths; historical data cleaned via one-time script (#185)
 
-**Security and validation**
-- Path traversal protection centralized in safeResolvePath(): resolve path, check it starts with home directory, reject if outside (#53, #97)
-- Git operations use execFileSync with argument arrays to prevent command injection (#53)
-- Bearer token authentication for WebSocket and API endpoints (#54)
-- Server ownership checks use case-insensitive path matching via CASE_INSENSITIVE_FS constant (#139, #141)
-- All file operations validate paths against home directory boundary; evals validate against project root (#111)
+### Project and deployment
+- Project configuration via filesystem discovery with optional AI-driven setup automation (#14, #17)
+- Auto-creates .mission-control.yaml at git root when missing to ensure project linkage (#113)
+- Session-to-project linking uses case-insensitive path matching; one-time backfill at server startup links orphaned sessions by matching working_directory to project root_path (#158)
+- GitHub repo detection falls back to git remote parsing before throwing NO_GITHUB_REPO errors, injected as test seam for unit testing (#157)
+- Railway integration via GraphQL client creates project → service from repo → env vars → domain in sequence, stores railway_project_id/deployment_url in projects table (#137)
+- Fix sessions run in isolated worktrees/branches and are idempotent (one per failure via fix_session_id race-safe UPDATE) with best-effort creation (#143)
+- Server ownership detection uses lsof with case-insensitive path matching on macOS/Windows, case-sensitive on Linux (#137, #139)
 
-**Database patterns**
-- Postgres async/await with query() and parameterized $1, $2 syntax throughout (#22, #25)
-- fullResults: true flag passed to Neon client to return accurate rowCount for UPDATE/DELETE statements, enabling proper 404 detection (#125)
-- Session metrics (lines_added, lines_removed, uncommitted counts) incrementally updated during tool event processing and stored in database rather than computed on demand (#47, #48)
-- Settings backup to .settings-backup.json on every save; restore on init if database empty (#22)
+### Testing and observability
+- Dev server ports configured via environment variables with strictPort: true to fail loudly on conflicts; Command Center assigned 3001 (backend) and 5173 (frontend) (#127)
+- Shell-out services use _setExecutorsForTests/_resetExecutorsForTests for unit test seams (#179, #184)
+- ESM/CommonJS interop: unwrapDefault helper for tsx runtime compatibility, createRequire for importing CommonJS modules from ESM (#120, #121)
 
-**Context and planning**
-- Planning sessions are session_type='planning' that auto-load PRODUCT.md and ARCHITECTURE.md, skip quality review via skipQualityChecks flag (#145)
-- MCP tools include mc_get_project_context for session-less context retrieval, notifications/initialized and notifications/cancelled handlers (#164, #167)
-- MCP tokens converted from per-project to app-wide scope; clients call mc_list_projects first then specify project_id explicitly (#147)
-- stdio-to-HTTP bridge (mcp-stdio-bridge.js) translates Claude Desktop stdio protocol to Mission Control HTTP MCP endpoint using MC_MCP_TOKEN and MC_MCP_URL from environment (#167)
-- Compaction detection watches for 40%+ drop in context usage ratio and auto-injects full conversation history via buildCompactionPreamble (#93)
+### Session lifecycle events
+- Session lifecycle events made idempotent with `_sessionCompleteEmitted` flag to prevent duplicate events during quality-review respawns (#174)
+- Interrupt mechanism sends Ctrl+C (SIGINT) via tmux with signal trap to write exit sentinel, sets _interrupted flag to skip quality checks, and immediately processes queued messages (#102)
+- Tool use processing happens in 'assistant' event handler where tool_use blocks actually arrive, not standalone 'tool_use' handler (#51)
+- Defense-in-depth validation: client normalizes input, server validates as backup (project name hyphen rules) (#60)
 
-**Context document generation**
-- Cached per-PR extractions (context_doc_extractions table), batched rollup (25 PRs per batch), runs tracked in context_doc_runs with WebSocket progress broadcasts (#155)
-- gh CLI for PR fetching with parallel processing (#155)
-- Final rollup emits delimited markdown (===BEGIN/END=== markers) instead of JSON to avoid escaping overhead (#166)
-- Server restart recovery with manual resume and extraction caching (#160)
-
-**Pipeline orchestration**
-- Three tables: pipelines, pipeline_stage_outputs, pipeline_stage_prompts; sessions gain pipeline_id/pipeline_stage foreign keys (#159)
-- Dependency-injected orchestrator for testability (#159)
-- Pipeline chunks tracked in pipeline_chunks table, QA/review outputs parsed for routing (Overall: pass|fail, Blockers: N), escalations recorded when fix cycles exceed cap (#165)
-- Phase 1: planning stages 1-3 with approval gates; Phase 2: autonomous implementation stages 4-7 with fix cycles capped at 3 (#159, #165)
-
-**Railway integration**
-- Encapsulated in server/services/railway.js with GraphQL mutations (#137)
-- Deployment status/logs stored in projects table to survive restarts (#142)
-- Status polling: BUILDING → DEPLOYING → SUCCESS/FAILED with build logs surfaced in UI (#142)
-- Auto-spawn fix sessions on deployment failure (#143)
-
-**Frontend state management**
-- React pinned to 18.3.1 across dependency tree using npm overrides and Vite dedupe to prevent version conflicts (#148)
-- Session state uses guard flags (_qualityStopDispatched, _interrupted) to prevent duplicate event handlers (#64, #95)
-- 5-second safety-net timer transitions stuck 'working' sessions to 'idle' if exit signal missed (#68)
-- Slash commands menu uses forwardRef/useImperativeHandle for keyboard handling (#79)
-
-**File handling**
-- File uploads use multer with sanitized filenames and random ID prefixes; attachments metadata stored as JSON in messages.attachments column (#24)
-- Session summaries auto-generate asynchronously with LLM or heuristic fallback, extracting key_decisions as JSON array (#2, #12)
-- Logging for subsystem debugging: autoname.log captures all AutoName output and stderr (#33)
-
-**Port and deployment**
-- Ports read from .env variables with strictPort: true to fail loudly on conflicts (#127)
-- Project detail route enriches project objects with sessions array, github_repo, servers array, deployment status from single endpoint (#137, #138)
+### UI and mobile patterns
+- Sessions API uses UNION ALL to return all non-ended sessions plus N most recent ended ones, LEFT JOINs projects table for authoritative name resolution, wrapped in subquery with outer ORDER BY created_at DESC (#178, #181)
+- Session search combines local filtering (title, lastAction) with debounced remote API calls (message content) using Set membership for 2+ character queries limited to 100 results (#87)
+- Mobile dashboard uses horizontal scroll with snap points (#70)
+- Chat Enter key behavior: desktop uses plain Enter to send, mobile uses Cmd+Ctrl+Enter (#123)
+- Retro surfer UI theme with warm cream/sand backgrounds, coral/teal accents, and tactile design elements (#30, #31)
 
 ## Patterns tried and abandoned
 
-**WebSocket architecture**
-- Per-session WebSocket connections → single shared connection with subscribe/unsubscribe pattern (#53)
-- SessionList 30-second polling → WebSocket broadcasts only (#53)
-- Clearing messages on session end → keeping them visible in UI (#53)
-- Content-based message deduplication → ID-based matching with last-10-message scan (#53, #65, #69)
+**Current approach:** Quality checks appear in chat immediately with spinner that updates in-place (#75, 2026-04-06). **Previously tried:** Only appeared after completion. **Reason:** Poor real-time feedback.
 
-**Database and storage**
-- SQLite synchronous API with db.prepare() → Postgres async/await with query() and parameterized syntax (#22, #25)
-- Preset projects table and seeding → pure filesystem-based project discovery from projects_directory (#14)
+**Current approach:** Chat streaming uses upsert pattern with INSERT on first assistant event, UPDATE on subsequent (#103, 2026-04-09). **Previously tried:** Separate insert per event causing duplicates and inflated message counts. **Reason:** Streaming events need in-place updates, not separate messages.
 
-**Git and diff tracking**
-- Synchronous execSync for git operations → async exec with Promise.all for parallel execution (#32)
-- Standalone tool_use event handler → iterate message.content blocks in assistant events (#51)
-- Cascading pipeline status logic → independent presence checks for each stage (#51)
+**Current approach:** Tool use processing in 'assistant' event handler (#51, 2026-04-02). **Previously tried:** Standalone 'tool_use' handler. **Reason:** tool_use blocks arrive in assistant events, dedicated handler never fired.
 
-**Quality and enforcement**
-- PostToolUse hook in .claude/settings.json for PR automation → quality rules trigger system (#81)
-- Sequential quality rule execution (for loops) → parallel execution with Promise.all (#82)
-- Direct Anthropic SDK integration → centralized LLM Gateway service with OpenAI-compatible format (#41)
-- Quality checks via CLI hooks → server-side detection from stream events with hybrid CLI/API execution (#35, #44)
+**Current approach:** Pipeline stages use independent presence checks (green/yellow/gray) (#51, 2026-04-02). **Previously tried:** Cascading done/pending logic. **Reason:** Showed misleading all-green status.
 
-**UI and interaction**
-- Auto-expanding file tree folders to depth 2 → default collapsed with sessionStorage persistence per session (#6)
-- Timestamp-based session names → AI-generated names via Claude Haiku after first user message (#18)
-- Global previewUrl state → per-session previewUrls object keyed by sessionId (#8)
-- Cyan running session indicators → green throbbing outlines for working, yellow for waiting (#4)
-- Tool call counts on session cards → diff totals showing lines added/removed (#47, #49, #50)
-- Message counts on session cards → diff totals display (#50)
-- Browser confirm() dialogs for non-destructive actions → immediate action execution (#29)
-- Status guards preventing message sends in non-working states → trust sendMessage to handle state internally (#88)
-- Optimistic UI updates for cancellation and deletion → server broadcast as single source of truth (#91, #92)
-- Escape key for interrupt → SIGINT (Ctrl+C) for actual process termination (#102)
-- Enter to send message → Cmd/Ctrl+Enter to send (desktop), Enter for newline as default (#108)
-- CSS variable for selected session tile → hardcoded darker tan color (#122)
-- Desktop-only keyboard shortcuts → responsive behavior with different shortcuts for mobile vs desktop (#123)
-- Hardcoded model IDs scattered across files → centralized config with environment overrides (#121)
-- Dated model names for gateway → undated model name formats (#124)
-- Hardcoded dev server ports → environment variable configuration with strict port enforcement (#127)
-- Per-project MCP token scoping → app-wide tokens with explicit project_id arguments (#147)
-- Hardcoded WebSocket URLs (:3001) → dynamic URLs from window.location.host (#129)
-- Instant "Live" deployment claim → real-time status polling with build logs (#142)
-- Assistant messages appearing all at once → streaming incrementally as they arrive (#150)
-- Context doc JSON string extraction → delimited markdown blocks to prevent truncation (#166)
-- PR prompts starting with `--` → prompts prefixed with `--` separator and `===` banners (#156)
-- Output tailing from end-of-file → tailing from start with UUID-based deduplication → reverted back to end-of-file tailing (#161, #162)
-- Per-project decisions form → centralized decisions dashboard with thinking-partner chat (#163)
-- Confirmation dialogs on all context doc actions → confirmation only for destructive overwrites (#168)
+**Current approach:** Quality checks default to CLI execution (#44, 2026-04-02). **Previously tried:** API-only execution (#35, 2026-04-01). **Reason:** Cost savings; CLI execution is free.
 
-**Features removed entirely**
-- Max effort toggle feature → completely removed from codebase (#112)
-- Planning session timeouts and rate limits → removed since they run as tmux CLI processes, not API calls (#151)
+**Current approach:** Session metrics show diff totals (+N/-N lines) (#50, 2026-04-02). **Previously tried:** Message counts then tool call counts. **Reason:** Code impact more meaningful than activity volume.
+
+**Current approach:** Sessions sort by created_at DESC (#73, 2026-04-06). **Previously tried:** Sorted by last_activity_at. **Reason:** Prevented reordering during interaction.
+
+**Current approach:** WebSocket-only updates for SessionList and QualityScorecard (#53, 2026-04-02). **Previously tried:** Polling at 30s and 15s intervals. **Reason:** Real-time updates more efficient and responsive.
+
+**Current approach:** Interrupt sends SIGINT/Ctrl+C (#102, 2026-04-09). **Previously tried:** Escape key (#95, 2026-04-09). **Reason:** Escape ignored in --print mode.
+
+**Current approach:** CLI session IDs persisted to database (#183, 2026-04-27). **Previously tried:** Memory-only tracking. **Reason:** Lost session identity on restart.
+
+**Current approach:** Branch naming with pipeline ID suffix (#184, 2026-04-27). **Previously tried:** pipeline-<slug> without suffix. **Reason:** Caused push collisions.
+
+**Current approach:** Context-doc rollup emits delimited markdown blocks (#166, 2026-04-27). **Previously tried:** JSON output. **Reason:** Avoided escaping overhead and truncation.
+
+**Current approach:** Planning sessions have no rate limits or timeouts (#151, 2026-04-26). **Previously tried:** 10/hour rate limit and 180s timeout (#145, 2026-04-25). **Reason:** Tmux CLI processes don't need API-call semantics.
+
+**Current approach:** Per-pipeline gated_stages JSONB column (#177, 2026-04-27). **Previously tried:** Hard-coded approval gates at stages 1-3. **Reason:** Needed configurable autonomy vs. control tradeoff.
+
+**Current approach:** Sessions API uses UNION ALL with all non-ended plus N recent ended (#178, 2026-04-27). **Previously tried:** Flat ORDER BY query. **Reason:** Ended backlog hid active sessions.
+
+**Current approach:** Tmux session recovery awaited before HTTP server starts (#180, 2026-04-27). **Previously tried:** Fire-and-forget recoverTmuxSessions(). **Reason:** Prevented websocket race conditions.
+
+**Current approach:** Safety-net verifies tmux liveness before resetting (#180, 2026-04-27). **Previously tried:** Unconditional reset when missing from active map. **Reason:** Prevented false resets during recovery window.
+
+**Current approach:** Worktree recovery attempts to recreate from branches (#104, 2026-04-09). **Previously tried:** Permanently falling back to parent directory. **Reason:** Preserved isolation instead of destructive merge.
+
+**Current approach:** Database uses Neon serverless Postgres (#22, 2026-03-30). **Previously tried:** better-sqlite3. **Reason:** [REVIEW: migration rationale not documented in PRs].
+
+**Current approach:** Queued messages persist to database (#154, 2026-04-26). **Previously tried:** In-memory-only queue. **Reason:** Lost messages on restart.
+
+**Current approach:** Context-doc extraction uses Sonnet (#155, 2026-04-26). **Previously tried:** Haiku. **Reason:** Quality issues; cost increase accepted.
+
+**Current approach:** Chat Enter key: desktop plain Enter, mobile Cmd+Ctrl+Enter (#123, 2026-04-16). **Previously tried:** Plain Enter creates newlines universally (#108, 2026-04-15). **Reason:** Desktop users expect Enter to send.
+
+**Current approach:** File tree collapsed by default with sessionStorage persistence (#6, 2026-03-30). **Previously tried:** Auto-expanded two levels (#1, 2026-03-29). **Reason:** Gave users control over expansion state.
+
+**Current approach:** Preview URL tracking is per-session dictionary (#8, 2026-03-30). **Previously tried:** Single global string (#1, 2026-03-29). **Reason:** Multiple sessions can run different servers.
 
 ## Integration points
 
-**Claude CLI**
-- Invoked as subprocess with --print --input-format stream-json --output-format stream-json
-- MCP servers configured via --mcp-config with nested JSON structure
-- Tmux wrapping for persistence and reconnection
-- Stream event parsing for tool calls, assistant messages, and context updates
+**Claude CLI:** Primary execution environment via `claude` command with flags for permission mode, model selection, MCP config, worktree mode, resume. Invoked via tmux send-keys. (#2, #7, #11, #20, #76)
 
-**GitHub**
-- gh CLI for PR listing to prevent destructive branch deletion (#107)
-- gh CLI for PR fetching during context document generation (#155)
-- GitHub integration for project creation workflow from repository READMEs (#17)
-- Auto-creation of .mission-control.yaml config in git repositories (#113)
+**LLM Gateway:** https://llm-gateway.replit.app with OpenAI-compatible chat completions endpoint. Used for all LLM features including session naming, quality checks (when execution_mode=api), voice transcription, eval judging, decision chat, context-doc generation. Requires LLM_GATEWAY_KEY env var. (#41, #44, #129, #155, #163)
 
-**Railway**
-- GraphQL API via server/services/railway.js for deployment mutations (#137)
-- Status polling and build log retrieval (#142)
-- Environment variable copying for deployment configuration (#137)
+**GitHub CLI (gh):** Used for PR operations (create, list, view), repository detection, Railway PR trigger detection. Timeout varies by operation (10s for last_pr merge field, polling interval for PR updates). (#157, #179, #111)
 
-**LLM Gateway**
-- OpenAI-compatible HTTP API via llmGateway.js service (#41)
-- Voice transcription proxied through backend to keep API key server-side (#129)
-- Hybrid execution mode with free CLI fallback (#44)
+**Railway GraphQL API:** Creates projects, services, environment variables, domains. Stores railway_project_id and deployment_url. Used for one-click deployment and fix session spawning. (#137, #143)
 
-**MCP (Model Context Protocol)**
-- HTTP endpoint for main UI sessions
-- stdio-to-HTTP bridge for Claude Desktop integration (#167)
-- Tools: mc_list_projects, mc_get_project_context, mc_create_session, mc_send_message, mc_escalate_question (#145, #147, #164)
-- App-wide token scope with explicit project_id arguments (#147)
+**Git:** Operations via execFileSync with argument arrays for security. Used for worktree management, branch operations, status checks, diff computation, pipeline status. 10-second TTL cache on pipeline operations. (#32, #101)
 
-**Neon Database**
-- Serverless Postgres via @neondatabase/serverless driver (#22)
-- Connection pooling and async/await throughout
-- fullResults: true for accurate rowCount on mutations (#125)
+**tmux:** Process isolation and recovery. Sessions named tmux-{sessionId}. Commands sent via send-keys, output tailed from .jsonl files. Recovery checks has-session + pane_current_command. (#12, #180)
 
-**Tmux**
-- Session spawning with `tmux new-session -d -s <session-name>`
-- Session listing and reconnection on server startup
-- Output polling at 100ms intervals
-- SIGINT delivery for session interruption (#95, #102)
+**Neon Postgres:** Serverless database with async/await throughout, query() wrapper for parameter placeholders, TIMESTAMPTZ for timestamps, { fullResults: true } for UPDATE/DELETE validation. (#22, #125)
+
+**Web Push API:** Push notifications for task completion, errors, context warnings. (#1, #2, #9)
+
+**Claude Desktop:** MCP integration via stdio-to-HTTP bridge (mcp-stdio-bridge.js) using readline interface and environment variables for token/URL. (#167)
 
 ## Key technical decisions
 
-**Tmux wrapping for session persistence**
-Sessions wrap Claude CLI in tmux rather than running as direct child processes. This enables server restarts without losing session state, with context recovery from database on reconnection. Tmux output is polled at 100ms intervals (#12, #83).
+**Tmux for session persistence.** Provides process isolation, recovery across restarts, and established tooling without custom process management. Sessions survive server crashes and can be manually inspected. (#12)
 
-**Server-side quality rule execution**
-Quality checks execute server-side by detecting patterns in stream events rather than relying on Claude CLI lifecycle hooks. This centralizes enforcement logic and enables hybrid execution modes (free CLI or paid API) (#35, #44, #80, #81).
+**Neon serverless Postgres over SQLite.** Migration from better-sqlite3 to Neon serverless Postgres required all operations to become async and changed query syntax. [REVIEW: migration rationale not documented in PRs]. (#22)
 
-**Single shared WebSocket connection**
-All clients share one WebSocket connection with subscribe/unsubscribe pattern instead of per-session connections. This reduces overhead and simplifies state management. Session resumption replays history from database to handle reconnection (#53, #59).
+**Single shared WebSocket connection.** Consolidates to single connection via AppContext with explicit subscribe/unsubscribe instead of per-component connections. Reduces resource usage and simplifies state management. (#53)
 
-**Streaming message updates via message.id indexing**
-Assistant messages are indexed by Anthropic message.id to enable in-place updates during streaming. DB-loaded messages are reconciled by content match. This prevents duplicate messages while allowing real-time updates (#150).
+**CLI execution for quality checks.** Defaults to `claude --print` subprocess to avoid API costs while maintaining full Claude capabilities. Rules can opt into paid LLM Gateway execution per-rule via execution_mode setting. (#44)
 
-**Delimited markdown for context documents**
-Context document rollup emits delimited markdown (===BEGIN/END=== markers) instead of JSON to avoid escaping overhead and truncation issues with large documents. This format is more robust for LLM parsing (#166).
+**Upsert pattern for chat streaming.** INSERT on first assistant event per turn, UPDATE on subsequent events. Turn boundaries detected on tool_result and new user messages. Prevents duplicate messages and inflated counts. (#103)
 
-**Case-insensitive path matching for cross-platform compatibility**
-Session-to-project linking uses LOWER() comparisons on paths to handle macOS/Windows filesystem behavior. Deepest-match-wins for nested projects. Server ownership checks use CASE_INSENSITIVE_FS constant (#139, #141, #158).
+**CLI session ID persistence.** Enables full conversational continuity across restarts by preserving Claude's internal session identity, not just message history. (#183)
 
-**Parallel quality rule execution**
-Quality rules execute in parallel via Promise.all rather than sequential for loops. This improves performance when multiple rules trigger on the same event (#82).
+**Bearer token authentication.** Timing-safe comparison on all /api routes except /health, opt-in via MC_AUTH_TOKEN env var. Protects against timing attacks. (#53)
 
-**AbortController for surgical cancellation**
-Quality checks use AbortController pattern passed through execution layers (cliAgent, llmGateway) to enable surgical termination of individual checks without affecting the session (#89, #91, #94).
+**Path traversal protection.** Centralized validation in safeResolvePath() and resolveProjectPath() that checks for absolute paths, .. escapes, and symlink escapes. Returns null for invalid paths triggering 403 responses. (#97, #98, #182)
 
-**Postgres over SQLite**
-Replaced SQLite synchronous API with Postgres async/await for scalability and better concurrency handling. All queries use parameterized syntax ($1, $2) to prevent SQL injection (#22, #25).
+**Merge-field system for dynamic prompts.** Server-side {{field_name}} resolution before CLI spawn with string|null resolvers. Unresolved fields remain as literals with explanatory note. Enables dynamic context injection. (#126)
 
-**Centralized LLM Gateway service**
-All LLM calls route through llmGateway.js service using OpenAI-compatible format instead of provider-specific SDKs. This enables hybrid execution modes and centralizes API key management (#41, #44).
+**Delimited markdown blocks for context docs.** Emits ===BEGIN/END=== delimiters instead of JSON to avoid escaping overhead and truncation. Raised token budget to 12000. (#166)
 
-**Path validation at system boundaries**
-All file operations validate paths via safeResolvePath() to enforce home directory boundary. Git operations use execFileSync with argument arrays to prevent command injection. Evals validate against project root (#53, #97, #101, #111).
+**Worktree auto-creation and recovery.** Provides Git isolation without manual branch management. Recovery logic recreates from branches instead of destructive fallback to parent. (#7, #20, #104)
 
-**Database-backed message queue**
-Queued messages persist in queued_messages table instead of in-memory array. This prevents message loss on server restart and enables queue draining without duplication via fromQueue flag (#154).
+**Quality review loop iteration cap.** Prevents infinite loops while allowing agents to iterate on failures. Resets on manual user messages to distinguish automated cycles from fresh work. (#66)
 
-**Cached PR extractions for context docs**
-Context document generation caches per-PR extractions in database to avoid re-processing on partial failures. Batched rollup (25 PRs per batch) with WebSocket progress broadcasts (#155, #160).
+**Pipeline session lifecycle.** Sessions close when work completes but stay open during approval pauses. Automatic recovery checks tmux health on startup. (#175, #176)
 
-**Session state guards for concurrency safety**
-Session state uses guard flags (_qualityStopDispatched, _interrupted, resumeInProgress) with try-finally cleanup to prevent duplicate event handlers and stuck states (#64, #85, #95).
+**Sub-agent sandboxing for evals.** Restricted tool set, plan-only mode, no MCP, scoped cwd, path traversal prevention, read-only DB, parameterized SQL. Prevents unintended side effects. (#111)
 
-**Incremental metric updates over computed values**
-Session metrics (lines_added, lines_removed, uncommitted_count) are incrementally updated during tool event processing and stored in database rather than computed on demand. This improves performance and enables historical tracking (#47, #48).
+**Queued message persistence.** Database storage with rehydration on server startup and session resume prevents message loss during crashes or redeploys. (#154)
+
+**Unique pipeline branch names.** Includes last 8 chars of pipeline ID as suffix to prevent push collisions when multiple pipelines work on same project. (#184)
+
+**MCP file write restrictions.** Limits writes to PRODUCT.md and ARCHITECTURE.md to constrain blast radius of autonomous planning sessions while enabling living doc updates. (#182)
+
+**Test seams via dependency injection.** Shell-out services use _setExecutorsForTests/_resetExecutorsForTests for unit test seams. Enables testing without mocking filesystem or subprocess calls. (#179, #184)

@@ -262,10 +262,16 @@ async function runPipeline(runId, project) {
     broadcastProgress(runId, project.id, { batches_total: chunks.length, batches_done: 0 });
     await appendLog(runId, project.id, `Rolling up ${chunks.length} batch(es) of up to ${contextDocRollup.BATCH_SIZE} PRs each…`);
 
-    const batchOutputs = [];
+    const batchSummaries = [];
     for (let i = 0; i < chunks.length; i += 1) {
       const out = await _rollupBatch(project.name, i, chunks.length, chunks[i]);
-      batchOutputs.push(out);
+      batchSummaries.push({
+        output: out,
+        dateRange: {
+          start: chunks[i][0]?.pr_merged_at || null,
+          end: chunks[i][chunks[i].length - 1]?.pr_merged_at || null,
+        },
+      });
       await updateRun(runId, project.id, { batches_done: i + 1 });
       broadcastProgress(runId, project.id, { batches_done: i + 1, batches_total: chunks.length });
       await appendLog(runId, project.id, `Batch ${i + 1}/${chunks.length} rolled up.`);
@@ -274,7 +280,7 @@ async function runPipeline(runId, project) {
     await transitionPhase(runId, project.id, PHASE.FINALIZING);
     await appendLog(runId, project.id, 'Synthesizing final PRODUCT.md and ARCHITECTURE.md…');
 
-    const { product, architecture } = await _rollupFinal(project.name, batchOutputs, prs.length);
+    const { product, architecture } = await _rollupFinal(project.name, batchSummaries, prs.length);
 
     const productPath = path.join(project.root_path, 'PRODUCT.md');
     const architecturePath = path.join(project.root_path, 'ARCHITECTURE.md');
