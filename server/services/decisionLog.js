@@ -43,8 +43,9 @@ function formatDecisionEntry(entry) {
   const decidedBy = entry.decidedBy === 'owner' ? 'Owner' : 'Planning agent';
   const question = escapeForBlock(entry.question);
   const answer = escapeForBlock(entry.answer) || '_(no answer recorded)_';
+  const reasoning = escapeForBlock(entry.reasoning);
 
-  return [
+  const lines = [
     `## Decision: ${summary}`,
     '',
     `- **Timestamp:** ${timestamp}`,
@@ -62,9 +63,14 @@ function formatDecisionEntry(entry) {
     '',
     answer,
     '',
-    '---',
-    ''
-  ].join('\n');
+  ];
+
+  if (reasoning) {
+    lines.push('### Reasoning', '', reasoning, '');
+  }
+
+  lines.push('---', '');
+  return lines.join('\n');
 }
 
 function resolveDecisionFilePath(projectRoot, configuredPath) {

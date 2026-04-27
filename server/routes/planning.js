@@ -209,6 +209,82 @@ router.get('/escalations/count', async (req, res) => {
   }
 });
 
+// Shared helper: applies the owner's answer to an escalated question.
+// Used by both the legacy /answer route and the new /finalize route.
+// Returns { status: 'answered', contextDocAppended }.
+// Throws if the question isn't in 'escalated' state or doesn't exist.
+async function applyOwnerAnswer({ questionId, answer, reasoning_summary, addToContextDoc }) {
+  const lookup = await query(
+    `SELECT pq.id, pq.project_id, pq.planning_session_id, pq.asking_session_id,
+            pq.question, pq.working_files,
+            p.root_path, p.name AS project_name
+     FROM planning_questions pq
+     JOIN projects p ON pq.project_id = p.id
+     WHERE pq.id = $1 AND pq.status = 'escalated'`,
+    [questionId]
+  );
+  if (lookup.rows.length === 0) {
+    const err = new Error('Escalation not found or already resolved');
+    err.statusCode = 404;
+    throw err;
+  }
+  const row = lookup.rows[0];
+
+  await query(
+    `UPDATE planning_questions
+       SET status = 'answered',
+           owner_answer = $1,
+           owner_answered_at = NOW(),
+           answered_at = NOW(),
+           decided_by = 'owner'
+     WHERE id = $2`,
+    [answer, questionId]
+  );
+
+  // Log to docs/decisions.md as an owner decision.
+  try {
+    const decisionsPath = decisionLog.resolveDecisionFilePath(row.root_path);
+    const entry = {
+      timestamp: new Date().toISOString(),
+      askingSessionId: row.asking_session_id || 'unknown',
+      planningSessionId: row.planning_session_id,
+      workingFiles: row.working_files
+        ? row.working_files.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
+      projectName: row.project_name,
+      question: row.question,
+      answer,
+      decidedBy: 'owner',
+    };
+    if (reasoning_summary && reasoning_summary.trim()) {
+      entry.reasoning = reasoning_summary.trim();
+    }
+    await decisionLog.appendDecision(decisionsPath, entry);
+    await query('UPDATE planning_questions SET logged_to_file = 1 WHERE id = $1', [questionId]);
+  } catch (e) {
+    console.error('[escalations] Failed to append decision log:', e.message);
+  }
+
+  // Optionally append to PRODUCT.md or ARCHITECTURE.md.
+  let contextDocAppended = null;
+  if (addToContextDoc && addToContextDoc !== 'neither') {
+    try {
+      const result = await appendOwnerDecisionToContextDoc({
+        projectRoot: row.root_path,
+        doc: addToContextDoc,
+        question: row.question,
+        answer,
+        timestamp: new Date().toISOString(),
+      });
+      contextDocAppended = result.path;
+    } catch (e) {
+      console.error('[escalations] Failed to append context doc:', e.message);
+    }
+  }
+
+  return { status: 'answered', contextDocAppended };
+}
+
 // POST /api/planning/escalations/:id/answer
 // Body: { answer: string, addToContextDoc?: 'PRODUCT.md' | 'ARCHITECTURE.md' | 'neither' }
 router.post('/escalations/:id/answer', async (req, res) => {
@@ -219,70 +295,17 @@ router.post('/escalations/:id/answer', async (req, res) => {
   }
 
   try {
-    const lookup = await query(
-      `SELECT pq.id, pq.project_id, pq.planning_session_id, pq.asking_session_id,
-              pq.question, pq.working_files,
-              p.root_path, p.name AS project_name
-       FROM planning_questions pq
-       JOIN projects p ON pq.project_id = p.id
-       WHERE pq.id = $1 AND pq.status = 'escalated'`,
-      [id]
-    );
-    if (lookup.rows.length === 0) {
-      return res.status(404).json({ error: 'Escalation not found or already resolved' });
-    }
-    const row = lookup.rows[0];
-
-    await query(
-      `UPDATE planning_questions
-         SET status = 'answered',
-             owner_answer = $1,
-             owner_answered_at = NOW(),
-             answered_at = NOW(),
-             decided_by = 'owner'
-       WHERE id = $2`,
-      [answer, id]
-    );
-
-    // Log to docs/decisions.md as an owner decision.
-    try {
-      const decisionsPath = decisionLog.resolveDecisionFilePath(row.root_path);
-      await decisionLog.appendDecision(decisionsPath, {
-        timestamp: new Date().toISOString(),
-        askingSessionId: row.asking_session_id || 'unknown',
-        planningSessionId: row.planning_session_id,
-        workingFiles: row.working_files
-          ? row.working_files.split(',').map((s) => s.trim()).filter(Boolean)
-          : [],
-        projectName: row.project_name,
-        question: row.question,
-        answer,
-        decidedBy: 'owner',
-      });
-      await query('UPDATE planning_questions SET logged_to_file = 1 WHERE id = $1', [id]);
-    } catch (e) {
-      console.error('[escalations] Failed to append decision log:', e.message);
-    }
-
-    // Optionally append to PRODUCT.md or ARCHITECTURE.md.
-    let contextDocAppended = null;
-    if (addToContextDoc && addToContextDoc !== 'neither') {
-      try {
-        const result = await appendOwnerDecisionToContextDoc({
-          projectRoot: row.root_path,
-          doc: addToContextDoc,
-          question: row.question,
-          answer,
-          timestamp: new Date().toISOString(),
-        });
-        contextDocAppended = result.path;
-      } catch (e) {
-        console.error('[escalations] Failed to append context doc:', e.message);
-      }
-    }
-
-    res.json({ status: 'answered', contextDocAppended });
+    const result = await applyOwnerAnswer({
+      questionId: id,
+      answer,
+      reasoning_summary: '',
+      addToContextDoc,
+    });
+    res.json(result);
   } catch (err) {
+    if (err.statusCode === 404) {
+      return res.status(404).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -368,6 +391,57 @@ router.post('/escalations/:id/dismiss', async (req, res) => {
       [id]
     );
     res.json({ status: 'dismissed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/planning/escalations/:id/draft-answer
+// Asks the LLM to summarize the chat into { answer, reasoning_summary }.
+router.post('/escalations/:id/draft-answer', async (req, res) => {
+  try {
+    const question = await loadQuestion(req.params.id);
+    if (!question) return res.status(404).json({ error: 'not found' });
+    if (question.status !== 'escalated') {
+      return res.status(409).json({ error: 'question is not escalated' });
+    }
+    const history = await query(
+      `SELECT role, content FROM decision_chats WHERE question_id = $1 ORDER BY created_at ASC`,
+      [req.params.id]
+    );
+    const docs = await loadProjectDocs(question.project_id);
+    const { buildSystemPrompt, draftFinalAnswer } = await getDecisionChat();
+    const systemPrompt = buildSystemPrompt(
+      { ...question, working_files: question.working_files ? question.working_files.split(',').map((s) => s.trim()) : [] },
+      docs
+    );
+    const drafted = await draftFinalAnswer({ systemPrompt, messages: history.rows });
+    res.json(drafted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/planning/escalations/:id/finalize
+// Body: { answer: string, reasoning_summary?: string, addToContextDoc?: 'PRODUCT.md' | 'ARCHITECTURE.md' | 'neither' }
+router.post('/escalations/:id/finalize', async (req, res) => {
+  const { answer, reasoning_summary, addToContextDoc } = req.body || {};
+  if (!answer || !String(answer).trim()) {
+    return res.status(400).json({ error: 'answer is required' });
+  }
+  try {
+    const question = await loadQuestion(req.params.id);
+    if (!question) return res.status(404).json({ error: 'not found' });
+    if (question.status !== 'escalated') {
+      return res.status(409).json({ error: 'question is not escalated' });
+    }
+    const result = await applyOwnerAnswer({
+      questionId: req.params.id,
+      answer: String(answer).trim(),
+      reasoning_summary: (reasoning_summary || '').trim(),
+      addToContextDoc: addToContextDoc || 'neither',
+    });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
