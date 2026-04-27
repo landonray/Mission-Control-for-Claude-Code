@@ -6,6 +6,17 @@ const { query } = require('../database');
 const { createSession, getSession, getAllActiveSessions, endSession, resumeSession } = require('../services/sessionManager');
 const { getGitPipeline } = require('../services/fileWatcher');
 
+// Resolve a session's display project name. Prefer the linked projects-table name
+// (authoritative — survives path-case differences and worktrees). Fall back to
+// deriving from working_directory for legacy/unattached sessions.
+function resolveSessionProjectName(projectTableName, workingDirectory) {
+  if (projectTableName) return projectTableName;
+  if (!workingDirectory) return 'Ungrouped';
+  // Worktree paths like /foo/Project/.claude/worktrees/xyz → use "Project"
+  const wtMatch = workingDirectory.match(/^(.+)\/\.claude\/worktrees\//);
+  return wtMatch ? path.basename(wtMatch[1]) : path.basename(workingDirectory);
+}
+
 // Some runtimes (e.g. tsx) wrap ESM named exports under .default when imported from CJS
 function unwrapDefault(mod) {
   return mod && mod.default && typeof mod.default === 'object' ? mod.default : mod;
@@ -24,12 +35,27 @@ router.get('/', async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
   const status = req.query.status;
 
-  let sql = 'SELECT * FROM sessions ORDER BY created_at DESC LIMIT $1';
-  let params = [limit];
-
+  // Default view: return ALL non-ended sessions plus the most recent `limit` ended ones.
+  // A flat LIMIT silently hides older active sessions behind newer ended/test sessions —
+  // surfaced as "missing projects" when test sessions dominate recent activity.
+  let sql, params;
   if (status) {
-    sql = 'SELECT * FROM sessions WHERE status = $1 ORDER BY created_at DESC LIMIT $2';
+    sql = `SELECT s.*, p.name AS project_table_name
+           FROM sessions s LEFT JOIN projects p ON s.project_id = p.id
+           WHERE s.status = $1 ORDER BY s.created_at DESC LIMIT $2`;
     params = [status, limit];
+  } else {
+    // Active rows are returned unconditionally; only ended rows are capped, so a
+    // backlog of test/ended sessions can never push real active work off the page.
+    sql = `(SELECT s.*, p.name AS project_table_name FROM sessions s
+            LEFT JOIN projects p ON s.project_id = p.id
+            WHERE s.status != 'ended')
+           UNION ALL
+           (SELECT s.*, p.name AS project_table_name FROM sessions s
+            LEFT JOIN projects p ON s.project_id = p.id
+            WHERE s.status = 'ended'
+            ORDER BY s.created_at DESC LIMIT $1)`;
+    params = [limit];
   }
 
   const sessions = (await query(sql, params)).rows;
@@ -57,12 +83,8 @@ router.get('/', async (req, res) => {
       s.status = activeInfo.status;
       query("UPDATE sessions SET status = $1 WHERE id = $2", [activeInfo.status, s.id]).catch(() => {});
     }
-    let projectName = 'Ungrouped';
-    if (s.working_directory) {
-      // Worktree paths like /foo/Project/.claude/worktrees/xyz → use "Project"
-      const wtMatch = s.working_directory.match(/^(.+)\/\.claude\/worktrees\//);
-      projectName = wtMatch ? path.basename(wtMatch[1]) : path.basename(s.working_directory);
-    }
+    const projectName = resolveSessionProjectName(s.project_table_name, s.working_directory);
+    delete s.project_table_name;
     // Only compute pipeline when worktree is ready (or session doesn't use worktrees).
     // Before init fires, working_directory still points at the main repo, which would
     // produce misleading status (e.g. "merged: done" when the branch doesn't exist yet).
@@ -522,3 +544,4 @@ router.post('/cwd-update', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.resolveSessionProjectName = resolveSessionProjectName;
