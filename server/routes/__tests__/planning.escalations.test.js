@@ -62,3 +62,45 @@ describe('GET /api/planning/escalations cross-project', () => {
     expect(q3.project_name).toBe('B');
   });
 });
+
+describe('GET /api/planning/escalations/count', () => {
+  let app;
+  beforeAll(async () => {
+    await initializeDb();
+    app = express();
+    app.use(express.json());
+    app.use('/api/planning', planningRouter);
+
+    // Reuse test data setup from escalations test
+    await query(`INSERT INTO projects (id, name, root_path, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (id) DO NOTHING`, [TEST_PROJECT_A, 'A', '/tmp/test-proj-a']);
+    await query(`INSERT INTO projects (id, name, root_path, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (id) DO NOTHING`, [TEST_PROJECT_B, 'B', '/tmp/test-proj-b']);
+    await query(`INSERT INTO sessions (id, name, project_id, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (id) DO NOTHING`, [TEST_SESSION, 'test-session-a', TEST_PROJECT_A]);
+    await query(`DELETE FROM planning_questions WHERE id LIKE 'test-decisions-q-%'`);
+    await query(
+      `INSERT INTO planning_questions (id, project_id, planning_session_id, question, status, asked_at)
+       VALUES ('test-decisions-q-1', $1, $2, 'Q1', 'escalated', NOW()),
+              ('test-decisions-q-2', $1, $2, 'Q2', 'escalated', NOW())`,
+      [TEST_PROJECT_A, TEST_SESSION]
+    );
+    await query(
+      `INSERT INTO sessions (id, name, project_id, created_at) VALUES ($1, $2, $3, NOW()) ON CONFLICT (id) DO NOTHING`,
+      ['test-decisions-session-b', 'test-session-b', TEST_PROJECT_B]
+    );
+    await query(
+      `INSERT INTO planning_questions (id, project_id, planning_session_id, question, status, asked_at)
+       VALUES ('test-decisions-q-3', $1, $2, 'Q3', 'escalated', NOW())`,
+      [TEST_PROJECT_B, 'test-decisions-session-b']
+    );
+  });
+
+  afterAll(async () => {
+    await query(`DELETE FROM planning_questions WHERE id LIKE 'test-decisions-q-%'`);
+  });
+
+  it('returns total pending count across all projects', async () => {
+    const res = await request(app).get('/api/planning/escalations/count');
+    expect(res.status).toBe(200);
+    expect(typeof res.body.count).toBe('number');
+    expect(res.body.count).toBeGreaterThanOrEqual(3);
+  });
+});

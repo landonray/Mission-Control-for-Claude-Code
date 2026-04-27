@@ -151,6 +151,19 @@ router.get('/escalations', async (req, res) => {
   }
 });
 
+// GET /api/planning/escalations/count
+// Returns total count of pending escalated decisions across all projects
+router.get('/escalations/count', async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT COUNT(*)::int AS count FROM planning_questions WHERE status = 'escalated'`
+    );
+    res.json({ count: result.rows[0].count });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/planning/escalations/:id/answer
 // Body: { answer: string, addToContextDoc?: 'PRODUCT.md' | 'ARCHITECTURE.md' | 'neither' }
 router.post('/escalations/:id/answer', async (req, res) => {
