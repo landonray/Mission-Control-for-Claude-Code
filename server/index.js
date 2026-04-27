@@ -34,6 +34,7 @@ app.use('/api/merge-fields', require('./routes/mergeFields'));
 app.use('/api/transcribe', require('./routes/transcribe'));
 app.use('/api/mcp-tokens', require('./routes/mcpTokens'));
 app.use('/api/planning', require('./routes/planning'));
+app.use('/api/pipelines', require('./routes/pipelines'));
 app.use('/mcp', require('./routes/mcpServer'));
 
 // Model config
@@ -97,6 +98,10 @@ initializeDb().then(async () => {
   } catch (err) {
     console.error('Failed to recover interrupted context-doc runs:', err.message);
   }
+
+  // Start the pipeline orchestration runtime (listens for session_complete events)
+  const pipelineRuntime = require('./services/pipelineRuntime');
+  pipelineRuntime.start();
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Mission Control server running on http://0.0.0.0:${PORT}`);

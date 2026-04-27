@@ -15,8 +15,13 @@ export default defineConfig({
     alias: {
       react: path.resolve(rootNodeModules, 'react'),
       'react-dom': path.resolve(rootNodeModules, 'react-dom'),
+      'react-dom/client': path.resolve(rootNodeModules, 'react-dom/client'),
       'react/jsx-runtime': path.resolve(rootNodeModules, 'react/jsx-runtime'),
       'react/jsx-dev-runtime': path.resolve(rootNodeModules, 'react/jsx-dev-runtime'),
+      '@testing-library/react': path.resolve(rootNodeModules, '@testing-library/react'),
+      'lucide-react': path.resolve(rootNodeModules, 'lucide-react'),
+      'react-router': path.resolve(rootNodeModules, 'react-router'),
+      'react-router-dom': path.resolve(rootNodeModules, 'react-router-dom'),
     },
   },
   test: {

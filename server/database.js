@@ -220,7 +220,41 @@ async function initializeDb() {
       extracted_at TEXT DEFAULT NOW(),
       UNIQUE(project_id, pr_number)
     )`,
-    `CREATE INDEX IF NOT EXISTS idx_context_doc_extractions_project ON context_doc_extractions(project_id, pr_merged_at)`
+    `CREATE INDEX IF NOT EXISTS idx_context_doc_extractions_project ON context_doc_extractions(project_id, pr_merged_at)`,
+    `CREATE TABLE IF NOT EXISTS pipelines (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      branch_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      current_stage INTEGER DEFAULT 0,
+      fix_cycle_count INTEGER DEFAULT 0,
+      pr_url TEXT,
+      spec_input TEXT NOT NULL,
+      created_at TEXT DEFAULT NOW(),
+      updated_at TEXT DEFAULT NOW(),
+      completed_at TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipelines_project ON pipelines(project_id, created_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS pipeline_stage_outputs (
+      id SERIAL PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL,
+      iteration INTEGER NOT NULL DEFAULT 1,
+      output_path TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'completed',
+      approved_at TEXT,
+      created_at TEXT DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_pipeline_stage_outputs_pipeline ON pipeline_stage_outputs(pipeline_id, stage, iteration)`,
+    `CREATE TABLE IF NOT EXISTS pipeline_stage_prompts (
+      id SERIAL PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES pipelines(id) ON DELETE CASCADE,
+      stage INTEGER NOT NULL,
+      prompt TEXT NOT NULL,
+      updated_at TEXT DEFAULT NOW(),
+      UNIQUE(pipeline_id, stage)
+    )`
   ];
 
   for (const stmt of statements) {
@@ -265,6 +299,9 @@ async function initializeDb() {
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS owner_answered_at TEXT`,
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS dismissed_at TEXT`,
     `ALTER TABLE planning_questions ADD COLUMN IF NOT EXISTS decided_by TEXT`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_id TEXT REFERENCES pipelines(id) ON DELETE SET NULL`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS pipeline_stage INTEGER`,
+    `CREATE INDEX IF NOT EXISTS idx_sessions_pipeline ON sessions(pipeline_id, pipeline_stage)`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }
