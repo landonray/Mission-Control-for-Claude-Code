@@ -200,15 +200,42 @@ async function startPipelineTool(args, _ctx) {
   if (!args.name || !String(args.name).trim()) {
     throw new Error('name is required (a short label for the pipeline).');
   }
-  if (!args.spec || !String(args.spec).trim()) {
-    throw new Error('spec is required (the raw spec text the pipeline will refine and build).');
+  const hasSpec = !!args.spec;
+  const hasSpecFile = !!args.spec_file;
+
+  if (hasSpec && hasSpecFile) {
+    throw new Error('Provide either spec or spec_file, not both.');
   }
-  await assertProjectExists(args.project_id);
+  if (!hasSpec && !hasSpecFile) {
+    throw new Error('spec or spec_file is required.');
+  }
+
+  let specInput;
+
+  if (hasSpecFile) {
+    const rootResult = await query('SELECT root_path FROM projects WHERE id = $1', [args.project_id]);
+    if (rootResult.rows.length === 0) {
+      throw new Error(`Project not found: ${args.project_id}`);
+    }
+    const rootPath = rootResult.rows[0].root_path;
+    const resolvedPath = path.resolve(rootPath, args.spec_file);
+    if (!resolvedPath.startsWith(rootPath + '/')) {
+      throw new Error('spec_file must be within the project directory.');
+    }
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error(`spec_file not found: ${args.spec_file}`);
+    }
+    specInput = fs.readFileSync(resolvedPath, 'utf8');
+  } else {
+    await assertProjectExists(args.project_id);
+    specInput = args.spec;
+  }
+
   const orch = pipelineRuntime.getOrchestrator();
   const pipeline = await orch.createAndStart({
     projectId: args.project_id,
     name: args.name,
-    specInput: args.spec,
+    specInput,
   });
   return {
     pipeline_id: pipeline.id,
@@ -352,15 +379,16 @@ const TOOL_DEFINITIONS = [
   {
     name: 'mc_start_pipeline',
     description:
-      'Create and start a Mission Control pipeline that will take a raw spec through spec refinement, QA design, implementation planning, implementation, QA execution, code review, and (if needed) fix cycles. Stages 1-3 are user-gated; stages 4-7 run autonomously. Returns the pipeline_id; use mc_get_pipeline_status to track progress and mc_approve_stage / mc_reject_stage to act on gated stages.',
+      'Create and start a Mission Control pipeline that will take a raw spec through spec refinement, QA design, implementation planning, implementation, QA execution, code review, and (if needed) fix cycles. Stages 1-3 are user-gated; stages 4-7 run autonomously. Returns the pipeline_id; use mc_get_pipeline_status to track progress and mc_approve_stage / mc_reject_stage to act on gated stages. Provide the spec as raw text via spec, or as a project-relative path to a text/markdown file via spec_file when the spec already exists as a file in the project.',
     inputSchema: {
       type: 'object',
       properties: {
         project_id: { type: 'string', description: 'Mission Control project ID. Required. Call mc_list_projects to discover available projects.' },
         name: { type: 'string', description: 'Short label for the pipeline (e.g. "Add pagination support"). Required.' },
-        spec: { type: 'string', description: 'Raw spec text the pipeline will refine and build. Required.' },
+        spec: { type: 'string', description: 'Raw spec text. Provide either this or spec_file, not both.' },
+        spec_file: { type: 'string', description: "Project-relative path to a plain text or markdown file to use as the spec (e.g. 'docs/specs/my-feature.md'). Provide either spec or spec_file, not both." },
       },
-      required: ['project_id', 'name', 'spec'],
+      required: ['project_id', 'name'],
     },
     handler: startPipelineTool,
   },
