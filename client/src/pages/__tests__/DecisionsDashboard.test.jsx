@@ -9,15 +9,39 @@ import { api } from '../../utils/api.js';
 
 vi.mock('../../utils/api.js', () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 
+class StubWebSocket {
+  constructor() {}
+  close() {}
+  set onmessage(_fn) {}
+  set onopen(_fn) {}
+}
+globalThis.WebSocket = StubWebSocket;
+
 describe('DecisionsDashboard', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('renders heading and a project group with items', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/planning/escalations') {
-        return Promise.resolve([
-          { id: 'q1', project_id: 'p1', project_name: 'Alpha', question: 'Q1', asked_at: new Date().toISOString() },
-        ]);
+      if (url.startsWith('/api/decisions/pending')) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'pq_q1',
+              kind: 'planning',
+              project_id: 'p1',
+              project_name: 'Alpha',
+              created_at: new Date().toISOString(),
+              planning: {
+                id: 'q1',
+                project_id: 'p1',
+                project_name: 'Alpha',
+                question: 'Q1',
+                asked_at: new Date().toISOString(),
+                working_files: [],
+              },
+            },
+          ],
+        });
       }
       if (url.endsWith('/chat')) return Promise.resolve([]);
       return Promise.resolve({ count: 1 });
@@ -29,7 +53,7 @@ describe('DecisionsDashboard', () => {
 
   it('shows all-caught-up empty state', async () => {
     api.get.mockImplementation((url) => {
-      if (url === '/api/planning/escalations') return Promise.resolve([]);
+      if (url.startsWith('/api/decisions/pending')) return Promise.resolve({ items: [] });
       return Promise.resolve({ count: 0 });
     });
     render(<MemoryRouter><DecisionsDashboard /></MemoryRouter>);

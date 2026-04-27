@@ -319,6 +319,10 @@ async function finalizePlanningTurn({ sessionId, sessionType, planningQuestionId
        WHERE id = $4`,
       [escalation.recommendation, escalation.reason, escalation.context || null, planningQuestionId]
     );
+    try {
+      const websocket = require('../websocket');
+      websocket.broadcastToAll({ type: 'decisions_changed', source: 'planning', questionId: planningQuestionId });
+    } catch { /* websocket may not be initialized in tests */ }
     return { escalated: true };
   }
 

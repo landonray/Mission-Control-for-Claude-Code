@@ -14,13 +14,17 @@ export default function SessionCard({ session, onClick, onArchive }) {
   const cardClass = [
     'card card-clickable',
     styles.card,
+    styles.cardTyped,
     isActive ? styles.cardWorking : '',
     session.status === 'waiting' ? styles.cardWaiting : '',
     session.archived ? styles.cardArchived : '',
   ].filter(Boolean).join(' ');
 
+  const typeColor = colorForSessionType(session.session_type);
+  const cardStyle = { '--session-type-color': `var(--session-color-${typeColor})` };
+
   return (
-    <div className={cardClass} onClick={onClick}>
+    <div className={cardClass} style={cardStyle} onClick={onClick}>
       <div className={styles.header}>
         <span
           className={`session-badge color-${colorForSessionType(session.session_type)}`}

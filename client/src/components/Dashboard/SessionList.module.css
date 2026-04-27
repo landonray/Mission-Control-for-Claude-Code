@@ -147,6 +147,25 @@
   flex: 0 0 280px;
 }
 
+/* Session-type color accent: thick left strip tinted by session type.
+   Uses ::before so cardWorking/cardWaiting border states don't override it. */
+.cardTyped {
+  position: relative;
+  overflow: hidden;
+}
+
+.cardTyped::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--session-type-color, var(--session-color-manual));
+  pointer-events: none;
+  z-index: 1;
+}
+
 .card:hover {
   background: var(--bg-tertiary);
   border-color: var(--accent);

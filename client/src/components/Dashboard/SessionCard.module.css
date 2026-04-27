@@ -5,6 +5,25 @@
   transition: background 0.2s, border-color 0.2s, box-shadow 0.3s, transform 0.3s;
 }
 
+/* Session-type color accent: thick left strip tinted by session type.
+   Uses a ::before pseudo-element so the cardWorking/cardWaiting border
+   states don't override it. */
+.cardTyped {
+  position: relative;
+  overflow: hidden;
+}
+
+.cardTyped::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--session-type-color, var(--session-color-manual));
+  pointer-events: none;
+}
+
 /* Working sessions: seafoam throbbing outline */
 .cardWorking {
   border-color: var(--success) !important;

@@ -6,20 +6,22 @@ describe('decision_chats table', () => {
     await initializeDb();
   });
 
-  it('exists with the expected columns', async () => {
+  it('exists with the expected columns (polymorphic shape)', async () => {
     const result = await query(
       `SELECT column_name FROM information_schema.columns
        WHERE table_name = 'decision_chats' ORDER BY column_name`
     );
     const cols = result.rows.map((r) => r.column_name).sort();
-    expect(cols).toEqual(['content', 'created_at', 'id', 'question_id', 'role'].sort());
+    expect(cols).toEqual(
+      ['content', 'created_at', 'id', 'question_id', 'role', 'subject_id', 'subject_type'].sort()
+    );
   });
 
   it('rejects rows with invalid role', async () => {
     await expect(
       query(
-        `INSERT INTO decision_chats (id, question_id, role, content, created_at)
-         VALUES ('test-bad-role', 'nonexistent', 'banana', 'x', NOW())`
+        `INSERT INTO decision_chats (id, subject_type, subject_id, role, content, created_at)
+         VALUES ('test-bad-role', 'planning_question', 'nonexistent', 'banana', 'x', NOW())`
       )
     ).rejects.toThrow();
   });

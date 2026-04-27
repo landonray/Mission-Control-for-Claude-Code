@@ -6,6 +6,7 @@ import { timeAgo, getContextHealthLevel, getContextHealthLabel } from '../../uti
 import NewSessionModal from './NewSessionModal';
 import { Plus, Archive, ArchiveRestore, Filter, GitBranch, Settings, GitCommitHorizontal, GitMerge, Cloud, FileEdit, Search, ChevronDown, ChevronRight, ExternalLink, CheckSquare } from 'lucide-react';
 import { usePendingDecisionsCount } from '../../hooks/usePendingDecisionsCount.js';
+import { colorForSessionType, badgeForSessionType, labelForSessionType } from '../../utils/sessionColors';
 import styles from './SessionList.module.css';
 
 function renderLastAction(summary) {
@@ -245,20 +246,31 @@ export default function SessionList() {
 
               const cardClass = [
                 styles.card,
+                styles.cardTyped,
                 isActive ? styles.active : '',
                 (session.status === 'working' || session.status === 'reviewing') ? styles.cardWorking : '',
                 session.status === 'waiting' ? styles.cardWaiting : '',
                 session.archived ? styles.cardArchived : '',
               ].filter(Boolean).join(' ');
 
+              const typeColor = colorForSessionType(session.session_type);
+              const cardStyle = { '--session-type-color': `var(--session-color-${typeColor})` };
+
               return (
                 <div
                   key={session.id}
                   className={cardClass}
+                  style={cardStyle}
                   onClick={() => handleSelect(session.id)}
                 >
                   <div className={styles.cardHeader}>
                     <span className={styles.statusDot} data-status={session.status} />
+                    <span
+                      className={`session-badge color-${typeColor}`}
+                      title={labelForSessionType(session.session_type)}
+                    >
+                      {badgeForSessionType(session.session_type)}
+                    </span>
                     <span className={styles.cardName}>{session.name}</span>
                     <span className={`badge badge-${session.archived ? 'ended' : session.status === 'reviewing' ? 'working' : session.status}`}>
                       {session.archived ? 'archived' : session.status}
