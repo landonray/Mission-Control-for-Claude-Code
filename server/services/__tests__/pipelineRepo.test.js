@@ -56,13 +56,29 @@ describe('pipelineRepo', () => {
       expect(prompts['1'].length).toBeGreaterThan(100);
     });
 
-    it('produces a sanitized branch name', async () => {
+    it('produces a sanitized branch name with a unique suffix', async () => {
       const pipeline = await repo.createPipeline({
         projectId: TEST_PROJECT_ID,
         name: 'Add WACKY!! Stuff & Things',
         specInput: 'spec',
       });
-      expect(pipeline.branch_name).toBe('pipeline-add-wacky-stuff-things');
+      expect(pipeline.branch_name).toMatch(/^pipeline-add-wacky-stuff-things-[a-f0-9]{8}$/);
+    });
+
+    it('gives two pipelines with the same name distinct branch names', async () => {
+      const a = await repo.createPipeline({
+        projectId: TEST_PROJECT_ID,
+        name: 'Same name',
+        specInput: 'spec',
+      });
+      const b = await repo.createPipeline({
+        projectId: TEST_PROJECT_ID,
+        name: 'Same name',
+        specInput: 'spec',
+      });
+      expect(a.branch_name).not.toBe(b.branch_name);
+      expect(a.branch_name).toMatch(/^pipeline-same-name-[a-f0-9]{8}$/);
+      expect(b.branch_name).toMatch(/^pipeline-same-name-[a-f0-9]{8}$/);
     });
   });
 

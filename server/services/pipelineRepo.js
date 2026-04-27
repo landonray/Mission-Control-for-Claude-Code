@@ -15,13 +15,18 @@ const STAGE_FILES = {
 };
 const ALL_STAGES = [1, 2, 3, 4, 5, 6, 7];
 
-function sanitizeBranchName(name) {
+// The hash suffix prevents collisions when two pipelines share a name.
+// Without it, the second pipeline reuses the first's branch and `git push`
+// is rejected as non-fast-forward, so PR creation fails.
+function sanitizeBranchName(name, pipelineId) {
   const slug = String(name)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 50);
-  return `pipeline-${slug || 'unnamed'}`;
+  const suffix = String(pipelineId || '').replace(/^pipe_/, '').slice(-8)
+    || crypto.randomBytes(4).toString('hex');
+  return `pipeline-${slug || 'unnamed'}-${suffix}`;
 }
 
 function loadDefaultPrompt(stage) {
@@ -61,7 +66,7 @@ async function createPipeline({ projectId, name, specInput, gatedStages }) {
   if (!specInput) throw new Error('specInput required');
 
   const id = `pipe_${crypto.randomBytes(8).toString('hex')}`;
-  const branchName = sanitizeBranchName(name);
+  const branchName = sanitizeBranchName(name, id);
   const stages = normalizeGatedStages(gatedStages);
 
   const result = await query(
