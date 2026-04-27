@@ -78,14 +78,26 @@ export default function ContextDocsPanel({ projectId, githubRepo }) {
   }, [projectId, loadLatest]);
 
   const handleGenerate = async () => {
-    if (!confirm('Generate PRODUCT.md and ARCHITECTURE.md from this project\'s GitHub PRs? This may take several minutes and will overwrite any existing files.')) return;
+    // Only confirm on a destructive first-time generate (overwrite). For
+    // Retry/Resume after a failure, just kick it off — cached PR extractions
+    // mean we're not re-doing expensive work, and confirm dialogs get
+    // dismissed/auto-suppressed often enough to make the button feel broken.
+    const isFreshOverwrite = !run || run.status === 'completed';
+    if (isFreshOverwrite) {
+      const ok = window.confirm(
+        run
+          ? 'Regenerate PRODUCT.md and ARCHITECTURE.md? This will overwrite the existing files.'
+          : 'Generate PRODUCT.md and ARCHITECTURE.md from this project\'s GitHub PRs? This may take several minutes.'
+      );
+      if (!ok) return;
+    }
     setStarting(true);
     setStartError(null);
     try {
       await api.post(`/api/projects/${projectId}/context-docs/generate`, {});
       await loadLatest();
     } catch (err) {
-      setStartError(err.message);
+      setStartError(err.message || 'Failed to start generation. Check the server is running.');
     } finally {
       setStarting(false);
     }
