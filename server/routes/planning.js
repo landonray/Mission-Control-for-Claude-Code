@@ -123,19 +123,23 @@ router.get('/decisions/:projectId', async (req, res) => {
 });
 
 // GET /api/planning/escalations?project_id=...
+// project_id is optional — omit to get escalations across all projects
 router.get('/escalations', async (req, res) => {
   const projectId = req.query.project_id;
-  if (!projectId) return res.status(400).json({ error: 'project_id is required' });
   try {
-    const result = await query(
-      `SELECT id, project_id, planning_session_id, asking_session_id, question,
-              escalation_recommendation, escalation_reason, escalation_context,
-              working_files, status, asked_at
-       FROM planning_questions
-       WHERE project_id = $1 AND status = 'escalated'
-       ORDER BY asked_at DESC`,
-      [projectId]
-    );
+    const baseSelect = `
+      SELECT pq.id, pq.project_id, pq.planning_session_id, pq.asking_session_id, pq.question,
+             pq.escalation_recommendation, pq.escalation_reason, pq.escalation_context,
+             pq.working_files, pq.status, pq.asked_at,
+             p.name AS project_name
+      FROM planning_questions pq
+      LEFT JOIN projects p ON p.id = pq.project_id
+      WHERE pq.status = 'escalated'`;
+
+    const result = projectId
+      ? await query(`${baseSelect} AND pq.project_id = $1 ORDER BY pq.asked_at DESC`, [projectId])
+      : await query(`${baseSelect} ORDER BY pq.asked_at ASC`);
+
     res.json(result.rows.map((r) => ({
       ...r,
       working_files: r.working_files

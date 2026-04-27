@@ -76,9 +76,23 @@ describe('GET /api/planning/escalations', () => {
     expect(res.body[0].working_files).toEqual(['a.js', 'b.js']);
   });
 
-  it('returns 400 when project_id is missing', async () => {
+  it('returns all escalations across projects when project_id is omitted', async () => {
+    queryMock.mockResolvedValueOnce({
+      rows: [{
+        id: 'pq-2', project_id: 'p2', planning_session_id: 'sess-2',
+        asking_session_id: null, question: 'Cross-project Q?',
+        escalation_recommendation: null,
+        escalation_reason: null,
+        escalation_context: null,
+        working_files: null, status: 'escalated', asked_at: '2026-04-25T00:00:00Z',
+        project_name: 'Project Two',
+      }],
+    });
     const res = await request(buildApp()).get('/api/planning/escalations');
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe('pq-2');
+    expect(res.body[0].project_name).toBe('Project Two');
   });
 });
 
