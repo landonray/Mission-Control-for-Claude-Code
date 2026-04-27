@@ -139,6 +139,58 @@ async function getStatusTool(args, _ctx) {
   };
 }
 
+const CONTEXT_DOCS = {
+  product: 'PRODUCT.md',
+  architecture: 'ARCHITECTURE.md',
+};
+
+function readContextDoc(rootPath, filename) {
+  if (!rootPath) {
+    return { exists: false, path: null, content: null };
+  }
+  const abs = path.join(rootPath, filename);
+  if (!fs.existsSync(abs)) {
+    return { exists: false, path: abs, content: null };
+  }
+  try {
+    return { exists: true, path: abs, content: fs.readFileSync(abs, 'utf8') };
+  } catch (err) {
+    return { exists: false, path: abs, content: null, error: err.message };
+  }
+}
+
+async function getProjectContextTool(args, _ctx) {
+  if (!args.project_id) {
+    throw new Error('project_id is required. Call mc_list_projects to discover available projects.');
+  }
+  const which = (args.document || 'both').toLowerCase();
+  if (!['product', 'architecture', 'both'].includes(which)) {
+    throw new Error(`document must be one of: product, architecture, both (got "${args.document}")`);
+  }
+
+  const result = await query(
+    'SELECT id, name, root_path FROM projects WHERE id = $1',
+    [args.project_id]
+  );
+  if (result.rows.length === 0) {
+    throw new Error(`Project not found: ${args.project_id}`);
+  }
+  const project = result.rows[0];
+
+  const out = {
+    project_id: project.id,
+    project_name: project.name,
+    root_path: project.root_path,
+  };
+  if (which === 'product' || which === 'both') {
+    out.product = readContextDoc(project.root_path, CONTEXT_DOCS.product);
+  }
+  if (which === 'architecture' || which === 'both') {
+    out.architecture = readContextDoc(project.root_path, CONTEXT_DOCS.architecture);
+  }
+  return out;
+}
+
 const TOOL_DEFINITIONS = [
   {
     name: 'mc_list_projects',
@@ -209,6 +261,24 @@ const TOOL_DEFINITIONS = [
     },
     handler: getStatusTool,
   },
+  {
+    name: 'mc_get_project_context',
+    description:
+      "Fetch a project's context documents (PRODUCT.md and/or ARCHITECTURE.md) without starting a session. Use this when you need raw project context — e.g., a CI check, a webhook handler, or a quick lookup before deciding whether to escalate. For most product/architecture questions during a coding session, prefer mc_start_session with session_type='planning' so the question is logged as a decision.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        project_id: { type: 'string', description: 'Mission Control project ID. Required. Get this from mc_list_projects.' },
+        document: {
+          type: 'string',
+          enum: ['product', 'architecture', 'both'],
+          description: 'Which document to return. Defaults to "both".',
+        },
+      },
+      required: ['project_id'],
+    },
+    handler: getProjectContextTool,
+  },
 ];
 
 module.exports = {
@@ -217,5 +287,6 @@ module.exports = {
   sendMessageTool,
   getStatusTool,
   listProjectsTool,
+  getProjectContextTool,
   readDescription,
 };
