@@ -118,7 +118,12 @@ router.get('/:id', async (req, res) => {
        FROM sessions WHERE pipeline_id = $1 ORDER BY created_at ASC`,
       [req.params.id]
     );
-    res.json({ pipeline, outputs, prompts, chunks, escalations, sessions: sessions.rows });
+    const projectRow = await query(
+      'SELECT github_repo FROM projects WHERE id = $1',
+      [pipeline.project_id]
+    );
+    const github_repo = projectRow.rows[0]?.github_repo || null;
+    res.json({ pipeline, outputs, prompts, chunks, escalations, sessions: sessions.rows, github_repo });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
