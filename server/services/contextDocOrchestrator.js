@@ -30,6 +30,7 @@ const database = require('../database');
 const githubPrFetcher = require('./githubPrFetcher');
 const contextDocExtractor = require('./contextDocExtractor');
 const contextDocRollup = require('./contextDocRollup');
+const contextDocVerifiers = require('./contextDocVerifiers');
 const { getGithubRepoFromGitRemote } = require('./railway');
 
 // --- test seams --------------------------------------------------------------
@@ -42,6 +43,7 @@ let _rollupBatch = (...args) => contextDocRollup.rollupBatch(...args);
 let _rollupFinal = (...args) => contextDocRollup.rollupFinal(...args);
 let _writeFile = (filePath, content) => fs.promises.writeFile(filePath, content, 'utf8');
 let _detectGithubRepoFromGit = (projectPath) => getGithubRepoFromGitRemote(projectPath);
+let _runVerifiers = (...args) => contextDocVerifiers.runAllVerifiers(...args);
 
 function _setForTests(overrides = {}) {
   if (overrides.query) _query = overrides.query;
@@ -52,6 +54,7 @@ function _setForTests(overrides = {}) {
   if (overrides.rollupFinal) _rollupFinal = overrides.rollupFinal;
   if (overrides.writeFile) _writeFile = overrides.writeFile;
   if (overrides.detectGithubRepoFromGit) _detectGithubRepoFromGit = overrides.detectGithubRepoFromGit;
+  if (overrides.runVerifiers) _runVerifiers = overrides.runVerifiers;
 }
 
 function _resetForTests() {
@@ -63,6 +66,7 @@ function _resetForTests() {
   _rollupFinal = (...args) => contextDocRollup.rollupFinal(...args);
   _writeFile = (filePath, content) => fs.promises.writeFile(filePath, content, 'utf8');
   _detectGithubRepoFromGit = (projectPath) => getGithubRepoFromGitRemote(projectPath);
+  _runVerifiers = (...args) => contextDocVerifiers.runAllVerifiers(...args);
 }
 
 // --- broadcast ---------------------------------------------------------------
@@ -262,25 +266,52 @@ async function runPipeline(runId, project) {
     broadcastProgress(runId, project.id, { batches_total: chunks.length, batches_done: 0 });
     await appendLog(runId, project.id, `Rolling up ${chunks.length} batch(es) of up to ${contextDocRollup.BATCH_SIZE} PRs each…`);
 
-    const batchSummaries = [];
-    for (let i = 0; i < chunks.length; i += 1) {
-      const out = await _rollupBatch(project.name, i, chunks.length, chunks[i]);
-      batchSummaries.push({
-        output: out,
-        dateRange: {
-          start: chunks[i][0]?.pr_merged_at || null,
-          end: chunks[i][chunks[i].length - 1]?.pr_merged_at || null,
-        },
-      });
-      await updateRun(runId, project.id, { batches_done: i + 1 });
-      broadcastProgress(runId, project.id, { batches_done: i + 1, batches_total: chunks.length });
-      await appendLog(runId, project.id, `Batch ${i + 1}/${chunks.length} rolled up.`);
-    }
+    // Roll up batches in parallel. Each batch is independent — they all
+    // read the same set of cached extractions and produce one intermediate
+    // doc each. Parallelizing turns ~7 minutes (8 batches × ~50s each) into
+    // ~1 minute, bottlenecked by the slowest batch instead of their sum.
+    let batchesDone = 0;
+    const batchSummaries = await Promise.all(
+      chunks.map(async (chunk, i) => {
+        const out = await _rollupBatch(project.name, i, chunks.length, chunk);
+        batchesDone += 1;
+        // Order of completion is unpredictable, so progress reports the
+        // running tally rather than this batch's index.
+        await updateRun(runId, project.id, { batches_done: batchesDone });
+        broadcastProgress(runId, project.id, { batches_done: batchesDone, batches_total: chunks.length });
+        await appendLog(runId, project.id, `Batch ${i + 1}/${chunks.length} rolled up.`);
+        return {
+          output: out,
+          dateRange: {
+            start: chunk[0]?.pr_merged_at || null,
+            end: chunk[chunk.length - 1]?.pr_merged_at || null,
+          },
+        };
+      })
+    );
 
     await transitionPhase(runId, project.id, PHASE.FINALIZING);
+
+    let canonicalIdentifiers = [];
+    try {
+      canonicalIdentifiers = await _runVerifiers(project.root_path);
+      const summary = canonicalIdentifiers
+        .filter(c => c && c.items && c.items.length > 0)
+        .map(c => `${c.category}: ${c.items.length}`)
+        .join(', ');
+      if (summary) {
+        await appendLog(runId, project.id, `Verifiers grounded synthesis with ${summary}.`);
+      }
+    } catch (err) {
+      // Verifier failures are non-fatal — fall back to LLM-only synthesis.
+      await appendLog(runId, project.id, `Verifiers failed (${err.message}); proceeding without ground-truth lists.`);
+    }
+
     await appendLog(runId, project.id, 'Synthesizing final PRODUCT.md and ARCHITECTURE.md…');
 
-    const { product, architecture } = await _rollupFinal(project.name, batchSummaries, prs.length);
+    const { product, architecture } = await _rollupFinal(
+      project.name, batchSummaries, prs.length, { canonicalIdentifiers }
+    );
 
     const productPath = path.join(project.root_path, 'PRODUCT.md');
     const architecturePath = path.join(project.root_path, 'ARCHITECTURE.md');

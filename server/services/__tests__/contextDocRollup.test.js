@@ -134,6 +134,43 @@ describe('contextDocRollup', () => {
       expect(userMsg).toContain('only-batch');
     });
 
+    it('renders canonical identifier lists when provided', async () => {
+      chat.mockResolvedValue(wellFormed);
+      await rollup.rollupFinal('myproj', ['batch1'], 5, {
+        canonicalIdentifiers: [
+          {
+            category: 'MCP tools',
+            items: [
+              { name: 'mc_list_projects', description: 'List all projects' },
+              { name: 'mc_start_session', description: 'Start a session' },
+            ],
+          },
+          {
+            category: 'Database tables',
+            items: [{ name: 'sessions' }, { name: 'messages' }],
+          },
+        ],
+      });
+      const userMsg = chat.mock.calls[0][0].messages[0].content;
+      expect(userMsg).toContain('Ground-truth identifiers from current code');
+      expect(userMsg).toContain('### MCP tools (2)');
+      expect(userMsg).toContain('`mc_list_projects` — List all projects');
+      expect(userMsg).toContain('`mc_start_session` — Start a session');
+      expect(userMsg).toContain('### Database tables (2)');
+      expect(userMsg).toContain('`sessions`');
+    });
+
+    it('omits the canonical section when no verifiers returned items', async () => {
+      chat.mockResolvedValue(wellFormed);
+      await rollup.rollupFinal('myproj', ['batch1'], 5, {
+        canonicalIdentifiers: [
+          { category: 'MCP tools', items: [], notes: 'file missing' },
+        ],
+      });
+      const userMsg = chat.mock.calls[0][0].messages[0].content;
+      expect(userMsg).not.toContain('Ground-truth identifiers from current code');
+    });
+
     it('throws when output is missing the architecture block (e.g., truncated)', async () => {
       const truncated = '===BEGIN PRODUCT.md===\n# Product\nstuff\n===END PRODUCT.md===\n===BEGIN ARCHITECTURE.md===\n# Architecture\nincomplete';
       chat.mockResolvedValue(truncated);
@@ -143,6 +180,26 @@ describe('contextDocRollup', () => {
     it('throws when output has no delimiters at all', async () => {
       chat.mockResolvedValue('I cannot do that');
       await expect(rollup.rollupFinal('x', ['b'], 1)).rejects.toThrow(/expected delimiters/);
+    });
+
+    it('issues two parallel LLM calls (one per doc) so each fits under the gateway timeout', async () => {
+      // Returning different strings per call lets us verify the right system
+      // prompt was paired with each extracted block.
+      const productOnly = '===BEGIN PRODUCT.md===\n# P body\n===END PRODUCT.md===';
+      const archOnly = '===BEGIN ARCHITECTURE.md===\n# A body\n===END ARCHITECTURE.md===';
+      chat.mockImplementation(async (req) => {
+        // Each doc's system prompt instructs the model to emit ONLY that
+        // doc's delimited block — match on the unique delimiter string.
+        if (req.system && req.system.includes('===BEGIN PRODUCT.md===')) return productOnly;
+        if (req.system && req.system.includes('===BEGIN ARCHITECTURE.md===')) return archOnly;
+        throw new Error('Unexpected system prompt');
+      });
+
+      const out = await rollup.rollupFinal('myproj', ['batch1'], 1);
+
+      expect(chat).toHaveBeenCalledTimes(2);
+      expect(out.product).toBe('# P body');
+      expect(out.architecture).toBe('# A body');
     });
   });
 
