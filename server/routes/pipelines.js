@@ -1,11 +1,36 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { randomUUID } = require('crypto');
 const router = express.Router();
 const repo = require('../services/pipelineRepo');
 const runtime = require('../services/pipelineRuntime');
 const { query } = require('../database');
+
+// Read a stage output file. While the pipeline is running we read it from the
+// per-pipeline worktree on disk. After PR creation the worktree is cleaned up,
+// so fall back to reading the file out of the branch's git history.
+function readStageOutputFile({ pipeline, projectRoot, outputPath }) {
+  if (pipeline.worktree_path) {
+    try { return fs.readFileSync(path.join(pipeline.worktree_path, outputPath), 'utf8'); }
+    catch (_) { /* fall through to git */ }
+  }
+  if (projectRoot && pipeline.branch_name) {
+    try {
+      return execFileSync(
+        'git',
+        ['show', `${pipeline.branch_name}:${outputPath}`],
+        { cwd: projectRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
+      );
+    } catch (_) { /* not in branch — fall through */ }
+  }
+  if (projectRoot) {
+    try { return fs.readFileSync(path.join(projectRoot, outputPath), 'utf8'); }
+    catch (_) { /* best effort */ }
+  }
+  return '';
+}
 
 const STAGE_NAMES = {
   1: 'Spec Refinement',
@@ -56,9 +81,8 @@ async function loadPipelineForApproval(pipelineId) {
   const projectRow = await query('SELECT root_path FROM projects WHERE id = $1', [pipeline.project_id]);
   const projectRoot = projectRow.rows[0]?.root_path;
   let stageOutput = '';
-  if (output && output.output_path && projectRoot) {
-    const fp = path.join(projectRoot, output.output_path);
-    try { stageOutput = fs.readFileSync(fp, 'utf8'); } catch { /* best effort */ }
+  if (output && output.output_path) {
+    stageOutput = readStageOutputFile({ pipeline, projectRoot, outputPath: output.output_path });
   }
   return {
     pipeline,
@@ -84,9 +108,6 @@ router.post('/', async (req, res) => {
     res.status(201).json(pipeline);
   } catch (err) {
     console.error('POST /api/pipelines failed:', err);
-    if (/already has an active pipeline/i.test(err.message)) {
-      return res.status(409).json({ error: err.message });
-    }
     if (/gatedStages/i.test(err.message)) {
       return res.status(400).json({ error: err.message });
     }
@@ -118,7 +139,12 @@ router.get('/:id', async (req, res) => {
        FROM sessions WHERE pipeline_id = $1 ORDER BY created_at ASC`,
       [req.params.id]
     );
-    res.json({ pipeline, outputs, prompts, chunks, escalations, sessions: sessions.rows });
+    const projectRow = await query(
+      'SELECT github_repo FROM projects WHERE id = $1',
+      [pipeline.project_id]
+    );
+    const github_repo = projectRow.rows[0]?.github_repo || null;
+    res.json({ pipeline, outputs, prompts, chunks, escalations, sessions: sessions.rows, github_repo });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -201,9 +227,9 @@ router.get('/:id/output/:stage', async (req, res) => {
     const output = await repo.getLatestStageOutput(req.params.id, stage);
     if (!output) return res.status(404).json({ error: 'No output for this stage yet' });
     const projectRow = await query('SELECT root_path FROM projects WHERE id = $1', [pipeline.project_id]);
-    const fullPath = path.join(projectRow.rows[0].root_path, output.output_path);
-    if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'Output file missing on disk' });
-    const content = fs.readFileSync(fullPath, 'utf8');
+    const projectRoot = projectRow.rows[0]?.root_path;
+    const content = readStageOutputFile({ pipeline, projectRoot, outputPath: output.output_path });
+    if (!content) return res.status(404).json({ error: 'Output file missing on disk' });
     res.json({ content, output_path: output.output_path, status: output.status, iteration: output.iteration });
   } catch (err) {
     res.status(500).json({ error: err.message });

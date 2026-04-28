@@ -205,4 +205,60 @@
   justify-content: space-between;
   padding: 12px 22px;
   border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .presetGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .overlay {
+    padding: 8px;
+  }
+
+  .modal {
+    max-height: 95vh;
+  }
+
+  .header {
+    padding: 14px 16px;
+  }
+
+  .header h2 {
+    font-size: 16px;
+  }
+
+  .worktreeToggle,
+  .modelSelector {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 16px;
+  }
+
+  .presetGrid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .presetCard {
+    flex-direction: row;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+
+  .presetDesc {
+    text-align: left;
+  }
+
+  .form {
+    padding: 16px;
+    gap: 14px;
+  }
 }

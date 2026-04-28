@@ -481,6 +481,94 @@ router.post('/folders/:projectId/publish', async (req, res) => {
   }
 });
 
+// PUT /folders/:projectId/eval — edit an existing eval file in place (live or draft)
+router.put('/folders/:projectId/eval', async (req, res) => {
+  try {
+    const { file_path, name, description, evidence, input, checks, judge_prompt, expected, judge } = req.body;
+
+    if (!file_path || typeof file_path !== 'string' || !file_path.trim()) {
+      return res.status(400).json({ error: 'file_path is required' });
+    }
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      return res.status(400).json({ error: 'description is required' });
+    }
+    if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
+      return res.status(400).json({ error: 'evidence is required and must be an object' });
+    }
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return res.status(400).json({ error: 'input is required and must be a key-value map' });
+    }
+    if (!checks && !judge_prompt) {
+      return res.status(400).json({ error: 'At least one of "checks" or "judge_prompt" is required' });
+    }
+    if (judge_prompt && !expected) {
+      return res.status(400).json({ error: '"expected" is required when "judge_prompt" is provided' });
+    }
+
+    const { getProject } = await getProjectDiscovery();
+    const { VALID_EVIDENCE_TYPES, VALID_CHECK_TYPES, loadEval } = await getEvalLoader();
+
+    const project = await getProject(req.params.projectId);
+    if (!project) return res.status(404).json({ error: 'Project not found' });
+
+    if (!isPathInsideProject(file_path, project.root_path)) {
+      return res.status(400).json({ error: 'file_path must be inside the project' });
+    }
+    if (!file_path.endsWith('.yaml') && !file_path.endsWith('.yml') &&
+        !file_path.endsWith('.yaml.draft') && !file_path.endsWith('.yml.draft')) {
+      return res.status(400).json({ error: 'file_path must reference a .yaml, .yml, .yaml.draft, or .yml.draft file' });
+    }
+
+    const fs = require('fs');
+    if (!fs.existsSync(file_path)) {
+      return res.status(404).json({ error: 'Eval file not found' });
+    }
+
+    if (!evidence.type || !VALID_EVIDENCE_TYPES.includes(evidence.type)) {
+      return res.status(400).json({
+        error: `Invalid evidence type "${evidence.type}" — must be one of ${VALID_EVIDENCE_TYPES.join(', ')}`,
+      });
+    }
+    if (checks && Array.isArray(checks)) {
+      for (const check of checks) {
+        if (check.type && !VALID_CHECK_TYPES.includes(check.type)) {
+          return res.status(400).json({
+            error: `Invalid check type "${check.type}" — must be one of ${VALID_CHECK_TYPES.join(', ')}`,
+          });
+        }
+      }
+    }
+
+    // Read prior content so we can roll back if validation fails after writing
+    const priorContent = fs.readFileSync(file_path, 'utf8');
+
+    const evalDef = { name: name.trim(), description: description.trim(), evidence, input };
+    if (checks) evalDef.checks = checks;
+    if (judge_prompt) evalDef.judge_prompt = judge_prompt;
+    if (expected) evalDef.expected = expected;
+    if (judge) evalDef.judge = judge;
+
+    const jsYaml = require('js-yaml');
+    const yamlContent = jsYaml.dump(evalDef, { lineWidth: 120 });
+    fs.writeFileSync(file_path, yamlContent, 'utf8');
+
+    try {
+      loadEval(file_path);
+    } catch (validationErr) {
+      // Roll back to prior content
+      try { fs.writeFileSync(file_path, priorContent, 'utf8'); } catch (_) {}
+      return res.status(400).json({ error: `Eval validation failed: ${validationErr.message}` });
+    }
+
+    res.json({ success: true, file_path, eval_name: evalDef.name });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /folders/:projectId/draft — delete a draft eval file
 router.delete('/folders/:projectId/draft', async (req, res) => {
   try {

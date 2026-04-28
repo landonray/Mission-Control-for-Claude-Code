@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../../utils/api';
 import { colorForSessionType, badgeForSessionType, labelForSessionType } from '../../utils/sessionColors';
 import styles from './StageCard.module.css';
@@ -98,7 +100,11 @@ export default function StageCard({ pipeline, stage, output, sessions, chunks, o
             {output.iteration > 1 && <span className={styles.iteration}> (iteration {output.iteration})</span>}
           </div>
           {contentError && <div className={styles.error}>{contentError}</div>}
-          {content && <pre className={styles.content}>{content}</pre>}
+          {content && (
+            <div className={styles.markdown}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
+          )}
         </div>
       )}
       {isPausedForApproval && (
@@ -135,6 +141,15 @@ export default function StageCard({ pipeline, stage, output, sessions, chunks, o
 }
 
 function computeStageStatus(pipeline, stage, output) {
+  // Stage 7 (fix cycle) is special: once fix_cycle_count > 0, work has happened
+  // on it even though current_stage gets reset to 5 between cycles for re-QA.
+  // Without this, stage 7 misleadingly reads "Pending" mid-loop.
+  if (stage === 7 && (pipeline.fix_cycle_count || 0) > 0) {
+    if (pipeline.status === 'completed') return 'completed';
+    if (pipeline.status === 'paused_for_escalation') return 'escalated';
+    if (pipeline.status === 'paused_for_failure') return 'failed';
+    return 'in_progress';
+  }
   if (pipeline.status === 'completed' && stage <= pipeline.current_stage) return 'completed';
   if (stage < pipeline.current_stage) return 'completed';
   if (stage > pipeline.current_stage) return 'pending';

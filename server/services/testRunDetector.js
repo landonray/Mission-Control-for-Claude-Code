@@ -97,32 +97,56 @@ const FRAMEWORK_PATTERNS = [
   },
 ];
 
+// Replace anything inside matched quotes with empty quotes so commit messages,
+// PR titles/bodies, and --title/--body arguments don't trigger matches.
+// e.g. `gh pr create --body "Test plan: npm test"` becomes
+// `gh pr create --body ""` after stripping.
+function stripQuotedContent(s) {
+  return s
+    .replace(/'[^']*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+}
+
+// Strip leading env-var assignments (e.g. `FOO=bar BAZ=qux <cmd>`) so the
+// command's actual executable is what we evaluate.
+function removeLeadingEnvVars(s) {
+  return s.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)+/, '');
+}
+
 /**
  * Returns the framework name if the command looks like a test run,
  * or null if it doesn't.
+ *
+ * Handles common shell wrappers — chained commands (`cd /path && vitest`),
+ * pipes (`vitest | tail`), env-var prefixes (`CI=1 vitest`), and quoted
+ * arguments (so `gh pr create --body "...npm test..."` doesn't match).
  *
  * @param {string} command — the raw bash command string
  * @returns {string|null}
  */
 function detectFramework(command) {
   if (!command || typeof command !== 'string') return null;
+  const trimmed = command.trim();
+  if (!trimmed) return null;
 
-  // Skip obvious non-test commands that contain a test keyword incidentally.
-  // e.g. "git commit -m 'add tests'", "ls tests/", "cd test-fixtures".
-  // We only care about commands that EXECUTE tests.
-  const stripped = command.trim();
-  if (!stripped) return null;
+  const stripped = stripQuotedContent(trimmed);
 
-  // Quick reject: commands that start with these never run tests
-  const NON_RUNNERS = ['git ', 'ls ', 'cd ', 'mkdir ', 'rm ', 'cp ', 'mv ', 'cat ', 'echo ', 'touch ', 'find ', 'grep '];
-  for (const prefix of NON_RUNNERS) {
-    if (stripped.startsWith(prefix)) return null;
-  }
+  // Split into shell-separated segments (&&, ||, ;, |). Each segment is
+  // evaluated independently — the first segment that matches wins. This lets
+  // `cd /path && npx vitest run` succeed (the second segment matches) while
+  // `git commit -m "..."` fails (no segment matches any test runner pattern).
+  const segments = stripped.split(/&&|\|\||;|\|/);
 
-  for (const { framework, patterns } of FRAMEWORK_PATTERNS) {
-    for (const pattern of patterns) {
-      if (pattern.test(stripped)) {
-        return framework;
+  for (const rawSegment of segments) {
+    const segment = removeLeadingEnvVars(rawSegment.trim());
+    if (!segment) continue;
+
+    for (const { framework, patterns } of FRAMEWORK_PATTERNS) {
+      for (const pattern of patterns) {
+        if (pattern.test(segment)) {
+          return framework;
+        }
       }
     }
   }

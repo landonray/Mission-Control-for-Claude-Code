@@ -23,6 +23,7 @@ const mockSendAndAwait = vi.fn(async () => ({
   status: 'completed',
   durationSeconds: 1.23,
 }));
+const mockDeliverMessage = vi.fn(async () => ({ sessionId: 'test-session-id', planningQuestionId: null }));
 const mockGetStatus = vi.fn(async (sessionId) => ({
   sessionId,
   status: 'completed',
@@ -33,9 +34,17 @@ const mockGetStatus = vi.fn(async (sessionId) => ({
 
 const mockQuery = vi.fn(async () => ({ rows: [], rowCount: 0 }));
 
+const mockCreateSession = vi.fn(async () => ({
+  id: 'impl-session-id',
+  name: 'Implementation: do the thing',
+  status: 'idle',
+  sessionType: 'implementation',
+}));
+
 const path = require('path');
 const databasePath = path.resolve(__dirname, '..', 'database.js');
 const orchestratorPath = path.resolve(__dirname, '..', 'services', 'planningSessionOrchestrator.js');
+const sessionManagerPath = path.resolve(__dirname, '..', 'services', 'sessionManager.js');
 
 require.cache[databasePath] = {
   id: databasePath,
@@ -50,7 +59,16 @@ require.cache[orchestratorPath] = {
   exports: {
     startPlanningSession: mockStartPlanningSession,
     sendAndAwait: mockSendAndAwait,
+    deliverMessage: mockDeliverMessage,
     getStatus: mockGetStatus,
+  },
+};
+require.cache[sessionManagerPath] = {
+  id: sessionManagerPath,
+  filename: sessionManagerPath,
+  loaded: true,
+  exports: {
+    createSession: mockCreateSession,
   },
 };
 
@@ -61,7 +79,9 @@ describe('handleRpcRequest — protocol layer', () => {
     mockQuery.mockClear();
     mockStartPlanningSession.mockClear();
     mockSendAndAwait.mockClear();
+    mockDeliverMessage.mockClear();
     mockGetStatus.mockClear();
+    mockCreateSession.mockClear();
     mockQuery.mockImplementation(async () => ({ rows: [], rowCount: 0 }));
   });
 
@@ -180,6 +200,54 @@ describe('handleRpcRequest — protocol layer', () => {
     expect(res.result.content[0].text).toMatch(/Project not found/);
   });
 
+  it('mc_start_session with session_type=implementation calls sessionManager.createSession with auto permissions', async () => {
+    // First query: assertProjectExists. Second query: loadProject for root_path.
+    mockQuery
+      .mockImplementationOnce(async () => ({ rows: [{ id: 'proj-A' }], rowCount: 1 }))
+      .mockImplementationOnce(async () => ({ rows: [{ id: 'proj-A', name: 'Alpha', root_path: '/tmp/alpha' }], rowCount: 1 }));
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 50, method: 'tools/call',
+        params: {
+          name: 'mc_start_session',
+          arguments: { project_id: 'proj-A', session_type: 'implementation', task: 'Add pagination to the list view' },
+        },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(false);
+    expect(mockCreateSession).toHaveBeenCalledTimes(1);
+    // Planning orchestrator must NOT be called for implementation sessions.
+    expect(mockStartPlanningSession).not.toHaveBeenCalled();
+    const call = mockCreateSession.mock.calls[0][0];
+    expect(call.permissionMode).toBe('auto');
+    expect(call.useWorktree).toBe(true);
+    expect(call.sessionType).toBe('implementation');
+    expect(call.workingDirectory).toBe('/tmp/alpha');
+    expect(call.projectId).toBe('proj-A');
+    expect(call.initialPrompt).toContain('Add pagination to the list view');
+    const payload = JSON.parse(res.result.content[0].text);
+    expect(payload.session_id).toBe('impl-session-id');
+    expect(payload.session_type).toBe('implementation');
+    expect(payload.planning_question_id).toBeNull();
+  });
+
+  it('mc_start_session rejects unknown session_type values', async () => {
+    mockQuery.mockImplementationOnce(async () => ({ rows: [{ id: 'proj-A' }], rowCount: 1 }));
+    const res = await mcpServer.handleRpcRequest(
+      {
+        jsonrpc: '2.0', id: 51, method: 'tools/call',
+        params: {
+          name: 'mc_start_session',
+          arguments: { project_id: 'proj-A', session_type: 'bogus', task: 't' },
+        },
+      },
+      {}
+    );
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/session_type must be one of/);
+  });
+
   it('mc_start_session returns isError when task is missing', async () => {
     mockQuery.mockImplementationOnce(async () => ({ rows: [{ id: 'proj-A' }], rowCount: 1 }));
     const res = await mcpServer.handleRpcRequest(
@@ -193,7 +261,7 @@ describe('handleRpcRequest — protocol layer', () => {
     expect(res.result.content[0].text).toMatch(/task is required/);
   });
 
-  it('mc_send_message routes to orchestrator.sendAndAwait without scoping', async () => {
+  it('mc_send_message routes to orchestrator.deliverMessage and returns immediately', async () => {
     const res = await mcpServer.handleRpcRequest(
       {
         jsonrpc: '2.0', id: 8, method: 'tools/call',
@@ -202,11 +270,16 @@ describe('handleRpcRequest — protocol layer', () => {
       {}
     );
     expect(res.result.isError).toBe(false);
-    expect(mockSendAndAwait).toHaveBeenCalledWith(
+    expect(mockDeliverMessage).toHaveBeenCalledWith(
       'test-session-id',
       'follow up?',
       expect.any(Object)
     );
+    const result = JSON.parse(res.result.content[0].text);
+    expect(result.status).toBe('delivered');
+    expect(result.session_id).toBe('test-session-id');
+    expect(result.instructions).toMatch(/mc_get_session_status/);
+    expect(result.instructions).toMatch(/mc_get_session_summary/);
   });
 
   it('mc_get_session_status returns status from orchestrator', async () => {

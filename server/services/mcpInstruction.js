@@ -23,6 +23,20 @@ This project is connected to Mission Control's MCP server. Mission Control expos
 
 The user reviews planning decisions asynchronously in the Mission Control dashboard, so do not feel bad about asking — just keep questions concrete and skip ones already answered by the context documents.
 
+=== Mission Control eval tools ===
+
+Mission Control also exposes evals — saved quality checks that verify product behavior (not just code mechanics) and can be re-run automatically. Use them to lock in standards and catch regressions:
+
+1. Before finishing a non-trivial change, call \`mc_run_evals\` to run all currently-armed eval folders. If failures come back, fix them before declaring the work complete.
+
+2. When you observe a quality concern worth checking on every future change — output format, behavior consistency, regression risk — call \`mc_author_eval\` with a plain-English description. Mission Control's authoring agent drafts the structured eval, writes it to disk as a published .yaml, and validates it. Then call \`mc_arm_folder\` to activate the folder it lives in.
+
+3. Use \`mc_list_evals\` first to see what already exists for the project so you don't author duplicates.
+
+4. Use \`mc_edit_eval\` to tighten a rubric or fix a bad evidence source on an existing eval. Use \`mc_delete_eval\` to remove an eval that's redundant or wrong.
+
+Authored evals are immediately live and run on every armed trigger. Be conservative — author evals for genuine product standards, not for one-off code changes that a unit test would cover.
+
 === end planning instructions ===
 
 `;

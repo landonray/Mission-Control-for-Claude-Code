@@ -42,6 +42,71 @@ function resolvePath(p) {
   return p.replace(/^~(?=$|\/)/, os.homedir());
 }
 
+// Claude CLI stores per-conversation transcripts at
+//   ~/.claude/projects/<encoded-cwd>/<cli-session-id>.jsonl
+// where <encoded-cwd> replaces every non-alphanumeric character in the absolute
+// cwd with '-'. `claude --resume <id>` only looks under the encoded form of
+// the current cwd — if a session was started in a worktree that has since been
+// deleted (or its cwd was rewritten), the transcript still exists on disk but
+// in a different project dir, so --resume errors with "No conversation found"
+// and the user sees nothing happen.
+function defaultProjectsRoot() {
+  return path.join(os.homedir(), '.claude', 'projects');
+}
+
+function getEncodedProjectDir(workingDirectory, projectsRoot = defaultProjectsRoot()) {
+  const encoded = workingDirectory.replace(/[^a-zA-Z0-9]/g, '-');
+  return path.join(projectsRoot, encoded);
+}
+
+function findClaudeTranscript(cliSessionId, projectsRoot = defaultProjectsRoot()) {
+  if (!cliSessionId) return null;
+  let entries;
+  try {
+    entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const filename = `${cliSessionId}.jsonl`;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const candidate = path.join(projectsRoot, entry.name, filename);
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+  return null;
+}
+
+// Make sure `claude --resume <cliSessionId>` will succeed at workingDirectory.
+// If the transcript is already in the cwd's project dir, returns true. If it
+// exists in a different project dir (the session's original worktree was
+// deleted, etc.), copy it into the current cwd's project dir so --resume can
+// find it. Returns false only if the transcript can't be found anywhere — in
+// that case the caller should drop --resume and fall back to a synthetic
+// context preamble. Verified empirically: Claude CLI does not cross-check the
+// transcript's original init.cwd against the current cwd, so a copied
+// transcript resumes cleanly with full conversation memory.
+function ensureTranscriptAtCwd(workingDirectory, cliSessionId, projectsRoot = defaultProjectsRoot()) {
+  if (!workingDirectory || !cliSessionId) return false;
+  const expectedDir = getEncodedProjectDir(workingDirectory, projectsRoot);
+  const expectedPath = path.join(expectedDir, `${cliSessionId}.jsonl`);
+  try {
+    if (fs.existsSync(expectedPath)) return true;
+  } catch {}
+  const found = findClaudeTranscript(cliSessionId, projectsRoot);
+  if (!found) return false;
+  try {
+    fs.mkdirSync(expectedDir, { recursive: true });
+    fs.copyFileSync(found, expectedPath);
+    console.log(`[Transcript] Copied ${path.basename(found)} from ${path.basename(path.dirname(found))} to ${path.basename(expectedDir)} so --resume can find it`);
+    return true;
+  } catch (e) {
+    console.error(`[Transcript] Failed to copy ${cliSessionId} into ${expectedDir}:`, e.message);
+    return false;
+  }
+}
+
 /**
  * When resuming a worktree session whose directory was cleaned up,
  * attempt to recreate it from the branch. Returns the working directory to use.
@@ -1136,6 +1201,18 @@ class SessionProcess {
       return;
     }
 
+    // Make sure the transcript for our saved cli_session_id is reachable from
+    // the current cwd. If the session's original worktree was deleted, the
+    // file lives in a different project dir; ensureTranscriptAtCwd copies it
+    // so --resume works. If no transcript exists anywhere, drop the stale id
+    // and let the preamble path below provide context the long way.
+    if (this.cliSessionId && !ensureTranscriptAtCwd(this.workingDirectory, this.cliSessionId)) {
+      console.warn(`[Session ${this.id.slice(0, 8)}] No transcript found anywhere for cli_session_id ${this.cliSessionId} — clearing and falling back to context preamble`);
+      this.cliSessionId = null;
+      query('UPDATE sessions SET cli_session_id = NULL WHERE id = $1', [this.id])
+        .catch(e => console.error(`[Session ${this.id.slice(0, 8)}] Failed to clear stale cli_session_id:`, e.message));
+    }
+
     // Check if this is the first user message — trigger AI name generation
     const msgCountResult = await query('SELECT user_message_count FROM sessions WHERE id = $1', [this.id]);
     const msgCount = msgCountResult.rows[0];
@@ -1843,11 +1920,20 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
       return null;
     }
 
-    const preamble = await buildContextPreamble(sessionId);
-
     // If the worktree directory was cleaned up, try to recreate it from the branch.
     // Only falls back to parent dir (and updates DB) if the branch is also gone.
     const workingDir = await resolveWorktreeOnResume(sessionRow);
+
+    // Build the synthetic transcript-style preamble only when --resume cannot
+    // be used. When --resume works, Claude already has the full conversation
+    // and the preamble would actually hurt — Claude reads it as a transcript
+    // to acknowledge rather than a conversation to continue, replies with one
+    // line ("I'll trace through the codebase…") and stops without using tools.
+    // ensureTranscriptAtCwd will copy an orphaned transcript from another
+    // project dir into ours if needed, so --resume succeeds even when the
+    // original worktree is gone.
+    const canResume = !!(sessionRow.cli_session_id && ensureTranscriptAtCwd(workingDir, sessionRow.cli_session_id));
+    const preamble = canResume ? null : await buildContextPreamble(sessionId);
 
     const { text: resolvedNewMessage, unresolved: resumeUnresolved } = await mergeFields.resolvePrompt(newMessage, {
       workingDirectory: workingDir,
@@ -1868,9 +1954,16 @@ async function resumeSession(sessionId, newMessage, { listener } = {}) {
 
     // Restore the Claude CLI session ID so the resume spawn passes --resume
     // and Claude picks up exactly where it left off — no synthetic transcript
-    // preamble, no "I'll do this" lazy turns.
-    if (sessionRow.cli_session_id) {
+    // preamble, no "I'll do this" lazy turns. canResume above already verified
+    // the transcript is in place (copying it from another project dir if the
+    // original worktree was deleted). If no transcript exists anywhere, the
+    // saved id is dead, so clear it from the DB.
+    if (canResume) {
       session.cliSessionId = sessionRow.cli_session_id;
+    } else if (sessionRow.cli_session_id) {
+      console.warn(`[Session ${sessionId.slice(0, 8)}] No transcript found anywhere for cli_session_id ${sessionRow.cli_session_id} — clearing and falling back to context preamble`);
+      query('UPDATE sessions SET cli_session_id = NULL WHERE id = $1', [sessionId])
+        .catch(e => console.error(`[Session ${sessionId.slice(0, 8)}] Failed to clear stale cli_session_id:`, e.message));
     }
 
     session.resuming = true;
@@ -2225,4 +2318,7 @@ module.exports = {
   globalEvents,
   tmuxAvailable,
   SessionProcess,
+  // Exposed for tests
+  findClaudeTranscript,
+  ensureTranscriptAtCwd,
 };
