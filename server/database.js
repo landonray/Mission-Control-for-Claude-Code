@@ -344,6 +344,7 @@ async function initializeDb() {
     `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS pr_creation_error TEXT`,
     `ALTER TABLE pipelines ADD COLUMN IF NOT EXISTS gated_stages JSONB DEFAULT '[1,2,3]'::jsonb`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS cli_session_id TEXT`,
+    `ALTER TABLE session_summaries ADD COLUMN IF NOT EXISTS created_at TEXT DEFAULT NOW()`,
   ];
   for (const migration of migrations) {
     try { await sql.query(migration); } catch (e) { console.error('Migration failed:', migration, e.message); }

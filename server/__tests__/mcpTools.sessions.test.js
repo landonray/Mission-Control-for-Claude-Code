@@ -51,8 +51,8 @@ beforeEach(() => {
   mockQuery.mockImplementation(async () => ({ rows: [], rowCount: 0 }));
 });
 
-describe('tools/list includes the two session-history tools', () => {
-  it('exposes mc_search_sessions and mc_get_session_summary', async () => {
+describe('tools/list includes the session-history tools', () => {
+  it('exposes mc_search_sessions, mc_get_session_summary, mc_get_session_messages', async () => {
     const res = await mcpServer.handleRpcRequest(
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
       {}
@@ -60,6 +60,7 @@ describe('tools/list includes the two session-history tools', () => {
     const names = res.result.tools.map((t) => t.name);
     expect(names).toContain('mc_search_sessions');
     expect(names).toContain('mc_get_session_summary');
+    expect(names).toContain('mc_get_session_messages');
   });
 });
 
@@ -263,6 +264,158 @@ describe('mc_get_session_summary', () => {
     const res = await callTool('mc_get_session_summary', {});
     expect(res.result.isError).toBe(true);
     expect(res.result.content[0].text).toMatch(/session_id is required/);
+  });
+});
+
+describe('mc_get_session_messages', () => {
+  it('returns turn-by-turn messages with role/content/timestamp in chronological order by default', async () => {
+    let messagesSql = null;
+    let messagesParams = null;
+    mockQuery.mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM sessions WHERE id')) {
+        return { rows: [{ id: 's1', name: 'Auth refactor', session_type: 'implementation' }] };
+      }
+      if (sql.includes('SELECT COUNT(*)') && sql.includes('FROM messages')) {
+        return { rows: [{ total: 3 }] };
+      }
+      if (sql.includes('FROM messages')) {
+        messagesSql = sql;
+        messagesParams = params;
+        return {
+          rows: [
+            { id: 1, role: 'user', content: 'change the auth flow', timestamp: '2026-04-20T10:00:00Z' },
+            { id: 2, role: 'assistant', content: 'understood, refactoring now', timestamp: '2026-04-20T10:00:05Z' },
+            { id: 3, role: 'user', content: 'great, also update the tests', timestamp: '2026-04-20T10:01:00Z' },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const res = await callTool('mc_get_session_messages', { session_id: 's1' });
+    expect(res.result.isError).toBe(false);
+    const payload = payloadOf(res);
+    expect(payload.session_id).toBe('s1');
+    expect(payload.total).toBe(3);
+    expect(payload.count).toBe(3);
+    expect(payload.offset).toBe(0);
+    expect(payload.limit).toBe(100);
+    expect(payload.order).toBe('asc');
+    expect(payload.messages).toHaveLength(3);
+    expect(payload.messages[0].role).toBe('user');
+    expect(payload.messages[0].content).toBe('change the auth flow');
+    expect(payload.messages[1].role).toBe('assistant');
+    expect(payload.messages[1].content).toBe('understood, refactoring now');
+    // Default response must NOT include tool_calls/tool_results.
+    expect(payload.messages[0]).not.toHaveProperty('tool_calls');
+    expect(payload.messages[0]).not.toHaveProperty('tool_results');
+    // Query shape: ASC default order, limit + offset bound.
+    expect(messagesSql).toMatch(/ORDER BY timestamp ASC, id ASC/);
+    expect(messagesParams).toEqual(['s1', 100, 0]);
+    // Default columns must not include tool_calls or tool_results.
+    expect(messagesSql).not.toMatch(/tool_calls/);
+    expect(messagesSql).not.toMatch(/tool_results/);
+  });
+
+  it('supports limit/offset pagination, descending order, and include_tool_calls', async () => {
+    let messagesSql = null;
+    let messagesParams = null;
+    mockQuery.mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM sessions WHERE id')) {
+        return { rows: [{ id: 's2', name: 'x', session_type: 'implementation' }] };
+      }
+      if (sql.includes('SELECT COUNT(*)') && sql.includes('FROM messages')) {
+        return { rows: [{ total: 50 }] };
+      }
+      if (sql.includes('FROM messages')) {
+        messagesSql = sql;
+        messagesParams = params;
+        return {
+          rows: [
+            {
+              id: 50,
+              role: 'assistant',
+              content: 'done',
+              tool_calls: '[{"name":"Edit","args":{"file":"a.js"}}]',
+              tool_results: '[{"ok":true}]',
+              timestamp: '2026-04-20T11:00:00Z',
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const res = await callTool('mc_get_session_messages', {
+      session_id: 's2',
+      limit: 10,
+      offset: 40,
+      order: 'desc',
+      include_tool_calls: true,
+    });
+    expect(res.result.isError).toBe(false);
+    const payload = payloadOf(res);
+    expect(payload.total).toBe(50);
+    expect(payload.count).toBe(1);
+    expect(payload.offset).toBe(40);
+    expect(payload.limit).toBe(10);
+    expect(payload.order).toBe('desc');
+    expect(messagesSql).toMatch(/ORDER BY timestamp DESC, id DESC/);
+    expect(messagesSql).toMatch(/tool_calls/);
+    expect(messagesSql).toMatch(/tool_results/);
+    expect(messagesParams).toEqual(['s2', 10, 40]);
+    expect(payload.messages[0].tool_calls).toEqual([{ name: 'Edit', args: { file: 'a.js' } }]);
+    expect(payload.messages[0].tool_results).toEqual([{ ok: true }]);
+  });
+
+  it('caps limit at 500 and floors invalid offsets at 0', async () => {
+    let messagesParams = null;
+    mockQuery.mockImplementation(async (sql, params) => {
+      if (sql.includes('FROM sessions WHERE id')) {
+        return { rows: [{ id: 's3', name: 'x', session_type: 'implementation' }] };
+      }
+      if (sql.includes('SELECT COUNT(*)') && sql.includes('FROM messages')) {
+        return { rows: [{ total: 0 }] };
+      }
+      if (sql.includes('FROM messages')) {
+        messagesParams = params;
+        return { rows: [] };
+      }
+      return { rows: [] };
+    });
+    const res = await callTool('mc_get_session_messages', {
+      session_id: 's3',
+      limit: 99999,
+      offset: -10,
+    });
+    expect(res.result.isError).toBe(false);
+    expect(messagesParams).toEqual(['s3', 500, 0]);
+  });
+
+  it('errors when the session is unknown', async () => {
+    mockQuery.mockImplementation(async () => ({ rows: [] }));
+    const res = await callTool('mc_get_session_messages', { session_id: 'missing' });
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/Session missing not found/);
+  });
+
+  it('rejects missing session_id', async () => {
+    const res = await callTool('mc_get_session_messages', {});
+    expect(res.result.isError).toBe(true);
+    expect(res.result.content[0].text).toMatch(/session_id is required/);
+  });
+});
+
+// Regression: production session_summaries tables created before created_at was
+// added would error with `column "created_at" does not exist`. The migration
+// must add it on every startup so mc_get_session_summary keeps working on
+// older databases.
+describe('schema migration: session_summaries.created_at', () => {
+  it('database.js migrates session_summaries to add created_at', () => {
+    const src = fs.readFileSync(databasePath, 'utf8');
+    expect(src).toMatch(
+      /ALTER TABLE session_summaries ADD COLUMN IF NOT EXISTS created_at/
+    );
   });
 });
 
