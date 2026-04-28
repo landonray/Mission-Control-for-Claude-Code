@@ -15,6 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const { query } = require('../database');
 const mergeFields = require('./mergeFields');
+const contextDocAutoTrigger = require('./contextDocAutoTrigger');
 
 // Cache rules to avoid DB queries on every tool use
 let rulesCache = null;
@@ -402,6 +403,15 @@ async function onToolUse(sessionId, toolName, toolInput, broadcast) {
     const triggers = r.fires_on.split(',').map(s => s.trim());
     return triggers.includes('PRCreated');
   }) : [];
+
+  // Auto-trigger context-doc regen on PR/branch merges. Fire-and-forget; the
+  // trigger handles its own debounce and skip-if-running logic.
+  if (toolName === 'Bash') {
+    const commandText = typeof toolInput === 'string' ? toolInput : (toolInput?.command || inputStr);
+    contextDocAutoTrigger.onBashCommand(sessionId, commandText).catch(err => {
+      console.warn('[QualityRunner] contextDocAutoTrigger failed:', err.message);
+    });
+  }
 
   const matchingRules = [...postToolRules, ...prCreatedRules];
   if (matchingRules.length === 0) return [];

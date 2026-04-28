@@ -126,6 +126,19 @@ initializeDb().then(async () => {
     console.error('Failed to reconcile stuck pipeline sessions:', err.message);
   }
 
+  // Nightly safety-net sweep: catches PRs merged on GitHub directly (where
+  // the bash watcher can't see them). Runs once a day; the orchestrator's
+  // skip-if-running and per-PR extraction cache make repeat runs cheap.
+  const contextDocAutoTrigger = require('./services/contextDocAutoTrigger');
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const nightlySweepTimer = setInterval(() => {
+    contextDocAutoTrigger.runNightlySweep().catch(err =>
+      console.error('Nightly context-doc sweep failed:', err.message)
+    );
+  }, ONE_DAY_MS);
+  // Don't keep the process alive just for the sweep timer.
+  if (typeof nightlySweepTimer.unref === 'function') nightlySweepTimer.unref();
+
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Mission Control server running on http://0.0.0.0:${PORT}`);
   });
