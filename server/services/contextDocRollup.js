@@ -21,7 +21,12 @@ const llmGateway = require('./llmGateway');
 const ROLLUP_MODEL = 'claude-sonnet-4-5';
 const BATCH_SIZE = 25;
 const BATCH_MAX_TOKENS = 4000;
-const FINAL_MAX_TOKENS = 12000;
+// Per-doc cap. Streaming + the gateway timeout being lifted means we can
+// let the model write as much as the docs need. Generous cap so the model
+// never hits a budget wall mid-doc — verbatim lists of API endpoints,
+// MCP tools, supersession trails, and future verifier categories all
+// push the doc longer.
+const FINAL_MAX_TOKENS = 24000;
 
 const PRODUCT_BEGIN = '===BEGIN PRODUCT.md===';
 const PRODUCT_END = '===END PRODUCT.md===';
@@ -60,24 +65,44 @@ Conflict resolution rules — read carefully:
 - Pay close attention to the "supersedes" field on each extraction — that is an explicit signal that something earlier was overridden.
 - Also infer supersession when later PRs change behavior even if "supersedes" is empty (e.g., a feature mentioned in PR #5 is removed by PR #20 even if #20 didn't call it out).
 - When supersession is found, describe ONLY the current state in the relevant theme/decision section. Record the override in "Superseded within this batch" with both PR numbers and dates.
+
+Enumeration rules — read carefully:
+- PRESERVE NAMED IDENTIFIERS VERBATIM. When the per-PR extractions list specific names (MCP tool names like mc_*, API endpoint paths, database tables, slash commands, settings keys, env vars, feature names, eval check types, quality rule triggers, pipeline stages), enumerate every one in the relevant bullet. Never substitute a category description like "MCP pipeline tools" for the actual list of names — write out every name.
+- If a single batch's PRs collectively register, say, four MCP tools, the rollup must list all four by name.
 - Skip mechanical PRs from the themes/decisions sections.
 - Be specific. Use the project's terminology directly. Avoid generic phrases like "improved code quality".
 - One sentence per bullet.
 - If a section has no content, write "_(none in this batch)_" under it.`;
 
-const FINAL_SYSTEM_PROMPT = `You are writing two living context documents — PRODUCT.md and ARCHITECTURE.md — for a single project, by synthesizing a set of intermediate batch roll-ups derived from the project's PR history.
+const SHARED_FINAL_RULES = `Conflict resolution rules — read carefully:
+- The batch roll-ups you receive are ordered chronologically and labeled with their date ranges. Earlier batches describe earlier state; later batches describe later state.
+- Each batch may include a "Superseded within this batch" section. Honor those — the current state is the later one in each pair.
+- ALSO compare claims across batches. If batch 1 says feature X works one way and batch 5 says feature X works another way, the batch 5 version is the current truth. The batch 1 version belongs in the superseded section — never present both as if they coexist.
+- When you record a supersession, write it as: "Current state: <later approach> (#X, YYYY-MM-DD). Previously: <earlier approach> (#Y, YYYY-MM-DD). Reason: <if clear>." Skip the reason line if not clear.
+- Do not assume something still exists just because an early PR introduced it. Verify it survived through the latest batch.
 
-These documents will be loaded by future Claude Code sessions at startup, so they must be a clear, navigable reference — not a chronological log. Organize by topic, not by date.
+Enumeration rules — read carefully:
+- The user prompt may include a "Ground-truth identifiers from current code" section listing exhaustive lists extracted directly from the codebase (MCP tools, API endpoints, database tables, etc.). When present, these are the AUTHORITATIVE current state — every name in those lists must appear in the relevant section of the doc, verbatim.
+- For categories without a ground-truth list, still preserve every named identifier mentioned in the batch roll-ups (feature names, settings keys, env vars, slash commands, eval check types, quality rule triggers, pipeline stages, etc.). Never collapse a list of named things into a category description like "MCP tools" — enumerate the actual names.
+- If the ground-truth list contains a name that no batch roll-up mentions, still include it (the code is authoritative; the PR signal may have been thin or compressed).
+- If a batch roll-up mentions a name that the ground-truth list contradicts (e.g., a tool that no longer exists in code), trust the code and treat the doc claim as superseded.
 
-Output format — emit BOTH documents using these exact delimiter lines, with the markdown content in between. No prose outside the delimiters, no code fences:
+Rules:
+- Cite PR numbers in parens (e.g., "(see #12, #34)") sparingly — only where the citation is clearly grounding the claim.
+- Keep bullet points to one or two sentences each.
+- If a section truly has no content from the input, write a single italic line "_No signal yet — fill in during review._" rather than inventing content.
+- Use the project's own terminology. Don't generalize names of features or services.
+- Mark genuinely uncertain items inline with "[REVIEW: ...]".`;
+
+const PRODUCT_SYSTEM_PROMPT = `You are writing PRODUCT.md, a living product document for a single project, by synthesizing a set of intermediate batch roll-ups derived from the project's PR history.
+
+This document will be loaded by future Claude Code sessions at startup, so it must be a clear, navigable reference — not a chronological log. Organize by topic, not by date. Focus on PRODUCT-level concerns: what the app does, why it does it that way, what's been deliberately scoped out, what was once true but is no longer. Architecture details (data model, code patterns, integrations) belong in ARCHITECTURE.md and should NOT appear here.
+
+Output format — emit ONLY the PRODUCT.md content using these exact delimiter lines, with the markdown content in between. No prose outside the delimiters, no code fences:
 
 ${PRODUCT_BEGIN}
 <full PRODUCT.md content as raw markdown>
 ${PRODUCT_END}
-
-${ARCH_BEGIN}
-<full ARCHITECTURE.md content as raw markdown>
-${ARCH_END}
 
 PRODUCT.md must use this top-level structure:
 
@@ -92,6 +117,18 @@ PRODUCT.md must use this top-level structure:
 ## Superseded product decisions
 ## Open questions and known gaps
 
+${SHARED_FINAL_RULES}`;
+
+const ARCH_SYSTEM_PROMPT = `You are writing ARCHITECTURE.md, a living architecture document for a single project, by synthesizing a set of intermediate batch roll-ups derived from the project's PR history.
+
+This document will be loaded by future Claude Code sessions at startup, so it must be a clear, navigable reference — not a chronological log. Organize by topic, not by date. Focus on ARCHITECTURE-level concerns: system shape, data model, code patterns, integrations, technical decisions, abandoned approaches. Product-level concerns (what the app does for the user, scoping decisions) belong in PRODUCT.md and should NOT appear here.
+
+Output format — emit ONLY the ARCHITECTURE.md content using these exact delimiter lines, with the markdown content in between. No prose outside the delimiters, no code fences:
+
+${ARCH_BEGIN}
+<full ARCHITECTURE.md content as raw markdown>
+${ARCH_END}
+
 ARCHITECTURE.md must use this top-level structure:
 
 # Architecture
@@ -105,19 +142,7 @@ ARCHITECTURE.md must use this top-level structure:
 ## Integration points
 ## Key technical decisions
 
-Conflict resolution rules — read carefully:
-- The batch roll-ups you receive are ordered chronologically and labeled with their date ranges. Earlier batches describe earlier state; later batches describe later state.
-- Each batch may include a "Superseded within this batch" section. Honor those — the current state is the later one in each pair.
-- ALSO compare claims across batches. If batch 1 says feature X works one way and batch 5 says feature X works another way, the batch 5 version is the current truth. The batch 1 version belongs in "Superseded product decisions" or "Patterns tried and abandoned" — never present both as if they coexist.
-- When you record a supersession, write it as: "Current state: <later approach> (#X, YYYY-MM-DD). Previously: <earlier approach> (#Y, YYYY-MM-DD). Reason: <if clear>." Skip the reason line if not clear.
-- Do not assume something still exists just because an early PR introduced it. Verify it survived through the latest batch.
-
-Rules for both documents:
-- Cite PR numbers in parens (e.g., "(see #12, #34)") sparingly — only where the citation is clearly grounding the claim.
-- Keep bullet points to one or two sentences each.
-- If a section truly has no content from the input, write a single italic line "_No signal yet — fill in during review._" rather than inventing content.
-- Use the project's own terminology. Don't generalize names of features or services.
-- Mark genuinely uncertain items inline with "[REVIEW: ...]".`;
+${SHARED_FINAL_RULES}`;
 
 function chunkExtractions(extractions) {
   const chunks = [];
@@ -166,7 +191,7 @@ function buildBatchUserPrompt(projectName, batchIndex, totalBatches, extractions
   return `${header}Extractions:\n\n${body}`;
 }
 
-function buildFinalUserPrompt(projectName, batchSummaries, totalPrs) {
+function buildFinalUserPrompt(projectName, batchSummaries, totalPrs, canonicalIdentifiers) {
   const header = `Project: ${projectName}\nTotal PRs analyzed: ${totalPrs}\nBatches: ${batchSummaries.length}\n\n`;
   const body = batchSummaries
     .map((b, i) => {
@@ -175,7 +200,36 @@ function buildFinalUserPrompt(projectName, batchSummaries, totalPrs) {
       return `## Batch ${i + 1} roll-up${suffix}\n\n${b.output}`;
     })
     .join('\n\n---\n\n');
-  return `${header}${body}\n\nNow synthesize PRODUCT.md and ARCHITECTURE.md following the rules in the system prompt. Remember: later batches override earlier ones when they conflict.`;
+
+  let canonicalSection = '';
+  if (canonicalIdentifiers && canonicalIdentifiers.length > 0) {
+    const lists = canonicalIdentifiers
+      .filter(c => c && Array.isArray(c.items) && c.items.length > 0)
+      .map(c => formatCanonicalCategory(c))
+      .join('\n\n');
+    if (lists) {
+      canonicalSection =
+        `\n\n---\n\n## Ground-truth identifiers from current code\n\n` +
+        `These lists were extracted directly from the codebase as of this run. They are AUTHORITATIVE — enumerate every name verbatim in the relevant section of the doc.\n\n` +
+        lists;
+    }
+  }
+
+  return `${header}${body}${canonicalSection}\n\nNow synthesize PRODUCT.md and ARCHITECTURE.md following the rules in the system prompt. Remember: later batches override earlier ones when they conflict, and ground-truth identifier lists override the batch roll-ups.`;
+}
+
+function formatCanonicalCategory(category) {
+  const lines = [`### ${category.category} (${category.items.length})`];
+  if (category.notes) lines.push(`_${category.notes}_`);
+  for (const item of category.items) {
+    if (typeof item === 'string') {
+      lines.push(`- ${item}`);
+    } else {
+      const desc = item.description ? ` — ${item.description}` : '';
+      lines.push(`- \`${item.name}\`${desc}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 function formatDateRange(range) {
@@ -235,36 +289,62 @@ async function rollupBatch(projectName, batchIndex, totalBatches, extractions, o
 /**
  * Final synthesis — merge all batch outputs into PRODUCT.md + ARCHITECTURE.md.
  *
+ * Issues two LLM calls in parallel (one per doc). Streaming bypasses the
+ * gateway's per-request timeout, and the docs comfortably fit in the
+ * generous max_tokens cap.
+ *
  * @param {string} projectName
  * @param {Array<string | { output: string, dateRange?: { start, end } }>} batchSummaries
  *   Each entry is either a raw markdown string (legacy) or an object with the
  *   batch markdown and the date range of PRs in that batch. Date ranges let
  *   the synthesis pass apply recency-wins resolution across batches.
  * @param {number} totalPrs
- * @param {object} [opts] — { signal }
+ * @param {object} [opts] — { signal, canonicalIdentifiers }
+ *   canonicalIdentifiers: optional array of `{ category, items, notes? }`
+ *   from contextDocVerifiers — exhaustive lists pulled from the actual
+ *   codebase that the synthesis must enumerate verbatim.
  * @returns {Promise<{ product: string, architecture: string }>}
  */
 async function rollupFinal(projectName, batchSummaries, totalPrs, opts = {}) {
   const normalized = batchSummaries.map(b =>
     typeof b === 'string' ? { output: b, dateRange: null } : b
   );
-  const userPrompt = buildFinalUserPrompt(projectName, normalized, totalPrs);
-  const raw = await _chatCompletion({
-    model: ROLLUP_MODEL,
-    max_tokens: FINAL_MAX_TOKENS,
-    system: FINAL_SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
-    signal: opts.signal,
-  });
-  const parsed = parseFinalOutput(raw);
-  if (!parsed || !parsed.product || !parsed.architecture) {
-    const rawStr = String(raw);
+  const userPrompt = buildFinalUserPrompt(projectName, normalized, totalPrs, opts.canonicalIdentifiers);
+
+  const [productRaw, archRaw] = await Promise.all([
+    _chatCompletion({
+      model: ROLLUP_MODEL,
+      max_tokens: FINAL_MAX_TOKENS,
+      system: PRODUCT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+      signal: opts.signal,
+    }),
+    _chatCompletion({
+      model: ROLLUP_MODEL,
+      max_tokens: FINAL_MAX_TOKENS,
+      system: ARCH_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+      signal: opts.signal,
+    }),
+  ]);
+
+  const product = extractBlock(productRaw, PRODUCT_BEGIN, PRODUCT_END);
+  if (product === null) {
+    const rawStr = String(productRaw);
     throw new Error(
-      'Final rollup did not return both PRODUCT.md and ARCHITECTURE.md blocks with the expected delimiters. ' +
+      'PRODUCT.md synthesis did not return the expected delimiters. ' +
       `Raw length: ${rawStr.length} chars. First 300: ${rawStr.slice(0, 300)} | Last 300: ${rawStr.slice(-300)}`
     );
   }
-  return { product: parsed.product, architecture: parsed.architecture };
+  const architecture = extractBlock(archRaw, ARCH_BEGIN, ARCH_END);
+  if (architecture === null) {
+    const rawStr = String(archRaw);
+    throw new Error(
+      'ARCHITECTURE.md synthesis did not return the expected delimiters. ' +
+      `Raw length: ${rawStr.length} chars. First 300: ${rawStr.slice(0, 300)} | Last 300: ${rawStr.slice(-300)}`
+    );
+  }
+  return { product, architecture };
 }
 
 module.exports = {
