@@ -1152,6 +1152,81 @@ async function getSessionSummaryTool(args, _ctx) {
   };
 }
 
+async function getSessionMessagesTool(args, _ctx) {
+  if (!args.session_id) {
+    throw new Error('session_id is required.');
+  }
+  const sessionResult = await query(
+    'SELECT id, name, session_type FROM sessions WHERE id = $1',
+    [args.session_id]
+  );
+  if (sessionResult.rows.length === 0) {
+    throw new Error(`Session ${args.session_id} not found`);
+  }
+  const session = sessionResult.rows[0];
+
+  const limit = Math.min(Math.max(parseInt(args.limit, 10) || 100, 1), 500);
+  const offset = Math.max(parseInt(args.offset, 10) || 0, 0);
+  const order = args.order === 'desc' ? 'DESC' : 'ASC';
+  const includeToolCalls = args.include_tool_calls === true;
+
+  const totalResult = await query(
+    'SELECT COUNT(*)::int AS total FROM messages WHERE session_id = $1',
+    [args.session_id]
+  );
+  const total = totalResult.rows[0] ? totalResult.rows[0].total : 0;
+
+  const cols = includeToolCalls
+    ? 'id, role, content, tool_calls, tool_results, timestamp'
+    : 'id, role, content, timestamp';
+  const rowsResult = await query(
+    `SELECT ${cols}
+     FROM messages
+     WHERE session_id = $1
+     ORDER BY timestamp ${order}, id ${order}
+     LIMIT $2 OFFSET $3`,
+    [args.session_id, limit, offset]
+  );
+
+  const messages = rowsResult.rows.map((r) => {
+    const msg = {
+      id: r.id,
+      role: r.role,
+      content: r.content,
+      timestamp: r.timestamp,
+    };
+    if (includeToolCalls) {
+      let toolCalls = null;
+      let toolResults = null;
+      if (r.tool_calls) {
+        try {
+          toolCalls = typeof r.tool_calls === 'string' ? JSON.parse(r.tool_calls) : r.tool_calls;
+        } catch (_) { toolCalls = r.tool_calls; }
+      }
+      if (r.tool_results) {
+        try {
+          toolResults = typeof r.tool_results === 'string' ? JSON.parse(r.tool_results) : r.tool_results;
+        } catch (_) { toolResults = r.tool_results; }
+      }
+      msg.tool_calls = toolCalls;
+      msg.tool_results = toolResults;
+    }
+    return msg;
+  });
+
+  return {
+    session_id: session.id,
+    name: session.name,
+    session_type: session.session_type,
+    total,
+    count: messages.length,
+    offset,
+    limit,
+    order: order.toLowerCase(),
+    messages,
+  };
+}
+
 async function recoverPipelineTool(args, _ctx) {
   if (!args.pipeline_id) throw new Error('pipeline_id is required');
   const pipeline = await pipelineRepo.getPipeline(args.pipeline_id);
@@ -1521,6 +1596,23 @@ const TOOL_DEFINITIONS = [
     handler: getSessionSummaryTool,
   },
   {
+    name: 'mc_get_session_messages',
+    description:
+      "Fetch the actual turn-by-turn message history for a session — the raw user/assistant exchange, with role, content, and timestamp on every row. Use this when you need to read what was literally said (e.g. to see the user's exact instructions or the session's exact response), as opposed to the LLM-generated 2-3 sentence blurb returned by mc_get_session_summary. Supports pagination via limit (default 100, max 500) and offset, and order ('asc' for chronological, 'desc' for most-recent-first). Tool calls and results are omitted by default; pass include_tool_calls: true to include them.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string', description: 'Mission Control session ID. Required.' },
+        limit: { type: 'number', description: 'Max messages to return. Defaults to 100, capped at 500.' },
+        offset: { type: 'number', description: 'Skip the first N messages. Defaults to 0.' },
+        order: { type: 'string', enum: ['asc', 'desc'], description: "Chronological order. 'asc' (default) returns oldest-first, 'desc' returns newest-first." },
+        include_tool_calls: { type: 'boolean', description: 'Include tool_calls and tool_results columns. Defaults to false.' },
+      },
+      required: ['session_id'],
+    },
+    handler: getSessionMessagesTool,
+  },
+  {
     name: 'mc_recover_pipeline',
     description:
       "Reconcile a pipeline whose stage session was interrupted (e.g. by a server restart) and is now stuck. For each orphaned session it finds, this tool either records the produced output and advances the pipeline, or pauses the pipeline with a clear escalation if the work can't be safely resumed. Safe to call on a healthy pipeline — it's a no-op when there are no orphans. Use this if mc_get_pipeline_status shows a session stuck in 'working' but no progress is being made.",
@@ -1561,6 +1653,7 @@ module.exports = {
   getEvalSchemaTool,
   searchSessionsTool,
   getSessionSummaryTool,
+  getSessionMessagesTool,
   resolveProjectPath,
   _getEvalLoader,
   _getEvalAuthoring,
